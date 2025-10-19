@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>NFT Profile & Objects Lookup</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.7.1/jszip.min.js"></script>
 <style>
   body {
     background: #121212;
@@ -303,6 +304,41 @@
   }
   .modal-nav:hover { background: #7c4dff; }
   .modal-nav:disabled { background: #333; cursor: not-allowed; opacity: 0.5; }
+  .zip-modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    z-index: 3000;
+    justify-content: center;
+    align-items: center;
+  }
+  .zip-modal-content {
+    background: #fff;
+    padding: 15px;
+    border-radius: 8px;
+    max-width: 90%;
+    width: 90%;
+    height: 90%;
+    overflow-y: auto;
+    position: relative;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+  }
+  .zip-modal-close {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: #cf6679;
+    color: white;
+    border: none;
+    padding: 4px 8px;
+    border-radius: 5px;
+    cursor: pointer;
+    z-index: 3050;
+  }
   .urn-row { display: flex; align-items: center; gap: 6px; margin: 8px 0; flex-wrap: wrap; }
   .refresh-btn {
     background: none;
@@ -435,6 +471,12 @@
     </div>
     <button id="modalNavRight" class="modal-nav" aria-label="Next object" style="display:none;" onclick="navigateObject(1)">&rarr;</button>
   </div>
+  <div id="zipModalOverlay" class="zip-modal-overlay">
+    <div class="zip-modal-content">
+      <button class="zip-modal-close" onclick="closeZipModal()">X</button>
+      <iframe id="zipContent" style="width:100%; height:100%; border:none;"></iframe>
+    </div>
+  </div>
   <script>
   const state = {
     skip: 0,
@@ -455,7 +497,8 @@
     filterType: 'all',
     filteredObjects: [],
     fallbackImage: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='250' height='180'><rect width='100%' height='100%' fill='%23333'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='white' font-size='14'>No Image</text></svg>",
-    actionIcons: { give: '🎁', claim: '🏆', list: '📋', burn: '🔥', grant: '🛠️', inspect: '🔍', buy: '🛍️' }
+    actionIcons: { give: '🎁', claim: '🏆', list: '📋', burn: '🔥', grant: '🛠️', inspect: '🔍', buy: '🛍️' },
+    activeBlobUrls: []
   };
 
   const formatDateToLocalShort = (dateString) => {
@@ -716,8 +759,13 @@
   const renderUrnLink = (urn) => {
     if (!urn) return 'URN: None';
     if (urn.startsWith('IPFS:') || /^ipfs[:/]+/i.test(urn)) {
-      const hash = urn.replace(/^ipfs[:/]+/i, "").split("/")[0];
-      return `URN: <a href="https://ipfs.io/ipfs/${hash}" target="_blank" style="color:#bb86fc">${urn}</a>`;
+      const ipfsPath = urn.replace(/^ipfs[:/]+/i, "");
+      if (ipfsPath.toLowerCase().endsWith('.zip')) {
+        const hash = ipfsPath.split(/[/\\]/)[0];
+        return `URN: <a href="#" onclick="openZipModal('${hash}')" style="color:#bb86fc">${urn}</a>`;
+      } else {
+        return `URN: <a href="https://ipfs.io/ipfs/${ipfsPath}" target="_blank" style="color:#bb86fc">${urn}</a>`;
+      }
     }
     if (/^(BTC|LTC|DOG|MZC):/i.test(urn) || /^[A-Za-z0-9]+\/.+/.test(urn)) {
       const parts = urn.split(':').pop().split('/');
@@ -1125,6 +1173,84 @@
   });
 
   state.currentMainnet = document.getElementById('mainnetToggle').checked;
+
+  const openZipModal = (ipfsHash) => {
+    const modal = document.getElementById('zipModalOverlay');
+    modal.style.display = 'flex';
+    loadZipFromIPFS(ipfsHash);
+  };
+
+  const closeZipModal = () => {
+    const modal = document.getElementById('zipModalOverlay');
+    modal.style.display = 'none';
+    const iframe = document.getElementById('zipContent');
+    iframe.src = 'about:blank'; // Clear the iframe
+
+    // Revoke all the temporary URLs to prevent memory leaks
+    state.activeBlobUrls.forEach(URL.revokeObjectURL);
+    state.activeBlobUrls = []; // Clear the array
+  };
+
+  const loadZipFromIPFS = async (ipfsHash) => {
+    const iframe = document.getElementById('zipContent');
+    iframe.srcdoc = "<div>Loading and parsing zip file...</div>";
+
+    try {
+      // 1. Fetch the zip file from IPFS
+      const response = await fetch(`https://ipfs.io/ipfs/${ipfsHash}`);
+      if (!response.ok) throw new Error(`Failed to fetch from IPFS: ${response.statusText}`);
+      const blob = await response.blob();
+      const zip = await JSZip.loadAsync(blob);
+
+      const blobUrlMap = new Map();
+      const creationPromises = [];
+
+      // 2. Create a Blob URL for every file in the zip
+      zip.forEach((relativePath, file) => {
+        if (!file.dir) { // We only care about files, not directories
+          const promise = file.async("blob").then(fileBlob => {
+            const url = URL.createObjectURL(fileBlob);
+            blobUrlMap.set(relativePath, url);
+            state.activeBlobUrls.push(url); // Store for later cleanup
+          });
+          creationPromises.push(promise);
+        }
+      });
+      await Promise.all(creationPromises);
+
+      // 3. Get the index.html content
+      const indexHtmlFile = zip.file("index.html");
+      if (!indexHtmlFile) {
+        throw new Error("index.html not found in zip file.");
+      }
+      const htmlContent = await indexHtmlFile.async("string");
+
+      // 4. Parse the HTML and replace all relative paths with Blob URLs
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(htmlContent, "text/html");
+
+      // Find all elements that can reference external resources
+      doc.querySelectorAll('link[href], script[src], img[src], a[href], video[src], audio[src], source[src]').forEach(el => {
+        const attribute = el.hasAttribute('href') ? 'href' : 'src';
+        const originalPath = el.getAttribute(attribute);
+
+        // Only replace relative paths
+        if (originalPath && !originalPath.startsWith('http') && !originalPath.startsWith('//') && !originalPath.startsWith('data:')) {
+          const blobUrl = blobUrlMap.get(originalPath);
+          if (blobUrl) {
+            el.setAttribute(attribute, blobUrl);
+          }
+        }
+      });
+
+      // 5. Inject the modified HTML into the iframe
+      iframe.srcdoc = doc.documentElement.outerHTML;
+
+    } catch (error) {
+      console.error("Error loading zip from IPFS:", error);
+      iframe.srcdoc = `<div>Error loading from IPFS: ${error.message}</div>`;
+    }
+  };
 </script>
 </body>
 </html>
