@@ -764,7 +764,7 @@
         const hash = ipfsPath.split(/[/\\]/)[0];
         return `URN: <a href="#" onclick="openZipModal('${hash}')" style="color:#bb86fc">${urn}</a>`;
       } else {
-        return `URN: <a href="https://ipfs.io/ipfs/${ipfsPath}" target="_blank" style="color:#bb86fc">${urn}</a>`;
+        return `URN: <a href="https://ipfs.io/ipfs/${hash}" target="_blank" style="color:#bb86fc">${urn}</a>`;
       }
     }
     if (/^(BTC|LTC|DOG|MZC):/i.test(urn) || /^[A-Za-z0-9]+\/.+/.test(urn)) {
