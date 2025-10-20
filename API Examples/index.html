@@ -760,8 +760,8 @@
     if (!urn) return 'URN: None';
     if (urn.startsWith('IPFS:') || /^ipfs[:/]+/i.test(urn)) {
       const ipfsPath = urn.replace(/^ipfs[:/]+/i, "");
+      const hash = ipfsPath.split(/[/\\]/)[0];
       if (ipfsPath.toLowerCase().endsWith('.zip')) {
-        const hash = ipfsPath.split(/[/\\]/)[0];
         return `URN: <a href="#" onclick="openZipModal('${hash}')" style="color:#bb86fc">${urn}</a>`;
       } else {
         return `URN: <a href="https://ipfs.io/ipfs/${hash}" target="_blank" style="color:#bb86fc">${urn}</a>`;
