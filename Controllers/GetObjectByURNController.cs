@@ -9,24 +9,28 @@ namespace P2FK.IO.Controllers
     [ApiController]
     public class GetObjectByURNController : ControllerBase
     {
-       
+        private readonly Wrapper _wrapper;
+
+        public GetObjectByURNController(Wrapper wrapper)
+        {
+            _wrapper = wrapper;
+        }
+
         // GET <GetObjectByURNController>/5
         [HttpGet("{urn}")]
-        public ActionResult Get(string urn, bool mainnet = true)
+        public async Task<ActionResult> Get(string urn, bool mainnet = true)
         {
             
-                Wrapper wrapper = new Wrapper();
-
                 string arguments = "";
                 string result = "";
 
                 if (mainnet)
                 {
-                    arguments = "--versionbyte " + wrapper.ProdVersionByte + " --getobjectbyurn --password " + wrapper.ProdRPCPassword + " --url " + wrapper.ProdRPCURL + " --username " + wrapper.ProdRPCUser + " --urn \"" + urn.Replace("%2F","/")+ "\"";
-                    result = wrapper.RunCommand(wrapper.ProdCLIPath, arguments);
+                    arguments = "--versionbyte " + _wrapper.ProdVersionByte + " --getobjectbyurn --password " + _wrapper.ProdRPCPassword + " --url " + _wrapper.ProdRPCURL + " --username " + _wrapper.ProdRPCUser + " --urn \"" + urn.Replace("%2F","/")+ "\"";
+                    result = await _wrapper.RunCommandAsync(_wrapper.ProdCLIPath, arguments, HttpContext.RequestAborted);
                 }
-                else { arguments = "--versionbyte " + wrapper.TestVersionByte + " --getobjectbyurn --password " + wrapper.TestRPCPassword + " --url " + wrapper.TestRPCURL + " --username " + wrapper.TestRPCUser + " --urn \"" + urn.Replace("%2F", "/") + "\"";
-                    result = wrapper.RunCommand(wrapper.TestCLIPath, arguments);
+                else { arguments = "--versionbyte " + _wrapper.TestVersionByte + " --getobjectbyurn --password " + _wrapper.TestRPCPassword + " --url " + _wrapper.TestRPCURL + " --username " + _wrapper.TestRPCUser + " --urn \"" + urn.Replace("%2F", "/") + "\"";
+                    result = await _wrapper.RunCommandAsync(_wrapper.TestCLIPath, arguments, HttpContext.RequestAborted);
                 }
 
 

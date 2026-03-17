@@ -9,26 +9,31 @@ namespace P2FK.IO.Controllers
     [ApiController]
     public class GetObjectsByKeywordController : ControllerBase
     {
-       
+        private readonly Wrapper _wrapper;
+
+        public GetObjectsByKeywordController(Wrapper wrapper)
+        {
+            _wrapper = wrapper;
+        }
+
         // GET <GetObjectsByKeywordController>/5
         [HttpGet("{keyword}")]
-        public ActionResult Get(string keyword, int skip = 0, int qty = -1, bool mainnet = true)
+        public async Task<ActionResult> Get(string keyword, int skip = 0, int qty = -1, bool mainnet = true)
         {
 
       
-            Wrapper wrapper = new Wrapper();
             string result = "";
             string arguments = "";
 
             if (mainnet)
             {
-                arguments = "--versionbyte " + wrapper.ProdVersionByte + " --getobjectsbykeyword --password " + wrapper.ProdRPCPassword + " --url " + wrapper.ProdRPCURL + " --username " + wrapper.ProdRPCUser + " --skip " + skip + " --qty " + qty + " --keyword " + keyword;
-                result = wrapper.RunCommand(wrapper.ProdCLIPath, arguments);
+                arguments = "--versionbyte " + _wrapper.ProdVersionByte + " --getobjectsbykeyword --password " + _wrapper.ProdRPCPassword + " --url " + _wrapper.ProdRPCURL + " --username " + _wrapper.ProdRPCUser + " --skip " + skip + " --qty " + qty + " --keyword " + keyword;
+                result = await _wrapper.RunCommandAsync(_wrapper.ProdCLIPath, arguments, HttpContext.RequestAborted);
             }
             else
             {
-                arguments = "--versionbyte " + wrapper.TestVersionByte + " --getobjectsbykeyword --password " + wrapper.TestRPCPassword + " --url " + wrapper.TestRPCURL + " --username " + wrapper.TestRPCUser + " --skip " + skip + " --qty " + qty + " --keyword " + keyword;
-                result = wrapper.RunCommand(wrapper.TestCLIPath, arguments);
+                arguments = "--versionbyte " + _wrapper.TestVersionByte + " --getobjectsbykeyword --password " + _wrapper.TestRPCPassword + " --url " + _wrapper.TestRPCURL + " --username " + _wrapper.TestRPCUser + " --skip " + skip + " --qty " + qty + " --keyword " + keyword;
+                result = await _wrapper.RunCommandAsync(_wrapper.TestCLIPath, arguments, HttpContext.RequestAborted);
             }
 
             return Content(result, "application/json");

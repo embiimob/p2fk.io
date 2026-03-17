@@ -9,24 +9,28 @@ namespace P2FK.IO.Controllers
     [ApiController]
     public class GetPublicAddressByKeywordController : ControllerBase
     {
+        private readonly Wrapper _wrapper;
+
+        public GetPublicAddressByKeywordController(Wrapper wrapper)
+        {
+            _wrapper = wrapper;
+        }
 
         // GET <GetPublicAddressByKeywordController>/5
         [HttpGet("{keyword}")]
-        public ActionResult Get(string keyword, bool mainnet = true)
+        public async Task<ActionResult> Get(string keyword, bool mainnet = true)
         {
            
-                Wrapper wrapper = new Wrapper();
-
                 string arguments = "";
                 string result = "";
 
                 if (mainnet)
                 {
-                    arguments = "--versionbyte " + wrapper.ProdVersionByte + " --getpublicaddressbykeyword --keyword " + keyword;
-                    result = wrapper.RunCommand(wrapper.ProdCLIPath, arguments);
+                    arguments = "--versionbyte " + _wrapper.ProdVersionByte + " --getpublicaddressbykeyword --keyword " + keyword;
+                    result = await _wrapper.RunCommandAsync(_wrapper.ProdCLIPath, arguments, HttpContext.RequestAborted);
                 }
-                else { arguments = "--versionbyte " + wrapper.TestVersionByte + " --getpublicaddressbykeyword --keyword " + keyword;
-                    result = wrapper.RunCommand(wrapper.TestCLIPath, arguments);
+                else { arguments = "--versionbyte " + _wrapper.TestVersionByte + " --getpublicaddressbykeyword --keyword " + keyword;
+                    result = await _wrapper.RunCommandAsync(_wrapper.TestCLIPath, arguments, HttpContext.RequestAborted);
                 }
 
 

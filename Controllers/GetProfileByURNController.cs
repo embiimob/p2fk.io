@@ -8,25 +8,29 @@ namespace P2FK.IO.Controllers
     [ApiController]
     public class GetProfileByURNController : ControllerBase
     {
-       
+        private readonly Wrapper _wrapper;
+
+        public GetProfileByURNController(Wrapper wrapper)
+        {
+            _wrapper = wrapper;
+        }
+
         // GET <GetProfileByURNController>/5
         [HttpGet("{urn}")]
-        public ActionResult Get(string urn, bool mainnet = true)
+        public async Task<ActionResult> Get(string urn, bool mainnet = true)
         {
             // Regular expression for cryptocurrency address validation
            
-                Wrapper wrapper = new Wrapper();
-
                 string arguments = "";
                 string result = "";
 
                 if (mainnet)
                 {
-                    arguments = "--versionbyte " + wrapper.ProdVersionByte + " --getprofilebyurn --password " + wrapper.ProdRPCPassword + " --url " + wrapper.ProdRPCURL + " --username " + wrapper.ProdRPCUser + " --urn \"" + urn.Replace("%2F", "/") + "\"";
-                result = wrapper.RunCommand(wrapper.ProdCLIPath, arguments);
+                    arguments = "--versionbyte " + _wrapper.ProdVersionByte + " --getprofilebyurn --password " + _wrapper.ProdRPCPassword + " --url " + _wrapper.ProdRPCURL + " --username " + _wrapper.ProdRPCUser + " --urn \"" + urn.Replace("%2F", "/") + "\"";
+                result = await _wrapper.RunCommandAsync(_wrapper.ProdCLIPath, arguments, HttpContext.RequestAborted);
                 }
-                else { arguments = "--versionbyte " + wrapper.TestVersionByte + " --getprofilebyurn --password " + wrapper.TestRPCPassword + " --url " + wrapper.TestRPCURL + " --username " + wrapper.TestRPCUser + " --urn \"" + urn.Replace("%2F", "/") + "\"";
-                result = wrapper.RunCommand(wrapper.TestCLIPath, arguments);
+                else { arguments = "--versionbyte " + _wrapper.TestVersionByte + " --getprofilebyurn --password " + _wrapper.TestRPCPassword + " --url " + _wrapper.TestRPCURL + " --username " + _wrapper.TestRPCUser + " --urn \"" + urn.Replace("%2F", "/") + "\"";
+                result = await _wrapper.RunCommandAsync(_wrapper.TestCLIPath, arguments, HttpContext.RequestAborted);
                 }
 
                 return Content(result, "application/json");

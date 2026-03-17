@@ -9,29 +9,33 @@ namespace P2FK.IO.Controllers
     [ApiController]
     public class GetObjectByAddressController : ControllerBase
     {
-       
+        private readonly Wrapper _wrapper;
+
+        public GetObjectByAddressController(Wrapper wrapper)
+        {
+            _wrapper = wrapper;
+        }
+
         // GET <GetObjectByAddressController>/5
         [HttpGet("{address}")]
-        public ActionResult Get(string address, bool mainnet = true, bool verbose = false)
+        public async Task<ActionResult> Get(string address, bool mainnet = true, bool verbose = false)
         {
             // Regular expression for cryptocurrency address validation
             string pattern = @"^[a-zA-Z0-9][a-km-zA-HJ-NP-Z1-9]{25,34}$";
             if (Regex.IsMatch(address, pattern))
             {
-                Wrapper wrapper = new Wrapper();
-
                 string arguments = "";
                 string result = "";
 
                 if (mainnet)
                 {
-                    arguments = "--versionbyte " + wrapper.ProdVersionByte + " --getobjectbyaddress --password " + wrapper.ProdRPCPassword + " --url " + wrapper.ProdRPCURL + " --username " + wrapper.ProdRPCUser + " --address " + address;
+                    arguments = "--versionbyte " + _wrapper.ProdVersionByte + " --getobjectbyaddress --password " + _wrapper.ProdRPCPassword + " --url " + _wrapper.ProdRPCURL + " --username " + _wrapper.ProdRPCUser + " --address " + address;
                     if (verbose) { arguments = arguments + " --verbose"; }
-                    result = wrapper.RunCommand(wrapper.ProdCLIPath, arguments);
+                    result = await _wrapper.RunCommandAsync(_wrapper.ProdCLIPath, arguments, HttpContext.RequestAborted);
                 }
-                else { arguments = "--versionbyte " + wrapper.TestVersionByte + " --getobjectbyaddress --password " + wrapper.TestRPCPassword + " --url " + wrapper.TestRPCURL + " --username " + wrapper.TestRPCUser + " --address " + address;
+                else { arguments = "--versionbyte " + _wrapper.TestVersionByte + " --getobjectbyaddress --password " + _wrapper.TestRPCPassword + " --url " + _wrapper.TestRPCURL + " --username " + _wrapper.TestRPCUser + " --address " + address;
                     if (verbose) { arguments = arguments + " --verbose"; }
-                    result = wrapper.RunCommand(wrapper.TestCLIPath, arguments);
+                    result = await _wrapper.RunCommandAsync(_wrapper.TestCLIPath, arguments, HttpContext.RequestAborted);
                 }
 
 
