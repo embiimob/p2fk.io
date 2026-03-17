@@ -9,10 +9,16 @@ namespace P2FK.IO.Controllers
     [ApiController]
     public class GetInquiriesByAddressController : ControllerBase
     {
-       
+        private readonly Wrapper _wrapper;
+
+        public GetInquiriesByAddressController(Wrapper wrapper)
+        {
+            _wrapper = wrapper;
+        }
+
         // GET <GetInquiriesByAddressController>/5
         [HttpGet("{address}")]
-        public ActionResult Get(string address, int skip = 0, int qty = 10, bool mainnet = true, bool verbose = false)
+        public async Task<ActionResult> Get(string address, int skip = 0, int qty = 10, bool mainnet = true, bool verbose = false)
         {
 
       
@@ -20,21 +26,20 @@ namespace P2FK.IO.Controllers
             string pattern = @"^[a-zA-Z0-9][a-km-zA-HJ-NP-Z1-9]{25,34}$";
             if (Regex.IsMatch(address, pattern))
             {
-                Wrapper wrapper = new Wrapper();
                 string result = "";
                 string arguments = "";
 
                 if (mainnet)
                 {
-                    arguments = "--versionbyte " + wrapper.ProdVersionByte + " --getinquiriesbyaddress --password " + wrapper.ProdRPCPassword + " --url " + wrapper.ProdRPCURL + " --username " + wrapper.ProdRPCUser + " --skip " + skip + " --qty " + qty + " --address " + address;
+                    arguments = "--versionbyte " + _wrapper.ProdVersionByte + " --getinquiriesbyaddress --password " + _wrapper.ProdRPCPassword + " --url " + _wrapper.ProdRPCURL + " --username " + _wrapper.ProdRPCUser + " --skip " + skip + " --qty " + qty + " --address " + address;
                     if (verbose) { arguments = arguments + " --verbose"; }
-                    result = wrapper.RunCommand(wrapper.ProdCLIPath, arguments);
+                    result = await _wrapper.RunCommandAsync(_wrapper.ProdCLIPath, arguments, HttpContext.RequestAborted);
                 }
                 else
                 {
-                    arguments = "--versionbyte " + wrapper.TestVersionByte + " --getinquiriesbyaddress --password " + wrapper.TestRPCPassword + " --url " + wrapper.TestRPCURL + " --username " + wrapper.TestRPCUser + " --skip " + skip + " --qty " + qty + " --address " + address;
+                    arguments = "--versionbyte " + _wrapper.TestVersionByte + " --getinquiriesbyaddress --password " + _wrapper.TestRPCPassword + " --url " + _wrapper.TestRPCURL + " --username " + _wrapper.TestRPCUser + " --skip " + skip + " --qty " + qty + " --address " + address;
                     if (verbose) { arguments = arguments + " --verbose"; }
-                    result = wrapper.RunCommand(wrapper.TestCLIPath, arguments);
+                    result = await _wrapper.RunCommandAsync(_wrapper.TestCLIPath, arguments, HttpContext.RequestAborted);
                 }
 
                 return Content(result, "application/json");

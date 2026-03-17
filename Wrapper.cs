@@ -21,29 +21,53 @@ namespace P2FK.IO
         public string TestRPCUser = "good-user";
         public string TestRPCPassword = "better-password";
 
-        public string RunCommand(string executablePath, string arguments)
+        private static readonly SemaphoreSlim _semaphore = new SemaphoreSlim(5, 5);
+        private static readonly TimeSpan _timeout = TimeSpan.FromSeconds(90);
+
+        public async Task<string> RunCommandAsync(string executablePath, string arguments, CancellationToken cancellationToken = default)
         {
-            ProcessStartInfo processStartInfo = new ProcessStartInfo
+            await _semaphore.WaitAsync(cancellationToken);
+            try
             {
-                FileName = executablePath,
-                Arguments = arguments,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                CreateNoWindow = true,
-                UseShellExecute = false,
-                StandardOutputEncoding = Encoding.UTF8, // Set the standard output encoding to UTF-8
-                StandardErrorEncoding = Encoding.UTF8   // Set the standard error encoding to UTF-8
+                ProcessStartInfo processStartInfo = new ProcessStartInfo
+                {
+                    FileName = executablePath,
+                    Arguments = arguments,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true,
+                    UseShellExecute = false,
+                    StandardOutputEncoding = Encoding.UTF8, // Set the standard output encoding to UTF-8
+                    StandardErrorEncoding = Encoding.UTF8   // Set the standard error encoding to UTF-8
+                };
 
-            };
-
-            using (Process process = new Process { StartInfo = processStartInfo })
-            {
+                using var process = new Process { StartInfo = processStartInfo };
                 process.Start();
 
-                string output = process.StandardOutput.ReadToEnd();
-                string error = process.StandardError.ReadToEnd();
+                using var timeoutCts = new CancellationTokenSource(_timeout);
+                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
 
-                process.WaitForExit();
+                var outputTask = process.StandardOutput.ReadToEndAsync(linkedCts.Token);
+                var errorTask = process.StandardError.ReadToEndAsync(linkedCts.Token);
+
+                try
+                {
+                    await Task.WhenAll(outputTask, errorTask);
+                    await process.WaitForExitAsync(linkedCts.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    try { process.Kill(entireProcessTree: true); } catch (Exception) { /* process may have already exited */ }
+
+                    if (timeoutCts.IsCancellationRequested)
+                        return "[\"error: request timed out\"]";
+
+                    return "[\"error: request cancelled\"]";
+                }
+
+                // Task.WhenAll above succeeded without throwing, so both tasks are guaranteed completed successfully
+                string output = outputTask.Result;
+                string error = errorTask.Result;
 
                 if (!string.IsNullOrEmpty(error))
                 {
@@ -52,7 +76,10 @@ namespace P2FK.IO
 
                 return output;
             }
+            finally
+            {
+                _semaphore.Release();
+            }
         }
-       
     }
 }

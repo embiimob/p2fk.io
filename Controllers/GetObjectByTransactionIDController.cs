@@ -9,27 +9,31 @@ namespace P2FK.IO.Controllers
     [ApiController]
     public class GetObjectByTransactionIDController : ControllerBase
     {
+        private readonly Wrapper _wrapper;
+
+        public GetObjectByTransactionIDController(Wrapper wrapper)
+        {
+            _wrapper = wrapper;
+        }
 
         // GET <GetObjectByTransactionIDController>/5
         [HttpGet("{id}")]
-        public ActionResult Get(string id, bool mainnet = true)
+        public async Task<ActionResult> Get(string id, bool mainnet = true)
         {
             // Regular expression for cryptocurrency address validation
             string pattern = @"^[0-9a-fA-F]{64}$";
             if (Regex.IsMatch(id, pattern))
             {
-                Wrapper wrapper = new Wrapper();
-
                 string arguments = "";
                 string result = "";
 
                 if (mainnet)
                 {
-                    arguments = "--versionbyte " + wrapper.ProdVersionByte + " --getobjectbytransactionid --password " + wrapper.ProdRPCPassword + " --url " + wrapper.ProdRPCURL + " --username " + wrapper.ProdRPCUser + " --tid " + id;
-                    result = wrapper.RunCommand(wrapper.ProdCLIPath, arguments);
+                    arguments = "--versionbyte " + _wrapper.ProdVersionByte + " --getobjectbytransactionid --password " + _wrapper.ProdRPCPassword + " --url " + _wrapper.ProdRPCURL + " --username " + _wrapper.ProdRPCUser + " --tid " + id;
+                    result = await _wrapper.RunCommandAsync(_wrapper.ProdCLIPath, arguments, HttpContext.RequestAborted);
                 }
-                else { arguments = "--versionbyte " + wrapper.TestVersionByte + " --getobjectbytransactionid --password " + wrapper.TestRPCPassword + " --url " + wrapper.TestRPCURL + " --username " + wrapper.TestRPCUser + " --tid " + id;
-                    result = wrapper.RunCommand(wrapper.TestCLIPath, arguments);
+                else { arguments = "--versionbyte " + _wrapper.TestVersionByte + " --getobjectbytransactionid --password " + _wrapper.TestRPCPassword + " --url " + _wrapper.TestRPCURL + " --username " + _wrapper.TestRPCUser + " --tid " + id;
+                    result = await _wrapper.RunCommandAsync(_wrapper.TestCLIPath, arguments, HttpContext.RequestAborted);
                 }
               
 
