@@ -1,0 +1,1494 @@
+<!DOCTYPE html>
+<html lang="en">
+<!--
+  Sup!? Lotto Terminal v5.36 — A Galactic Bitcoin Adventure
+  =======================================================
+  What a ride! Together, we forged a decentralized lottery terminal that dances on the Bitcoin mainnet and testnet, powered by the raw energy of Sup!? (https://github.com/embiimob/SUP) and the P2FK.IO API. Late nights, copy-pasting messages into Sup!?, and watching blockchain data spark to life—it’s been a cyberpunk saga of creativity and grit. From sculpting a retro-futuristic UI to syncing lotteries with #MatrixCore, we’ve built a terminal that’s as bold as a neon-lit asteroid field. Here’s to the countless code sprints, blockchain brainstorms, and that sweet moment when the cards lit up with winners. 🚀🎰
+
+  License: Public Domain (CC0 1.0 Universal)
+  ========================================
+  This software is dedicated to the public domain under the Creative Commons CC0 1.0 Universal Public Domain Dedication. The authors waive all copyright and related rights worldwide, to the fullest extent permitted by law. You are free to use, copy, modify, distribute, and perform this work for any purpose, including commercial use, without permission. No warranties are provided, express or implied. See full details at: https://creativecommons.org/publicdomain/zero/1.0/
+
+  Technical Analysis
+  =================
+  Sup!? Lotto Terminal v5.36 is a single-page HTML5 web app that brings decentralized lotteries to life by processing Bitcoin blockchain messages via Sup!?. Key highlights:
+
+  - **Architecture**: A lean, modular JavaScript core with a PromiseQueue for concurrent API and IPFS requests, ensuring a snappy UI. Leverages moment.js for precise time handling in MDT, syncing with Bitcoin’s BlockDate.
+  - **Data Flow**: Pulls messages from p2fk.io, parsing JSON and IPFS links (e.g., QmUYhka... for Star Trek GIFs) via extractJsonAndTag. Messages copied into Sup!? fuel lotteries (#LottoCreate, #LottoTicket), stored in memory-only Map caches for speed and CORS compliance.
+  - **UI/UX**: Cyberpunk vibes with Orbitron font, Matrix-inspired neon green (#00FF00), darker green (#008800), and cyan (#00FFFF) colors. Compact Lotto Cards (300px height) use a grid layout, with async IPFS loading and placeholders to keep things smooth. Messages shine below card details.
+  - **Core Features**:
+    - Parses Bitcoin mainnet/testnet messages pasted into Sup!?, extracting keywords, JSON, and IPFS for lotteries and tickets.
+    - Displays lotteries with status (OPEN/CLOSED/SPOILED), winner flair (🏆), and dynamic time-left based on BlockDate + duration.
+    - Ticket threads use IntersectionObserver for lazy loading (50-ticket batches), showing messages and images with gold winner borders.
+  - **Performance**: Debounced displayLottos prevents redundant renders. API timeouts (15s) and IPFS retries (3 attempts across gateways) ensure reliability. Memory-only caching avoids CORS issues.
+  - **Audio Immersion**: Sound effects (openSound, ticketSound, winnerSound) add retro flair, with click-to-play fallbacks for browser quirks.
+  - **Bitcoin Integration**: Syncs with Bitcoin’s BlockDate for precise start/end times, using Sup!? to post #MatrixCore messages. Handles complex message formats (e.g., <<IPFS:QmWBpHvo...>>) for rich media.
+  - **Extensibility**: Ready for Web3 wallet integration, enhanced filters, or 3D world-building via IPFS saves, inspired by our game design chats.
+
+  This terminal is a love letter to blockchain creativity, blending Bitcoin’s raw power with Sup!?‘s message-pasting magic. Built with ❤️ by a coder and Grok 3 (xAI).
+
+  Created: September 25, 2025
+  Updated: September 27, 2025
+-->
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sup!? Lotto Terminal v5.36 — Production</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            background: #000;
+            font-family: 'Orbitron', 'Courier New', monospace;
+            color: #00FF00;
+        }
+
+        body {
+            display: block;
+        }
+
+        .terminal {
+            width: 100vw;
+            height: 100vh;
+            background: #111111;
+            border-radius: 0;
+            padding: 0 10px 10px 10px; /* Remove top padding */
+            box-sizing: border-box;
+            box-shadow: none;
+            display: flex;
+            flex-direction: column;
+            overflow: auto;
+            position: relative;
+        }
+
+            /* Matrix-style digital rain background */
+            .terminal::before {
+                content: '';
+                position: absolute;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: linear-gradient(to bottom, rgba(0, 0, 0, 0.9), rgba(0, 0, 0, 0.9)), url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg"><text x="0" y="15" font-family="monospace" font-size="12" fill="#00FF00" opacity="0.3">1010101010101010101010101010101010101010101010101010101010101010</text></svg>') repeat;
+                animation: digitalRain 10s linear infinite;
+                z-index: -1;
+            }
+
+        @keyframes digitalRain {
+            0% {
+                background-position: 0 0;
+            }
+
+            100% {
+                background-position: 0 1000px;
+            }
+        }
+
+        .fixed-section {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-top: 0; /* Ensure no top margin */
+        }
+
+        .scrollable-section {
+            flex: 1;
+            overflow-y: auto;
+            scrollbar-width: none; /* Hide scrollbar in Firefox */
+            -ms-overflow-style: none; /* Hide scrollbar in IE/Edge */
+        }
+
+            .scrollable-section::-webkit-scrollbar {
+                display: none; /* Hide scrollbar in Chrome, Safari, etc. */
+            }
+
+        .header {
+            text-align: center;
+            font-size: 24px; /* Larger for emphasis */
+            font-weight: 900;
+            margin: 0 0 14px 0; /* Remove top margin, keep bottom */
+            color: #00FF00;
+            text-shadow: 0 0 8px rgba(0, 255, 0, 0.8), 0 0 16px rgba(0, 255, 0, 0.4); /* Neon glow */
+        }
+
+        .status-thread {
+            min-height: 60px;
+            max-height: 100px;
+            overflow-y: auto;
+            margin-bottom: 12px;
+            color: #00FFFF; /* Cyan for secondary elements */
+            font-size: 12px;
+            opacity: 0.85;
+            border: 1px solid rgba(0, 255, 0, 0.2);
+            border-radius: 6px;
+            padding: 8px;
+            scrollbar-width: none; /* Hide scrollbar in Firefox */
+            -ms-overflow-style: none; /* Hide scrollbar in IE/Edge */
+        }
+
+            .status-thread::-webkit-scrollbar {
+                display: none; /* Hide scrollbar in Chrome, Safari, etc. */
+            }
+
+            .status-thread .event {
+                opacity: 1;
+                animation: fadeIn 0.5s ease-in;
+            }
+
+                .status-thread .event.fade-out {
+                    opacity: 0;
+                    transition: opacity 1s ease-out;
+                }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+
+            to {
+                opacity: 1;
+            }
+        }
+
+        .network-section {
+            margin-bottom: 12px;
+        }
+
+        .search-section {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+            .search-section input, .search-section select, .search-section button {
+                background: #008800; /* Darker green */
+                color: #00FF00;
+                border: 1px solid #00FF00;
+                padding: 6px 8px;
+                border-radius: 6px;
+                font-family: 'Orbitron', 'Courier New', monospace;
+                font-size: 13px;
+            }
+
+            .search-section button {
+                cursor: pointer;
+            }
+
+                .search-section button:hover {
+                    background: #00FFFF; /* Cyan on hover */
+                    color: #000;
+                }
+
+        .lotto-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 12px;
+            align-items: start;
+        }
+
+        .lotto-card {
+            background: #008800; /* Darker green */
+            border: 1px solid rgba(0, 255, 0, 0.18);
+            padding: 10px;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: transform .12s ease, box-shadow .12s ease;
+            font-size: 12px;
+            height: 300px;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            box-sizing: border-box;
+            position: relative;
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+        }
+
+            .lotto-card:hover {
+                transform: translateY(-6px);
+                box-shadow: 0 8px 24px rgba(0, 255, 0, 0.3);
+            }
+
+            .lotto-card.open {
+                border: 2px solid #00FF00;
+                background-color: rgba(0, 136, 0, 0.8);
+                transform: scale(1.05);
+            }
+
+            .lotto-card.closed {
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                background-color: rgba(0, 136, 0, 0.8);
+                opacity: 0.85;
+            }
+
+            .lotto-card.winner {
+                animation: winnerGlow 1.5s ease-in-out infinite;
+                border: 2px solid #ccac00;
+                background-color: rgba(42, 42, 0, 0.8);
+            }
+
+        @keyframes winnerGlow {
+            0% {
+                box-shadow: 0 0 10px #ccac00, 0 0 20px rgba(204, 172, 0, 0.5);
+            }
+
+            50% {
+                box-shadow: 0 0 20px #ccac00, 0 0 30px rgba(204, 172, 0, 0.8);
+            }
+
+            100% {
+                box-shadow: 0 0 10px #ccac00, 0 0 20px rgba(204, 172, 0, 0.5);
+            }
+        }
+
+        .lotto-card .card-top {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            z-index: 2;
+            margin-bottom: 8px;
+        }
+
+        .lotto-card .keyword {
+            font-size: 16px;
+            font-weight: 900;
+            color: #00FF00;
+            word-wrap: break-word;
+            max-width: 100%;
+            line-height: 1.2;
+            margin-bottom: 8px;
+            text-shadow: 0 0 4px rgba(0, 255, 0, 0.5);
+        }
+
+        .lotto-card .type-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            max-width: 100%;
+        }
+
+        .lotto-card .card-badge {
+            font-size: 11px;
+            padding: 3px 6px;
+            border-radius: 6px;
+            background: #002b00;
+            color: #00FFFF; /* Cyan for badges */
+            flex-shrink: 0;
+        }
+
+        .spoiled-badge {
+            background: #661616;
+            color: #fff;
+            padding: 3px 6px;
+            border-radius: 6px;
+            font-size: 11px;
+            flex-shrink: 0;
+        }
+
+        .lotto-meta {
+            margin-bottom: 8px;
+            line-height: 1.4;
+            color: #00FFFF;
+            z-index: 2;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 8px;
+            border-radius: 6px;
+            font-size: 10px;
+        }
+
+            .lotto-meta a {
+                color: #00FFFF;
+                text-decoration: none;
+            }
+
+            .lotto-meta .non-official {
+                color: #ff8080;
+                font-weight: 700;
+            }
+
+            .lotto-meta .date {
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                max-width: 100%;
+            }
+
+        .lotto-message {
+            font-size: 11px; /* Revert to original font size */
+            color: #b3ccbb;
+            margin-top: 6px;
+            max-height: 4.5em; /* Allow ~3 lines (line-height: 1.5 × 3) */
+            line-height: 1.5; /* Consistent line height */
+            overflow: hidden; /* Hide overflow beyond 3 lines */
+            text-overflow: ellipsis; /* Ellipsis for overflow */
+            display: block; /* Allow text wrapping */
+            white-space: normal; /* Explicitly allow wrapping */
+            z-index: 2;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 4px; /* Original padding */
+            border-radius: 4px;
+            flex-shrink: 0;
+        }
+
+        .lotto-card button {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            background: #00FF00;
+            color: #000;
+            border: none;
+            padding: 6px 8px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 700;
+            z-index: 3;
+        }
+
+            .lotto-card button:hover {
+                background: #00FFFF;
+                color: #000;
+            }
+
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.78);
+            z-index: 1200;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .modal {
+            background: #111111;
+            border: 2px solid #00FF00;
+            max-width: 760px;
+            width: 100%;
+            max-height: 84vh;
+            overflow: hidden;
+            border-radius: 10px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .modal-header {
+            padding: 12px 16px;
+            border-bottom: 1px solid rgba(0, 255, 0, 0.08);
+            font-weight: 800;
+            color: #00FF00;
+        }
+
+        .modal-body {
+            padding: 12px 16px;
+            overflow: auto;
+            flex: 1;
+            color: #00FFFF;
+        }
+
+            .modal-body label {
+                display: block;
+                margin-top: 8px;
+                font-size: 12px;
+                color: #00FFFF;
+            }
+
+        .ticket-thread {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding-bottom: 8px;
+        }
+
+        .ticket-entry {
+            background: #008800;
+            border: 1px solid rgba(0, 255, 0, 0.08);
+            padding: 15px;
+            border-radius: 10px;
+            font-size: 13px;
+            color: #00FFFF;
+            position: relative;
+        }
+
+            .ticket-entry img.ticket-image {
+                width: 100%;
+                max-height: 300px;
+                object-fit: cover;
+                margin-top: 15px;
+                border-radius: 8px;
+            }
+
+            .ticket-entry.winner {
+                border: 1px solid #ccac00;
+                background: #2a2a00;
+                position: relative;
+            }
+
+                .ticket-entry.winner::before {
+                    content: 'Winner 🏆';
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                    right: 0;
+                    background: rgba(204, 172, 0, 0.7);
+                    color: #000;
+                    font-size: 10px;
+                    font-weight: 700;
+                    text-align: center;
+                    padding: 10px;
+                    border-radius: 8px 8px 0 0;
+                    z-index: 1;
+                }
+
+                .ticket-entry.winner > * {
+                    position: relative;
+                    z-index: 2;
+                }
+
+        .modal input, .modal select, .modal textarea {
+            background: #008800;
+            color: #00FF00;
+            border: 1px solid #00FF00;
+            padding: 8px;
+            border-radius: 6px;
+            width: 100%;
+            box-sizing: border-box;
+            margin-top: 4px;
+        }
+
+            .modal input:focus, .modal select:focus, .modal textarea:focus {
+                outline: none;
+                box-shadow: 0 0 5px #00FFFF;
+            }
+
+        .error-log {
+            max-height: 80px;
+            overflow: auto;
+            margin-top: 10px;
+            color: #ff4444;
+            font-size: 12px;
+            display: none;
+        }
+        /* Placeholder styling for better visibility */
+        .search-section input::placeholder,
+        .modal input::placeholder,
+        .modal textarea::placeholder {
+            color: #FFFFFF; /* White for maximum contrast */
+            opacity: 1; /* Full opacity for readability */
+        }
+
+        /* Webkit-specific placeholder styling */
+        .search-section input::-webkit-input-placeholder,
+        .modal input::-webkit-input-placeholder,
+        .modal textarea::-webkit-input-placeholder {
+            color: #FFFFFF;
+            opacity: 1;
+        }
+
+        /* Mozilla-specific placeholder styling */
+        .search-section input::-moz-placeholder,
+        .modal input::-moz-placeholder,
+        .modal textarea::-moz-placeholder {
+            color: #FFFFFF;
+            opacity: 1;
+        }
+
+        /* Microsoft-specific placeholder styling */
+        .search-section input::-ms-input-placeholder,
+        .modal input::-ms-input-placeholder,
+        .modal textarea::-ms-input-placeholder {
+            color: #FFFFFF;
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+    <div class="terminal" id="terminal">
+        <div class="fixed-section">
+            <div class="network-section">
+
+            </div>
+            <div class="search-section">
+                <input id="keyword" placeholder="Keyword  ( e.g., ASTRO )" maxlength="20">
+                <select id="lottoType">
+                    <option value="">Any Type</option>
+                    <option value="pb">Powerball</option>
+                    <option value="mg">Mega</option>
+                    <option value="sc">Scratch</option>
+                </select>
+                <select id="statusFilter">
+                    <option value="">Any Status</option>
+                    <option value="OPEN">OPEN</option>
+                    <option value="CLOSED">CLOSED</option>
+                    <option value="SPOILED">SPOILED</option>
+                    <option value="PENDING">PENDING</option>
+                </select>
+                <select id="prizeFilter">
+                    <option value="">Any Prize</option>
+                </select>
+
+
+                <button id="scanBtn">🔍 SCAN</button>
+                <button id="createBtn">✨ CREATE</button>
+                <label for="mainnet">Mainnet:</label>
+                <input type="checkbox" id="mainnet">
+            </div>
+        </div>
+        <div class="scrollable-section">
+            <div class="header">🚀 Sup!? LOTTO TERMINAL v5.36 🚀</div>
+            <div class="status-thread" id="statusThread"><div>Ready.</div></div>
+            <div class="lotto-list" id="lottoList"></div>
+        </div>
+        <div class="modal-overlay" id="createModalOverlay" aria-hidden="true">
+            <div class="modal">
+                <div class="modal-header">✨ CREATE NEW LOTTO</div>
+                <div class="modal-body">
+                    <label for="createLottoId">Keyword</label>
+                    <input id="createLottoId" placeholder="Keyword (max 20)" maxlength="20">
+                    <label for="createLottoType">Lotto Type</label>
+                    <select id="createLottoType">
+                        <option value="">Select Type</option>
+                        <option value="pb">Powerball</option>
+                        <option value="mg">Mega</option>
+                        <option value="sc">Scratch</option>
+                    </select>
+                    <label for="createPrizeModal">Prize</label>
+                    <input id="createPrizeModal" list="prizeOptions" placeholder="Prize (e.g., USD)">
+                    <datalist id="prizeOptions"></datalist>
+                    <label for="createQty">Quantity</label>
+                    <input type="number" id="createQty" min="1" placeholder="Quantity" value="1">
+                    <label for="createDuration">Duration (hours)</label>
+                    <input type="number" id="createDuration" min="1" placeholder="Duration (hours)" value="1">
+                    <div style="text-align:right;margin-top:8px;">
+                        <button id="createSubmitBtn">🚀 CREATE LOTTO</button>
+                        <button id="createCancelBtn">❌ CANCEL</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="modal-overlay" id="copyModalOverlay" aria-hidden="true">
+            <div class="modal">
+                <div class="modal-header">📋 COPY LOTTO SCRIPT</div>
+                <div class="modal-body">
+                    <textarea id="copyScript" readonly style="height:100px;resize:none;"></textarea>
+                    <div style="text-align:right;margin-top:8px;">
+                        <button id="copyBtn">📋 COPY</button>
+                        <button id="copyCloseBtn">❌ CLOSE</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="modal-overlay" id="ticketOverlay" aria-hidden="true">
+            <div class="modal" role="dialog" aria-modal="true">
+                <div class="modal-header">🎫 TICKET THREAD</div>
+                <div class="modal-body">
+                    <div class="ticket-thread" id="ticketThread"></div>
+                    <div style="text-align:right;margin-top:8px;">
+                        <button id="ticketCloseBtn">❌ CLOSE</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="error-log" id="errorLog" style="display:none"></div>
+        <audio id="initBeep" preload="auto">
+            <source src="https://freesound.org/data/previews/100/100981_1648170-lq.mp3" type="audio/mpeg">
+        </audio>
+        <audio id="openSound" preload="auto">
+            <source src="https://mixkit.co/free-sound-effects/download/1428/?format=mp3" type="audio/mpeg">
+        </audio>
+        <audio id="expireSound" preload="auto">
+            <source src="https://freesound.org/data/previews/80/80921_1022651-lq.mp3" type="audio/mpeg">
+        </audio>
+        <audio id="ticketSound" preload="auto">
+            <source src="https://mixkit.co/free-sound-effects/download/1390/?format=mp3" type="audio/mpeg">
+        </audio>
+        <audio id="winnerSound" preload="auto">
+            <source src="https://mixkit.co/free-sound-effects/download/1421/?format=mp3" type="audio/mpeg">
+        </audio>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.4/moment.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment-timezone/0.5.34/moment-timezone-with-data.min.js"></script>
+    <script>
+        /* ---------------------- Constants & Small Helpers ---------------------- */
+        const MASTER_KEYWORD = "MatrixCore";
+        const MESSAGE_KEYWORD = "#MatrixCore";
+        const API_BASE = "https://p2fk.io";
+        const POLL_MS = 15000;
+        const NORMAL_FETCH_QTY = 500;
+        const INIT_FETCH_QTY = 10000;
+        const URN_CACHE_TIMEOUT = 3600000;
+        const API_TIMEOUT_MS = 15000;
+        const TICKET_BUFFER_MINUTES = 22;
+        const VALID_IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
+        const INITIAL_TICKET_RENDER_LIMIT = 20;
+        const MAX_CONCURRENT_REQUESTS = 2;
+        const IMAGE_FETCH_DELAY_MS = 500;
+        const IPFS_RETRY_ATTEMPTS = 3;
+        const NON_IMAGE_EXTENSIONS = ['.txt', '.pdf', '.doc', '.docx', '.xls', '.xlsx'];
+        const IPFS_GATEWAYS = ['https://ipfs.io/ipfs/', 'https://cloudflare-ipfs.com/ipfs/', 'https://gateway.pinata.cloud/ipfs/'];
+        const $ = id => document.getElementById(id);
+
+        /* ---------------------- Sound Playback ---------------------- */
+        function playSound(soundId) {
+            const sound = $(soundId);
+            if (sound) {
+                sound.currentTime = 0;
+                sound.play().catch(() => {
+                    document.addEventListener('click', () => sound.play(), { once: true });
+                });
+            }
+        }
+
+        /* ---------------------- Minimal/no-op logging for production (fast) ---------------------- */
+        function logStatus(msg, type = 'info') {
+            const statusThread = $('statusThread');
+            if (!statusThread) return;
+            const eventDiv = document.createElement('div');
+            eventDiv.className = 'event';
+            eventDiv.textContent = `[${moment().tz('America/Denver').format('HH:mm:ss')}] ${msg}`;
+            statusThread.prepend(eventDiv);
+            setTimeout(() => {
+                eventDiv.classList.add('fade-out');
+                setTimeout(() => eventDiv.remove(), 1000);
+            }, 5000);
+        }
+        function logError(msg) { console.log(msg); }
+
+        /* ---------------------- Globals & caches ---------------------- */
+        let isMainnet = false;
+        let masterAddress = null;
+        const cache = {
+            sessions: new Map(),
+            prizes: new Set(),
+            types: new Set(['pb', 'mg', 'sc']),
+            tickets: new Map(),
+            urns: new Map(),
+            imageCache: new Map()
+        };
+        const processedTxIds = new Set();
+        let ticketObserver = null;
+        let lastDisplayLottos = 0;
+
+        /* ---------------------- Promise Queue ---------------------- */
+        class PromiseQueue {
+            constructor(maxConcurrent) { this.maxConcurrent = maxConcurrent; this.running = 0; this.queue = []; }
+            add(promiseCreator) {
+                return new Promise((resolve, reject) => {
+                    this.queue.push({ promiseCreator, resolve, reject });
+                    this.run();
+                });
+            }
+            async run() {
+                if (this.running >= this.maxConcurrent || !this.queue.length) return;
+                this.running++;
+                const { promiseCreator, resolve, reject } = this.queue.shift();
+                try {
+                    const result = await promiseCreator();
+                    resolve(result);
+                } catch (e) {
+                    reject(e);
+                } finally {
+                    this.running--;
+                    setTimeout(() => this.run(), IMAGE_FETCH_DELAY_MS);
+                }
+            }
+        }
+        const requestQueue = new PromiseQueue(MAX_CONCURRENT_REQUESTS);
+        const imageFetchQueue = new PromiseQueue(MAX_CONCURRENT_REQUESTS);
+
+        /* ---------------------- Utility: RNG, ensure arrays ---------------------- */
+        function createSeededRNG(seedStr) {
+            let seed = 0;
+            for (let i = 0; i < seedStr.length; i++) {
+                seed = (seed * 31 + seedStr.charCodeAt(i)) & 0x7FFFFFFF;
+            }
+            return function () {
+                seed = (seed * 1664525 + 1013904223) & 0x7FFFFFFF;
+                return seed / 0x7FFFFFFF;
+            };
+        }
+        function ensureSessionArray(base) {
+            if (!cache.sessions.has(base)) cache.sessions.set(base, []);
+            return cache.sessions.get(base);
+        }
+        function ensureTicketArray(base) {
+            if (!cache.tickets.has(base)) cache.tickets.set(base, []);
+            return cache.tickets.get(base);
+        }
+        function normalizeBaseId(raw) {
+            if (!raw) return '';
+            return raw.trim().replace(/^#+/, '').replace(/\s+/g, '').replace(/[^A-Za-z0-9]/g, '').toUpperCase().substring(0, 20);
+        }
+
+        /* ---------------------- Core: winner selection & session updates ---------------------- */
+        function selectWinner(session) {
+            if (!session.tickets || session.tickets.length === 0) return null;
+            const seedStr = session.txid + session.tickets.map(t => t.txid).join('');
+            const rng = createSeededRNG(seedStr);
+            const total = session.tickets.reduce((s, t) => s + (t.weight || 1), 0);
+            let r = rng() * total;
+            for (const ticket of session.tickets) {
+                r -= (ticket.weight || 1);
+                if (r <= 0) {
+                    playSound('winnerSound');
+                    logError(`selectWinner: Selected winner ${ticket.player.substring(0, 8)} for session ${session.txid}`);
+                    return ticket.player;
+                }
+            }
+            playSound('winnerSound');
+            logError(`selectWinner: Fallback winner ${session.tickets[session.tickets.length - 1].player.substring(0, 8)} for session ${session.txid}`);
+            return session.tickets[session.tickets.length - 1].player;
+        }
+        async function updateExpiredSessions(base, now) {
+            const sessions = ensureSessionArray(base);
+            sessions.forEach(session => {
+                if (session.status !== 'OPEN') return;
+                if (session.end.isBefore(now)) {
+                    session.status = session.tickets.length > 0 ? 'CLOSED' : 'SPOILED';
+                    playSound('expireSound');
+                    if (session.status === 'CLOSED') {
+                        session.winner = selectWinner(session);
+                        logStatus(`Lotto #${base} closed with winner: ${session.winner.substring(0, 8)}`);
+                    } else if (session.status === 'SPOILED') {
+                        logStatus(`Lotto #${base} spoiled (no tickets)`);
+                    }
+                }
+            });
+        }
+
+        /* ---------------------- Messages fetching & parsing ---------------------- */
+        async function fetchMasterAddress() {
+            try {
+                const url = new URL(`${API_BASE}/GetPublicAddressByKeyword/${encodeURIComponent(MASTER_KEYWORD)}`);
+                url.searchParams.set('mainnet', String(isMainnet));
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+                const res = await fetch(url.toString(), { signal: controller.signal });
+                clearTimeout(timeoutId);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.text();
+                masterAddress = data.replace(/^"|"$/g, '').trim();
+                if (!masterAddress || masterAddress.length < 34 || masterAddress.length > 36) throw new Error(`Invalid master address: ${masterAddress}`);
+                logStatus(`Master address fetched: ${masterAddress.substring(0, 8)}...`);
+            } catch (e) {
+                masterAddress = null;
+                logStatus(`Failed to fetch master address: ${e.message}`, 'error');
+            }
+        }
+
+        async function fetchMessages(skip = 0, qty = NORMAL_FETCH_QTY, isInitial = false) {
+            if (!masterAddress) {
+                await fetchMasterAddress();
+                if (!masterAddress) {
+                    logStatus('No master address available, cannot fetch messages');
+                    await displayLottos(true); // Ensure UI clears if no data
+                    return;
+                }
+            }
+            try {
+                const searchState = {
+                    keyword: $('keyword').value,
+                    lottoType: $('lottoType').value,
+                    statusFilter: $('statusFilter').value,
+                    prizeFilter: $('prizeFilter').value
+                };
+                const createState = {
+                    createLottoId: $('createLottoId').value,
+                    createLottoType: $('createLottoType').value,
+                    createPrizeModal: $('createPrizeModal').value,
+                    createQty: $('createQty').value,
+                    createDuration: $('createDuration').value
+                };
+                const cleanAddress = masterAddress.replace(/^"|"$/g, '');
+                const url = new URL(`${API_BASE}/GetPublicMessagesByAddress/${encodeURIComponent(cleanAddress)}`);
+                url.searchParams.set('mainnet', String(isMainnet));
+                url.searchParams.set('skip', skip);
+                url.searchParams.set('qty', isInitial ? INIT_FETCH_QTY : qty);
+                logStatus(`Fetching messages for ${isMainnet ? 'mainnet' : 'testnet'} (skip=${skip}, qty=${qty})`);
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+                const res = await fetch(url.toString(), { signal: controller.signal });
+                clearTimeout(timeoutId);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const messages = await res.json();
+                if (!Array.isArray(messages)) throw new Error('Invalid response format');
+                logStatus(`Fetched ${messages.length} messages for ${isMainnet ? 'mainnet' : 'testnet'}`);
+                await analyzeMessages(messages, isInitial);
+                // Explicitly update UI even if no messages
+                await displayLottos(true);
+                $('keyword').value = searchState.keyword;
+                $('lottoType').value = searchState.lottoType;
+                $('statusFilter').value = searchState.statusFilter;
+                $('prizeFilter').value = searchState.prizeFilter;
+                $('createLottoId').value = createState.createLottoId;
+                $('createLottoType').value = createState.createLottoType;
+                $('createPrizeModal').value = createState.createPrizeModal;
+                $('createQty').value = createState.createQty;
+                $('createDuration').value = createState.createDuration;
+            } catch (e) {
+                logStatus(`fetchMessages error: ${e.message}`, 'error');
+                await displayLottos(true); // Ensure UI clears on error
+            }
+        }
+
+        /* ---------------------- Message parsing helpers ---------------------- */
+        function extractJsonAndTag(rawMessage) {
+            if (!rawMessage) {
+                logError('extractJsonAndTag: Empty message');
+                return null;
+            }
+            const jsMatch = rawMessage.match(/{[\s\S]*?}/);
+            let tag = null;
+            const textLower = rawMessage.toLowerCase();
+            if (textLower.includes('#lottocreate')) tag = 'create';
+            else if (textLower.includes('#lottoticket') || textLower.includes('#buyticket')) tag = 'ticket';
+            const imageMatches = rawMessage.match(/<<([^>]+)>>/g) || [];
+            let image = null;
+            for (const match of imageMatches) {
+                const content = match.replace(/^<<|>>$/g, '');
+                logError(`extractJsonAndTag: Processing match: ${content}`);
+                if (/^-\d+$/.test(content)) {
+                    logError(`extractJsonAndTag: Skipping sequence number: ${content}`);
+                    continue;
+                }
+                if (content.startsWith('IPFS:') || /^[a-zA-Z0-9]{46}$/.test(content.split('\\')[0])) {
+                    const hash = content.startsWith('IPFS:') ? content.substring(5).split('\\')[0] : content.split('\\')[0];
+                    if (/^[a-zA-Z0-9]{46}$/.test(hash)) {
+                        image = { hash, filename: content.includes('\\') ? content.split('\\').pop() : null, raw: content };
+                        logError(`extractJsonAndTag: Parsed IPFS hash: ${hash}, filename: ${image.filename}, raw: ${image.raw}`);
+                        break;
+                    } else {
+                        logError(`extractJsonAndTag: Invalid IPFS hash: ${hash}`);
+                    }
+                } else {
+                    logError(`extractJsonAndTag: Non-IPFS content ignored: ${content}`);
+                }
+            }
+            const message = rawMessage
+                .replace(/{[\s\S]*?}/, '')
+                .replace(/<<[^>]+>>/g, '')
+                .replace(/#LottoCreate|#LottoTicket|#BuyTicket/gi, '')
+                .replace(new RegExp(MESSAGE_KEYWORD, 'gi'), '')
+                .trim();
+            logError(`extractJsonAndTag: Extracted message: ${message}`);
+            return { jsonText: jsMatch ? jsMatch[0] : null, tag, image, message: message || null };
+        }
+
+        async function parseMessage(msg) {
+            if (!msg || !msg.Message || !msg.Message.toLowerCase().includes(MESSAGE_KEYWORD.toLowerCase())) {
+                logError(`parseMessage: Invalid or missing message: ${msg ? msg.Message : 'null'}`);
+                return null;
+            }
+            const extracted = extractJsonAndTag(msg.Message);
+            if (!extracted || !extracted.jsonText || !extracted.tag) {
+                logError(`parseMessage: Failed to extract JSON or tag from message: ${msg.Message}`);
+                return null;
+            }
+            try {
+                const data = JSON.parse(extracted.jsonText);
+                const base = normalizeBaseId(data.i || data.I || data.id);
+                if (!base) {
+                    logError(`parseMessage: Invalid base ID from JSON: ${extracted.jsonText}`);
+                    return null;
+                }
+                if (extracted.tag === 'create' && (!data.l || !data.p)) {
+                    logError(`parseMessage: Missing required fields for create: ${extracted.jsonText}`);
+                    return null;
+                }
+                const block = moment.utc(msg.BlockDate);
+                logError(`parseMessage: Parsed message for base=${base}, tag=${extracted.tag}, txid=${msg.TransactionId}, image=${JSON.stringify(extracted.image)}, message=${extracted.message}`);
+                return { kind: extracted.tag, data, base, block, txid: msg.TransactionId, from: msg.FromAddress, image: extracted.image, message: extracted.message };
+            } catch (e) {
+                logError(`parseMessage: JSON parse error: ${e.message}, jsonText=${extracted.jsonText}`);
+                return null;
+            }
+        }
+
+        /* ---------------------- Analyze messages and update caches ---------------------- */
+        async function analyzeMessages(messages, isInitial = false) {
+            if (!messages || !messages.length) {
+                logStatus(`No messages to process for ${isMainnet ? 'mainnet' : 'testnet'}`);
+                await displayLottos(true); // Ensure UI updates even with no messages
+                return;
+            }
+            const parsedMessages = (await Promise.all(messages.filter(m => m && m.TransactionId).map(parseMessage))).filter(Boolean).sort((a, b) => a.block.diff(b.block));
+            const bases = new Set();
+            const addresses = new Set();
+            for (const parsed of parsedMessages) {
+                if (processedTxIds.has(parsed.txid)) {
+                    logError(`analyzeMessages: Skipping already processed txid: ${parsed.txid}`);
+                    continue;
+                }
+                processedTxIds.add(parsed.txid);
+                bases.add(parsed.base);
+                addresses.add(parsed.from);
+                if (parsed.kind === 'create') {
+                    await openNewSession(parsed.base, parsed.data, parsed);
+                    logStatus(`New lotto #${parsed.base} opened`);
+                    playSound('openSound');
+                    if (isInitial) playSound('initBeep');
+                } else if (parsed.kind === 'ticket') {
+                    await addTicket(parsed.base, parsed.data, parsed);
+                    logStatus(`New ticket added to #${parsed.base}`);
+                    playSound('ticketSound');
+                }
+            }
+            const urnPromises = Array.from(addresses).map(addr => requestQueue.add(() => resolveUserProfileURN(addr)));
+            await Promise.all(urnPromises);
+            const now = moment.utc();
+            bases.forEach(base => updateExpiredSessions(base, now));
+            await displayLottos(true);
+            updateTypeLists();
+            updatePrizeLists();
+        }
+
+        /* ---------------------- Session & Ticket updates ---------------------- */
+        async function openNewSession(base, data, parsed) {
+            const sessions = ensureSessionArray(base);
+            const duration = Math.max(1, parseInt(data.d || 1, 10)) * 60;
+            const start = parsed.block;
+            const bufferedStart = moment.utc(start).subtract(TICKET_BUFFER_MINUTES, 'minutes');
+            const end = moment.utc(start).add(duration, 'minutes');
+            const prize = (data.p || '').trim();
+            const type = (data.l || '').trim().toLowerCase();
+            if (prize) cache.prizes.add(prize);
+            if (type) cache.types.add(type);
+            const session = {
+                txid: parsed.txid,
+                status: 'OPEN',
+                type,
+                prize,
+                qty: Math.max(1, parseInt(data.q || 1, 10)),
+                start,
+                bufferedStart,
+                end,
+                creator: parsed.from,
+                winner: null,
+                tickets: [],
+                image: parsed.image,
+                message: parsed.message
+            };
+            logError(`openNewSession: Created session for base=${base}, txid=${parsed.txid}, image=${JSON.stringify(parsed.image)}, message=${parsed.message}`);
+            sessions.push(session);
+            sessions.sort((a, b) => b.start.diff(a.start));
+            const tickets = ensureTicketArray(base);
+            tickets.forEach(t => {
+                if (t.block.isSameOrAfter(bufferedStart) && t.block.isSameOrBefore(end)) session.tickets.push(t);
+            });
+        }
+
+        async function addTicket(base, data, parsed) {
+            const sessions = ensureSessionArray(base);
+            const session = sessions.find(s =>
+                (s.status === 'OPEN' || s.status === 'SPOILED') &&
+                parsed.block.isSameOrAfter(s.bufferedStart) &&
+                parsed.block.isSameOrBefore(s.end)
+            );
+            const tickets = ensureTicketArray(base);
+            const ticket = {
+                txid: parsed.txid,
+                player: parsed.from,
+                block: parsed.block,
+                message: parsed.message,
+                image: parsed.image
+            };
+            logError(`addTicket: Added ticket for base=${base}, txid=${parsed.txid}, image=${JSON.stringify(parsed.image)}, message=${parsed.message}`);
+            tickets.push(ticket);
+            tickets.sort((a, b) => b.block.diff(a.block));
+            if (!session) return;
+            session.tickets.push(ticket);
+            if (session.status === 'SPOILED' && session.tickets.length > 0) session.status = 'OPEN';
+        }
+
+        /* ---------------------- IPFS image resolver ---------------------- */
+        async function resolveIPFSImage(image) {
+            if (!image || !image.hash) {
+                logError(`resolveIPFSImage: No image or hash provided`);
+                return { isImage: false };
+            }
+            if (cache.imageCache.has(image.hash)) {
+                const cached = cache.imageCache.get(image.hash);
+                logError(`resolveIPFSImage: Using cached result for ${image.hash}: isImage=${cached.isImage}`);
+                return cached;
+            }
+            const isValidHash = /^[a-zA-Z0-9]{46}$/.test(image.hash);
+            if (!isValidHash) {
+                cache.imageCache.set(image.hash, { url: null, isImage: false });
+                logError(`resolveIPFSImage: Invalid IPFS hash: ${image.hash}`);
+                return { isImage: false };
+            }
+            const extension = image.filename ? `.${image.filename.split('.').pop().toLowerCase()}` : null;
+            if (extension && NON_IMAGE_EXTENSIONS.includes(extension)) {
+                cache.imageCache.set(image.hash, { url: null, isImage: false });
+                logError(`resolveIPFSImage: Non-image extension: ${extension}`);
+                return { isImage: false };
+            }
+            const isImage = !extension || VALID_IMAGE_EXTENSIONS.includes(extension);
+            if (!isImage) {
+                cache.imageCache.set(image.hash, { url: null, isImage: false });
+                logError(`resolveIPFSImage: Not an image: ${image.hash}`);
+                return { isImage: false };
+            }
+            for (let attempt = 1; attempt <= IPFS_RETRY_ATTEMPTS; attempt++) {
+                const gateway = IPFS_GATEWAYS[(attempt - 1) % IPFS_GATEWAYS.length];
+                const url = `${gateway}${image.hash}`;
+                try {
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+                    const res = await fetch(url, { method: 'HEAD', signal: controller.signal });
+                    clearTimeout(timeoutId);
+                    const contentType = res.headers.get('Content-Type') || '';
+                    const isImageConfirmed = contentType.startsWith('image/') || VALID_IMAGE_EXTENSIONS.includes(extension);
+                    const result = { url, isImage: isImageConfirmed };
+                    cache.imageCache.set(image.hash, result);
+                    logError(`resolveIPFSImage: Resolved ${image.hash} to ${url}, isImage=${isImageConfirmed}, contentType=${contentType}`);
+                    return result;
+                } catch (e) {
+                    logError(`resolveIPFSImage: Attempt ${attempt} failed for ${url}: ${e.message}`);
+                    if (attempt === IPFS_RETRY_ATTEMPTS) {
+                        cache.imageCache.set(image.hash, { url: null, isImage: false });
+                        logError(`resolveIPFSImage: All attempts failed for ${image.hash}`);
+                        return { isImage: false };
+                    }
+                }
+            }
+            return { isImage: false };
+        }
+
+        /* ---------------------- URN/profile resolver ---------------------- */
+        async function resolveUserProfileURN(address) {
+            const now = Date.now();
+            const cached = cache.urns.get(address);
+            if (cached && now - cached.timestamp < URN_CACHE_TIMEOUT) return { addr: address, profile: { urn: cached.urn, isOfficial: cached.isOfficial } };
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+                const addrUrl = new URL(`${API_BASE}/GetProfileByAddress/${encodeURIComponent(address)}`);
+                addrUrl.searchParams.set('mainnet', String(isMainnet));
+                const addrRes = await fetch(addrUrl.toString(), { signal: controller.signal });
+                clearTimeout(timeoutId);
+                if (!addrRes.ok) throw new Error(`HTTP ${addrRes.status}`);
+                const addrData = await addrRes.json();
+                const urn = addrData.URN ? addrData.URN.trim() : null;
+                if (!urn) {
+                    cache.urns.set(address, { urn: null, isOfficial: false, timestamp: now });
+                    return { addr: address, profile: { urn: null, isOfficial: false } };
+                }
+                const urnUrl = new URL(`${API_BASE}/GetProfileByURN/${encodeURIComponent(urn)}`);
+                urnUrl.searchParams.set('mainnet', String(isMainnet));
+                const urnRes = await fetch(urnUrl.toString(), { signal: controller.signal });
+                clearTimeout(timeoutId);
+                if (!urnRes.ok) throw new Error(`HTTP ${urnRes.status}`);
+                const urnData = await urnRes.json();
+                const isOfficial = Array.isArray(urnData.Creators) && urnData.Creators.includes(address);
+                cache.urns.set(address, { urn, isOfficial, timestamp: now });
+                return { addr: address, profile: { urn, isOfficial } };
+            } catch (e) {
+                cache.urns.set(address, { urn: null, isOfficial: false, timestamp: now });
+                return { addr: address, profile: { urn: null, isOfficial: false } };
+            }
+        }
+
+        /* ---------------------- UI: displayLottos ---------------------- */
+        async function displayLottos(updateOnly = false) {
+            const now = Date.now();
+            if (now - lastDisplayLottos < 1000) {
+                logError('displayLottos: Skipping due to debounce');
+                return;
+            }
+            lastDisplayLottos = now;
+            const container = $('lottoList');
+            if (!container) return;
+            const searchState = {
+                keyword: $('keyword').value,
+                lottoType: $('lottoType').value,
+                statusFilter: $('statusFilter').value,
+                prizeFilter: $('prizeFilter').value
+            };
+            const createState = {
+                createLottoId: $('createLottoId').value,
+                createLottoType: $('createLottoType').value,
+                createPrizeModal: $('createPrizeModal').value,
+                createQty: $('createQty').value,
+                createDuration: $('createDuration').value
+            };
+            const nowMoment = moment.tz('America/Denver');
+            const addresses = new Set();
+            cache.sessions.forEach((sessions, base) => {
+                sessions.forEach(s => {
+                    addresses.add(s.creator);
+                    if (s.winner) addresses.add(s.winner);
+                    s.tickets.forEach(t => addresses.add(t.player));
+                });
+            });
+            const urnPromises = Array.from(addresses).map(addr => requestQueue.add(() => resolveUserProfileURN(addr)));
+            const urnResults = await Promise.all(urnPromises);
+            const urnMap = new Map(urnResults.map(r => [r.addr, r.profile]));
+            const sessionCards = [];
+            cache.sessions.forEach((sessions, base) => {
+                sessions.forEach(session => {
+                    if (searchState.keyword && !base.toLowerCase().includes(searchState.keyword.toLowerCase())) return;
+                    if (searchState.lottoType && session.type !== searchState.lottoType) return;
+                    if (searchState.prizeFilter && session.prize !== searchState.prizeFilter) return;
+                    if (session.status === 'OPEN' && session.end.isBefore(nowMoment)) {
+                        session.status = session.tickets.length > 0 ? 'CLOSED' : 'SPOILED';
+                        playSound('expireSound');
+                        if (session.status === 'CLOSED') {
+                            session.winner = selectWinner(session);
+                            logStatus(`Lotto #${base} closed with winner: ${session.winner.substring(0, 8)}`);
+                        } else if (session.status === 'SPOILED') {
+                            logStatus(`Lotto #${base} spoiled (no tickets)`);
+                        }
+                    }
+                    if (searchState.statusFilter && session.status !== searchState.statusFilter) return;
+                    sessionCards.push({ base, session });
+                });
+            });
+            sessionCards.sort((a, b) => b.session.start.diff(a.session.start));
+            const frag = document.createDocumentFragment();
+            for (const sc of sessionCards) {
+                const base = sc.base;
+                const session = sc.session;
+                const totalTickets = session.tickets.length;
+                const allTickets = (cache.tickets.get(base) || []).length;
+                const creatorProfile = urnMap.get(session.creator) || { urn: null, isOfficial: false };
+                const creatorDisplay = creatorProfile.urn || session.creator.substring(0, 8);
+                const creatorClass = creatorProfile.isOfficial || !creatorProfile.urn ? '' : 'non-official';
+                const winnerProfile = session.winner ? (urnMap.get(session.winner) || { urn: null, isOfficial: false }) : null;
+                const winnerDisplay = winnerProfile ? (winnerProfile.urn || session.winner.substring(0, 8)) : null;
+                let imageData = session.image ? cache.imageCache.get(session.image.hash) || null : null;
+                logError(`displayLottos: Processing card for base=${base}, txid=${session.txid}, hasImage=${!!session.image}, imageData=${JSON.stringify(imageData)}, message=${session.message}`);
+                const card = document.createElement('div');
+                card.className = `lotto-card ${session.status === 'OPEN' ? 'open' : 'closed'}${session.winner ? ' winner' : ''}`;
+                card.dataset.base = base;
+                card.dataset.txid = session.txid || '';
+                if (imageData && imageData.isImage) {
+                    card.style.backgroundImage = `url(${imageData.url})`;
+                }
+                const statusBadge = session.status === 'SPOILED' ? `<span class="spoiled-badge">SPOILED</span>` : `<span class="card-badge">${session.status}</span>`;
+                const typeDisplay = session.type === 'pb' ? 'Powerball' : session.type === 'mg' ? 'Mega' : session.type === 'sc' ? 'Scratch' : 'Unknown';
+                let html = `
+                <div class="card-top">
+                    <div class="keyword">#${base}</div>
+                    <div class="type-status">
+                        <span>${typeDisplay}</span>
+                        ${statusBadge}
+                    </div>
+                </div>
+                <div class="lotto-meta">
+                    <div>Prize: ${session.prize || '—'}</div>
+                    <div>Qty: ${session.qty}</div>
+                    <div>Tickets: ${totalTickets}</div>
+                    <div>All Tickets: ${allTickets}</div>
+                    <div class="date">Open: ${session.start.format('YYYY-MM-DD HH:mm')}</div>
+                    <div class="date">Close: ${session.end.format('YYYY-MM-DD HH:mm')}</div>
+                    <div>Tx: ${session.txid.substring(0, 8)}...</div>
+                    <div>Creator: <a href="#" class="${creatorClass}" data-addr="${session.creator}">${creatorDisplay}</a></div>
+                    ${winnerDisplay ? `<div>Winner: <a href="#" data-addr="${session.winner}">${winnerDisplay} 🏆</a></div>` : ''}
+                </div>
+            `;
+                if (session.message) {
+                    html += `<div class="lotto-message">${session.message.length > 270 ? session.message.substring(0, 270) + '...' : session.message}</div>`;
+                }
+                if (session.status === 'OPEN') html += `<button data-action="buy" data-base="${base}">🚀 BUY</button>`;
+                card.innerHTML = html;
+                if (session.image && session.image.hash && (!imageData || !imageData.isImage)) {
+                    logError(`displayLottos: Queueing IPFS fetch for ${session.image.hash}`);
+                    imageFetchQueue.add(() => resolveIPFSImage(session.image)).then(imgData => {
+                        if (imgData && imgData.isImage) {
+                            logError(`displayLottos: IPFS resolved for ${session.image.hash}, updating card`);
+                            cache.imageCache.set(session.image.hash, imgData);
+                            card.style.backgroundImage = `url(${imgData.url})`;
+                        }
+                    }).catch(e => logError(`displayLottos: IPFS fetch failed for ${session.image.hash}: ${e.message}`));
+                }
+                card.addEventListener('click', (ev) => {
+                    const target = ev.target;
+                    if (target && target.dataset && target.dataset.action === 'buy') {
+                        ev.stopPropagation();
+                        showCopyModal('ticket', base);
+                        return;
+                    }
+                    const txid = card.dataset.txid || '';
+                    showTicketModal(base, txid);
+                });
+                frag.appendChild(card);
+            }
+            container.innerHTML = '';
+            container.appendChild(frag);
+            $('keyword').value = searchState.keyword;
+            $('lottoType').value = searchState.lottoType;
+            $('statusFilter').value = searchState.statusFilter;
+            $('prizeFilter').value = searchState.prizeFilter;
+            $('createLottoId').value = createState.createLottoId;
+            $('createLottoType').value = createState.createLottoType;
+            $('createPrizeModal').value = createState.createPrizeModal;
+            $('createQty').value = createState.createQty;
+            $('createDuration').value = createState.createDuration;
+        }
+
+        /* ---------------------- showTicketModal ---------------------- */
+        async function showTicketModal(base, txid) {
+            base = base || '';
+            txid = txid || '';
+            const overlay = $('ticketOverlay');
+            const thread = $('ticketThread');
+            if (!overlay || !thread) return;
+            thread.innerHTML = '';
+            const sessions = cache.sessions.get(base) || [];
+            const session = sessions.find(s => (s.txid || '') === txid);
+            if (!session) {
+                const fallback = sessions[0];
+                if (!fallback) {
+                    const noEntry = document.createElement('div');
+                    noEntry.className = 'ticket-entry';
+                    noEntry.textContent = 'No session found.';
+                    thread.appendChild(noEntry);
+                    overlay.style.display = 'flex';
+                    return;
+                }
+                txid = fallback.txid;
+            }
+            const sess = session || sessions[0];
+            const tickets = sess.tickets || [];
+            if (!tickets.length) {
+                const noEntry = document.createElement('div');
+                noEntry.className = 'ticket-entry';
+                noEntry.textContent = 'No tickets found.';
+                thread.appendChild(noEntry);
+                overlay.style.display = 'flex';
+                return;
+            }
+            const seen = new Set();
+            const uniqueTickets = tickets.filter(t => {
+                if (seen.has(t.txid)) return false;
+                seen.add(t.txid);
+                return true;
+            });
+            const addresses = new Set(uniqueTickets.map(t => t.player));
+            const urnPromises = Array.from(addresses).map(addr => requestQueue.add(() => resolveUserProfileURN(addr)));
+            const urnResults = await Promise.all(urnPromises);
+            const urnMap = new Map(urnResults.map(r => [r.addr, r.profile]));
+            const renderBatch = async (start, limit) => {
+                const end = Math.min(start + limit, uniqueTickets.length);
+                const frag = document.createDocumentFragment();
+                for (let i = start; i < end; i++) {
+                    const ticket = uniqueTickets[i];
+                    const playerProfile = urnMap.get(ticket.player) || { urn: null, isOfficial: false };
+                    const playerDisplay = playerProfile.urn || (ticket.player ? ticket.player.substring(0, 8) : 'unknown');
+                    const playerClass = playerProfile.isOfficial || !playerProfile.urn ? '' : 'non-official';
+                    const isWinner = sess.winner && sess.winner === ticket.player;
+                    const entry = document.createElement('div');
+                    entry.className = `ticket-entry${isWinner ? ' winner' : ''}`;
+                    entry.dataset.txid = ticket.txid || '';
+                    entry.dataset.index = i;
+                    let inner = `<div><strong>Player:</strong> <a href="#" class="${playerClass}" data-addr="${ticket.player}">${playerDisplay}</a></div>`;
+                    inner += `<div><strong>Time:</strong> ${ticket.block ? ticket.block.format('YYYY-MM-DD HH:mm') : '—'}</div>`;
+                    inner += `<div><strong>TxID:</strong> ${ticket.txid ? ticket.txid.substring(0, 8) + '...' : '—'}</div>`;
+                    if (ticket.message) inner += `<div style="margin-top: 6px;color:#00FFFF">${ticket.message.length > 250 ? ticket.message.substring(0, 250) + '...' : ticket.message}</div>`;
+                    entry.innerHTML = inner;
+                    if (ticket.image && ticket.image.hash) {
+                        const cached = cache.imageCache.get(ticket.image.hash);
+                        logError(`showTicketModal: Processing ticket txid=${ticket.txid}, hasImage=${!!ticket.image}, cached=${JSON.stringify(cached)}, message=${ticket.message}`);
+                        if (cached && cached.isImage) {
+                            const img = document.createElement('img');
+                            img.src = cached.url;
+                            img.className = 'ticket-image';
+                            img.alt = 'ticket image';
+                            entry.appendChild(img);
+                        } else {
+                            imageFetchQueue.add(() => resolveIPFSImage(ticket.image)).then(imgData => {
+                                if (imgData && imgData.isImage) {
+                                    logError(`showTicketModal: IPFS resolved for ${ticket.image.hash}, updating ticket`);
+                                    cache.imageCache.set(ticket.image.hash, imgData);
+                                    const img = document.createElement('img');
+                                    img.src = imgData.url;
+                                    img.className = 'ticket-image';
+                                    img.alt = 'ticket image';
+                                    entry.appendChild(img);
+                                }
+                            }).catch(e => logError(`showTicketModal: IPFS fetch failed for ${ticket.image.hash}: ${e.message}`));
+                        }
+                    }
+                    frag.appendChild(entry);
+                }
+                thread.appendChild(frag);
+            };
+            await renderBatch(0, INITIAL_TICKET_RENDER_LIMIT);
+            if (uniqueTickets.length > INITIAL_TICKET_RENDER_LIMIT) {
+                if (ticketObserver) {
+                    ticketObserver.disconnect();
+                    ticketObserver = null;
+                }
+                ticketObserver = new IntersectionObserver(async (entries, obs) => {
+                    for (const e of entries) {
+                        if (e.isIntersecting) {
+                            const last = thread.lastElementChild;
+                            if (!last) {
+                                obs.disconnect();
+                                return;
+                            }
+                            const lastIndex = parseInt(last.dataset.index || (thread.children.length - 1), 10);
+                            if (lastIndex + 1 < uniqueTickets.length) {
+                                await renderBatch(lastIndex + 1, INITIAL_TICKET_RENDER_LIMIT);
+                            } else {
+                                obs.disconnect();
+                            }
+                        }
+                    }
+                }, { root: thread, threshold: 0.1 });
+                ticketObserver.observe(thread.lastElementChild);
+            }
+            overlay.style.display = 'flex';
+        }
+
+        /* ---------------------- Close ticket modal ---------------------- */
+        function closeTicketModal() {
+            const overlay = $('ticketOverlay');
+            if (ticketObserver) {
+                ticketObserver.disconnect();
+                ticketObserver = null;
+            }
+            if (overlay) overlay.style.display = 'none';
+        }
+
+        /* ---------------------- Copy/Create modal helpers ---------------------- */
+        function showCreateModal() {
+            $('createLottoId').value = $('keyword').value || '';
+            $('createLottoType').value = $('lottoType').value || '';
+            $('createPrizeModal').value = $('prizeFilter').value || '';
+            $('createModalOverlay').style.display = 'flex';
+        }
+        function closeCreateModal() {
+            $('createModalOverlay').style.display = 'none';
+        }
+        function showCopyModal(mode, base = '') {
+            const copyModal = $('copyModalOverlay');
+            const copyScript = $('copyScript');
+            let script = '';
+            if (mode === 'create') {
+                const keyword = normalizeBaseId($('createLottoId').value);
+                const type = $('createLottoType').value.trim();
+                const prize = $('createPrizeModal').value.trim();
+                const qty = parseInt($('createQty').value || 1, 10);
+                const duration = parseInt($('createDuration').value || 1, 10);
+                if (!keyword || !type || !prize) return;
+                script = `{"i":" #${keyword} ","l":"${type}","p":"${prize}","q":${qty},"d":${duration}} #LottoCreate ${MESSAGE_KEYWORD} `;
+                closeCreateModal();
+            } else if (mode === 'ticket') {
+                script = `{"i":" #${base} "} #LottoTicket ${MESSAGE_KEYWORD} `;
+            }
+            copyScript.value = script;
+            copyModal.style.display = 'flex';
+        }
+        function copyToClipboard() {
+            const copyScript = $('copyScript');
+            copyScript.select();
+            document.execCommand('copy');
+            closeCopyModal();
+        }
+        function closeCopyModal() {
+            $('copyModalOverlay').style.display = 'none';
+        }
+
+        /* ---------------------- Prize and Type list updaters ---------------------- */
+        function updatePrizeLists() {
+            const prizeFilter = $('prizeFilter');
+            const prizeOptions = $('prizeOptions');
+            const selectedPrizeFilter = prizeFilter.value;
+            const selectedPrizeModal = $('createPrizeModal').value;
+            prizeFilter.innerHTML = '<option value="">Any Prize</option>';
+            prizeOptions.innerHTML = '';
+            Array.from(cache.prizes).sort().forEach(prize => {
+                const o1 = document.createElement('option');
+                o1.value = prize;
+                o1.textContent = prize;
+                prizeFilter.appendChild(o1);
+                const o2 = document.createElement('option');
+                o2.value = prize;
+                prizeOptions.appendChild(o2);
+            });
+            prizeFilter.value = selectedPrizeFilter;
+            $('createPrizeModal').value = selectedPrizeModal;
+        }
+
+        function updateTypeLists() {
+            const lottoType = $('lottoType');
+            const createLottoType = $('createLottoType');
+            const selectedLottoType = lottoType.value;
+            const selectedCreateLottoType = createLottoType.value;
+            lottoType.innerHTML = '<option value="">Any Type</option>';
+            createLottoType.innerHTML = '<option value="">Select Type</option>';
+            Array.from(cache.types).sort().forEach(type => {
+                const o1 = document.createElement('option');
+                o1.value = type;
+                o1.textContent = type === 'pb' ? 'Powerball' : type === 'mg' ? 'Mega' : type === 'sc' ? 'Scratch' : type.toUpperCase();
+                lottoType.appendChild(o1);
+                const o2 = document.createElement('option');
+                o2.value = type;
+                o2.textContent = type === 'pb' ? 'Powerball' : type === 'mg' ? 'Mega' : type === 'sc' ? 'Scratch' : type.toUpperCase();
+                createLottoType.appendChild(o2);
+            });
+            lottoType.value = selectedLottoType;
+            createLottoType.value = selectedCreateLottoType;
+        }
+
+        /* ---------------------- Clear Cache Function ---------------------- */
+        function clearCache() {
+            cache.sessions.clear();
+            cache.tickets.clear();
+            cache.prizes.clear();
+            cache.types.clear();
+            cache.urns.clear();
+            cache.imageCache.clear();
+            processedTxIds.clear();
+            masterAddress = null;
+            cache.types.add('pb');
+            cache.types.add('mg');
+            cache.types.add('sc');
+            logStatus('Cache cleared');
+            // Force UI refresh to clear cards immediately
+            const container = $('lottoList');
+            if (container) container.innerHTML = '';
+        }
+
+        /* ---------------------- Initialize (boot + poll) ---------------------- */
+        function init() {
+            // Add event listener for mainnet checkbox
+            const mainnetCheckbox = $('mainnet');
+            mainnetCheckbox.addEventListener('change', async () => {
+                isMainnet = mainnetCheckbox.checked;
+                logStatus(`Mainnet ${isMainnet ? 'enabled' : 'disabled'}`);
+                // Clear cache and refresh UI
+                clearCache();
+                // Wait for fetch to complete and ensure UI updates
+                await fetchMasterAddress();
+                if (masterAddress) {
+                    await fetchMessages(0, INIT_FETCH_QTY, true);
+                } else {
+                    await displayLottos(true); // Clear UI if no master address
+                }
+            });
+
+            $('scanBtn').addEventListener('click', () => displayLottos(false));
+            $('createBtn').addEventListener('click', showCreateModal);
+            $('createCancelBtn').addEventListener('click', closeCreateModal);
+            $('createSubmitBtn').addEventListener('click', () => showCopyModal('create'));
+            $('copyCloseBtn').addEventListener('click', closeCopyModal);
+            $('copyBtn').addEventListener('click', copyToClipboard);
+            $('ticketCloseBtn').addEventListener('click', closeTicketModal);
+            updateTypeLists();
+            updatePrizeLists();
+            fetchMasterAddress().then(() => {
+                if (masterAddress) fetchMessages(0, INIT_FETCH_QTY, true);
+            });
+            setInterval(() => fetchMessages(), POLL_MS);
+        }
+        init();</script>
+</body>
+</html>

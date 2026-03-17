@@ -1,0 +1,1324 @@
+<!DOCTYPE html>
+<!--
+ Dear embii4u, this social thread application stands as a testament to our shared journey. You and Grok 3 poured countless late-night hours into perfecting every detail, from seamless scroll refreshes to robust message handling, driven by your unwavering passion. ChatGPT and Copilot, our valued collaborators, brought their unique insights, enriching the process despite occasional challenges in syncing with our vision. Your resilience through sleepless nights and infectious enthusiasm transformed this project into a triumph we all celebrate. This code, now polished with our final fix, is ready to shine.
+
+ Open Source Notice: This code is freely available for use, modification, and distribution. It is provided as-is, at your own risk, with no warranties, express or implied. The authors, including Grok 3, are not liable for any issues arising from its use. May your coding journey continue to inspire and innovate!
+-->
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Social Thread</title>
+    <style>
+        html {
+            overscroll-behavior: none; /* Prevent pull-to-refresh */
+        }
+
+        body {
+            background: #121212;
+            color: #e0e0e0;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            min-height: 100vh;
+            overflow-y: auto; /* Main window scrolling */
+            overscroll-behavior: none; /* Prevent pull-to-refresh */
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            padding: 20px;
+            box-sizing: border-box;
+            position: relative;
+            overscroll-behavior: none; /* Prevent pull-to-refresh */
+        }
+
+        .search-bar-wrapper {
+            position: sticky;
+            top: 20px;
+            z-index: 1001;
+            width: 100%;
+            max-width: 550px;
+            margin-bottom: 20px;
+        }
+
+        .search-bar {
+            display: flex;
+            gap: 10px;
+            background: #2a2a2a;
+            padding: 15px;
+            border-radius: 10px;
+            align-items: center;
+        }
+
+            .search-bar input[type="text"] {
+                flex: 1;
+                padding: 8px;
+                background: #333;
+                border: 1px solid #444;
+                color: #e0e0e0;
+                border-radius: 5px;
+                box-sizing: border-box;
+            }
+
+            .search-bar label {
+                display: flex;
+                align-items: center;
+                gap: 5px;
+                margin: 0;
+            }
+
+            .search-bar button {
+                padding: 8px 15px;
+                background: #6200ea;
+                border: none;
+                color: white;
+                border-radius: 5px;
+                cursor: pointer;
+            }
+
+                .search-bar button:hover {
+                    background: #7c4dff;
+                }
+
+        .sidebar {
+            position: sticky;
+            top: 80px;
+            min-width: 550px;
+            width: 550px;
+            max-width: 100%;
+            max-height: 80vh;
+            overflow-y: auto;
+            padding-right: 20px;
+            z-index: 1000;
+            background: rgba(30, 30, 30, 0.95);
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+        }
+
+        .profile-section {
+            display: none;
+            gap: 15px;
+            background: #1e1e1e;
+            padding: 15px;
+            border-radius: 0 0 10px 10px;
+        }
+
+        .profile-image-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .profile-section img {
+            width: 100px;
+            height: 100px;
+            object-fit: cover;
+            border-radius: 5px;
+        }
+
+        .profile-details h2 {
+            margin: 0;
+            color: #bb86fc;
+            font-size: 1.1em;
+        }
+
+        .profile-details p {
+            margin: 5px 0;
+            font-size: 0.9em;
+        }
+
+        .messages-thread {
+            flex: 1;
+            padding-left: 20px;
+            max-height: none;
+            overflow-y: visible;
+            margin: 0 auto;
+            width: 100%;
+            max-width: 600px;
+            overscroll-behavior: none; /* Prevent pull-to-refresh */
+        }
+
+        .message-card {
+            background: #1e1e1e;
+            padding: 12px;
+            border-radius: 5px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+            margin-bottom: 15px;
+        }
+
+            .message-card p {
+                margin: 5px 0;
+                font-size: 0.9em;
+                color: #e0e0e0;
+                white-space: pre-wrap;
+                word-break: break-word;
+            }
+
+        .message-meta {
+            color: #b0b0b0;
+            font-size: 0.75em;
+            margin-top: 8px;
+        }
+
+            .message-meta .urn-link {
+                color: #bb86fc;
+                cursor: pointer;
+                text-decoration: underline;
+            }
+
+                .message-meta .urn-link:hover {
+                    color: #7c4dff;
+                }
+
+        .keyword-link {
+            color: #bb86fc;
+            cursor: pointer;
+            text-decoration: underline;
+        }
+
+            .keyword-link:hover {
+                color: #7c4dff;
+            }
+
+        .message-attachments {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 8px;
+        }
+
+            .message-attachments img,
+            .message-attachments video {
+                max-width: 100%;
+                height: 300px;
+                object-fit: cover;
+                border-radius: 5px;
+                background: #333;
+            }
+
+            .message-attachments audio {
+                width: 100%;
+                height: 40px;
+            }
+
+            .message-attachments .media-error {
+                width: 100%;
+                height: 300px;
+                background: #333;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                color: #e0e0e0;
+                font-size: 0.85em;
+                border-radius: 5px;
+                text-align: center;
+            }
+
+            .message-attachments .media-placeholder {
+                width: 100%;
+                height: 300px;
+                background: #333;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                color: #e0e0e0;
+                font-size: 0.85em;
+                border-radius: 5px;
+                border: 1px dashed #bb86fc;
+            }
+
+        .link-url {
+            font-size: 0.75em;
+            color: #b0b0b0;
+            text-decoration: underline;
+            word-break: break-all;
+        }
+
+            .link-url:hover {
+                color: #7c4dff;
+            }
+
+        .loading,
+        .error {
+            text-align: center;
+            padding: 15px;
+            color: #b0b0b0;
+        }
+
+        .error {
+            color: #cf6679;
+        }
+
+        .profile-loading {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.7);
+            color: #bb86fc;
+            padding: 10px 15px;
+            border-radius: 5px;
+            font-size: 0.85em;
+            z-index: 1001;
+        }
+
+        .urn-link.unacknowledged {
+            color: #666;
+            font-style: italic;
+        }
+
+            .urn-link.unacknowledged::after {
+                content: " (U)";
+                font-size: 0.7em;
+                color: #888;
+            }
+
+        @media (max-width: 1024px) {
+            .container {
+                flex-direction: column;
+                padding: 10px;
+            }
+
+            .search-bar-wrapper {
+                position: sticky;
+                top: 10px;
+                max-width: 100%;
+            }
+
+            .sidebar {
+                position: relative;
+                top: 0;
+                min-width: 100%;
+                width: 100%;
+                max-height: none;
+                margin-bottom: 20px;
+                padding-right: 0;
+            }
+
+            .messages-thread {
+                padding-left: 0;
+                max-width: 100%;
+                width: 100%;
+            }
+        }
+
+        @media (max-width: 600px) {
+            .profile-section img {
+                width: 80px;
+                height: 80px;
+            }
+
+            .message-attachments img,
+            .message-attachments video,
+            .message-attachments .media-placeholder,
+            .message-attachments .media-error {
+                height: 200px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="search-bar-wrapper">
+            <div class="search-bar">
+                <input type="text" id="urnInput" placeholder="Enter URN (e.g., embii4u) or #keyword" />
+                <label><input type="checkbox" id="mainnetToggle" /> Mainnet</label>
+                <button onclick="searchProfile()">Search</button>
+            </div>
+        </div>
+        <div class="sidebar">
+            <div id="profileSection" class="profile-section">
+                <div class="profile-image-container">
+                    <img id="profileImage" src="" alt="Profile Image" />
+                </div>
+                <div class="profile-details">
+                    <h2 id="profileName"></h2>
+                    <p id="profileBio"></p>
+                    <p id="profileLocation"></p>
+                    <p id="profileLinks"></p>
+                    <p id="profileCreated"></p>
+                    <p id="profileChanged"></p>
+                    <p id="profileCreated"></p>
+                    <p id="profileChanged"></p>
+                    <p id="totalMessages">Total Messages: Loading...</p>
+                </div>
+                <div id="profileLoading" class="profile-loading">Loading profile...</div>
+            </div>
+        </div>
+        <div id="messagesThread" class="messages-thread"></div>
+        <div id="loading" class="loading" style="display: none;">Loading more messages...</div>
+        <div id="error" class="error" style="display: none;"></div>
+    </div>
+    <script>
+        const state = {
+            skip: 0,
+            batchSize: 20,
+            isLoading: false,
+            hasMore: true,
+            currentURN: "",
+            creatorAddress: "",
+            allMessages: [],
+            retryDelay: 2000,
+            displayedMessageIds: new Set(),
+            totalMessages: 0,
+            currentMainnet: false,
+            imageCache: new Map(),
+            keywordCache: new Map(),
+            fallbackImage:
+                "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='250' height='180'><rect width='100%' height='100%' fill='%23333'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='white' font-size='14'>No Image</text></svg>",
+            currentSearchId: null,
+            abortController: null
+        };
+
+        const MAX_CACHE_SIZE = 100;
+
+        const getCachedProfile = (address) => {
+            const cached = sessionStorage.getItem(`profile_${address}`);
+            return cached ? JSON.parse(cached) : null;
+        };
+        const cacheProfile = (address, profile) =>
+            sessionStorage.setItem(`profile_${address}`, JSON.stringify(profile));
+
+        const getCachedMessages = (address, mainnet) => {
+            const cached = sessionStorage.getItem(
+                `messages_${address}_${mainnet ? "mainnet" : "testnet"}`
+            );
+            return cached ? JSON.parse(cached) : null;
+        };
+        const cacheMessages = (address, mainnet, messages) =>
+            sessionStorage.setItem(
+                `messages_${address}_${mainnet ? "mainnet" : "testnet"}`,
+                JSON.stringify(messages)
+            );
+
+        const getUrnSource = (urn, mainnet) => {
+            if (!urn) return "Unknown";
+            if (/^(BTC|LTC|DOG|MZC):/i.test(urn))
+                return mainnet
+                    ? urn.split(":")[0].toUpperCase()
+                    : `${urn.split(":")[0].toUpperCase()}-T`;
+            if (/^[A-Za-z0-9]+\/.+/.test(urn)) return mainnet ? "BTC" : "BTC-T";
+            if (urn.startsWith("IPFS:")) return "IPFS";
+            if (/^(http|https):\/\//i.test(urn))
+                return "HTTP" + (urn.startsWith("https") ? "S" : "");
+            return urn.length > 20 ? urn.slice(0, 20) + "..." : urn;
+        };
+
+        const fetchAPI = async (url, errorMsg, signal, timeout = 10000) => {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), timeout);
+            try {
+                const response = await fetch(url, { signal: signal || controller.signal });
+                clearTimeout(timeoutId);
+                if (!response.ok) throw new Error(errorMsg);
+                return response.json();
+            } catch (error) {
+                clearTimeout(timeoutId);
+                if (error.name === 'AbortError') {
+                    console.log(`Fetch timed out or aborted: ${url}`);
+                    return null;
+                }
+                throw error;
+            }
+        };
+
+        const fetchProfile = (urn, mainnet, signal) =>
+            fetchAPI(
+                `https://p2fk.io/GetProfileByURN/${encodeURIComponent(urn)}?mainnet=${mainnet}`,
+                `Profile not found for URN: ${urn}`,
+                signal
+            );
+
+        const fetchMessages = (address, mainnet, skip, qty, signal) =>
+            fetchAPI(
+                `https://p2fk.io/GetPublicMessagesByAddress/${encodeURIComponent(
+                    address
+                )}?skip=${skip}&qty=${qty}&mainnet=${mainnet}`,
+                `Messages not found for address: ${address}`,
+                signal
+            );
+
+        const fetchProfileByAddress = async (address, mainnet, signal) => {
+            if (!address || typeof address !== 'string' || !/^[a-zA-Z0-9]{26,35}$/.test(address.trim())) {
+                console.warn(`Fetch aborted: Invalid address "${address}"`);
+                return null;
+            }
+            const cached = getCachedProfile(address);
+            if (cached) {
+                console.log(`Cache hit for profile: ${address}`);
+                return cached;
+            }
+            try {
+                const profile = await fetchAPI(
+                    `https://p2fk.io/GetProfileByAddress/${encodeURIComponent(address)}?mainnet=${mainnet}`,
+                    `Profile not found for address: ${address}`,
+                    signal
+                );
+                if (profile) cacheProfile(address, profile);
+                return profile;
+            } catch (e) {
+                if (e.name === 'AbortError') {
+                    console.log(`Fetch aborted for address: ${address}`);
+                    return null;
+                }
+                console.error(`Error fetching profile for address "${address}":`, e);
+                return null;
+            }
+        };
+
+        const resolveUrnPath = (urn) => {
+            if (!urn) return "";
+            urn = urn.replace(/\\/g, "/").replace(/\s+/g, "");
+            const parts = urn.split(":").pop().split("/");
+            return /^(BTC|LTC|DOG|MZC):/i.test(urn) || /^[A-Za-z0-9]+\/.+/.test(urn)
+                ? `https://bitfossil.org/${parts[0]}/${parts[1] || ""}`
+                : "";
+        };
+
+        const getImageUrl = (image, urn) => {
+            const normalize = (input) =>
+                typeof input === "string"
+                    ? input.replace(/\\/g, "/").replace(/\s+/g, "").trim()
+                    : null;
+            const resolve = (input) => {
+                if (!input) return null;
+                const value = normalize(input);
+                const lower = value.toLowerCase();
+                try {
+                    const parsedUrl = new URL(value);
+                    if (parsedUrl.protocol === "file:") {
+                        console.error(`Rejected file:// URL: ${value}`);
+                        return null;
+                    }
+                    if (["https:", "data:"].includes(parsedUrl.protocol)) {
+                        return value
+                            .replace(/^http:\/\/bitfossil\.com\//i, "https://bitfossil.org/")
+                            .replace(/^http:/i, "https:");
+                    }
+                } catch (e) {
+                    // Not a valid URL, proceed with other checks
+                }
+                if (lower.startsWith("ipfs") || lower.startsWith("ipfs:")) {
+                    const hashMatch = value.match(/ipfs[:/]*([a-zA-Z0-9]+)(\/[^\/]*)?$/i);
+                    if (hashMatch) return `https://ipfs.io/ipfs/${hashMatch[1]}`;
+                    return null;
+                }
+                return /^(BTC|LTC|DOG|MZC):/i.test(value) ||
+                    /^[A-Za-z0-9]+\/.+/.test(value)
+                    ? resolveUrnPath(value)
+                    : null;
+            };
+            return resolve(image) || resolve(urn) || state.fallbackImage;
+        };
+
+        const cacheImage = (url, resolvedUrl) => {
+            if (state.imageCache.size >= MAX_CACHE_SIZE) {
+                const firstKey = state.imageCache.keys().next().value;
+                state.imageCache.delete(firstKey);
+            }
+            state.imageCache.set(url, resolvedUrl);
+        };
+
+        const loadImageWithTimeout = async (url, timeout = 15000, retries = 3) => {
+            if (state.imageCache.has(url)) {
+                console.log(`Cache hit for image: ${url}`);
+                return state.imageCache.get(url);
+            }
+            if (url === state.fallbackImage) return url;
+
+            const gateways = [
+                'https://ipfs.io/ipfs/',
+                'https://dweb.link/ipfs/',
+                'https://cloudflare-ipfs.com/ipfs/'
+            ];
+
+            let currentUrl = url;
+            try {
+                const parsedUrl = new URL(url);
+                if (parsedUrl.protocol === "file:") {
+                    console.error(`Rejected file:// URL in loadImageWithTimeout: ${url}`);
+                    cacheImage(url, state.fallbackImage);
+                    return state.fallbackImage;
+                }
+                if (parsedUrl.protocol === "ipfs:") {
+                    const hash = url.replace(/^ipfs[:/]+/i, "").split("/")[0];
+                    currentUrl = `${gateways[0]}${hash}`;
+                }
+            } catch (e) {
+                console.warn(`Invalid URL format, treating as IPFS hash: ${url}`);
+                const hashMatch = url.match(/ipfs[:/]*([a-zA-Z0-9]+)(\/[^\/]*)?$/i);
+                if (hashMatch) {
+                    currentUrl = `${gateways[0]}${hashMatch[1]}`;
+                } else {
+                    console.error(`Failed to parse URL: ${url}`);
+                    cacheImage(url, state.fallbackImage);
+                    return state.fallbackImage;
+                }
+            }
+
+            for (let attempt = 0; attempt <= retries; attempt++) {
+                const gatewayUrl = currentUrl.includes("ipfs.io") || currentUrl.includes("dweb.link") || currentUrl.includes("cloudflare-ipfs.com")
+                    ? currentUrl.replace(/https:\/\/[^\/]+\/ipfs\//, gateways[attempt % gateways.length])
+                    : currentUrl;
+
+                try {
+                    console.log(`Loading image: ${gatewayUrl} (attempt ${attempt + 1})`);
+                    const img = new Image();
+                    if (!gatewayUrl.includes("bitfossil.org")) img.crossOrigin = "Anonymous";
+                    const result = await new Promise((resolve, reject) => {
+                        const timer = setTimeout(() => {
+                            console.warn(`Timeout loading image: ${gatewayUrl} (attempt ${attempt + 1})`);
+                            reject(new Error("Timeout loading image"));
+                        }, timeout);
+                        img.onload = () => {
+                            clearTimeout(timer);
+                            console.log(`Successfully loaded image: ${gatewayUrl}`);
+                            cacheImage(url, gatewayUrl);
+                            resolve(gatewayUrl);
+                        };
+                        img.onerror = () => {
+                            clearTimeout(timer);
+                            console.error(`Error loading image: ${gatewayUrl} (attempt ${attempt + 1})`);
+                            reject(new Error("Error loading image"));
+                        };
+                        img.src = gatewayUrl;
+                    });
+                    return result;
+                } catch (error) {
+                    if (attempt === retries) {
+                        console.error(`Failed to load image after ${retries + 1} attempts: ${url}`);
+                        cacheImage(url, state.fallbackImage);
+                        return state.fallbackImage;
+                    }
+                    await new Promise(resolve => setTimeout(resolve, 1000)); // Delay between retries
+                }
+            }
+        };
+
+        const setupLazyLoading = () => {
+            const observer = new IntersectionObserver(
+                (entries, observer) => {
+                    entries.forEach((entry) => {
+                        if (entry.isIntersecting) {
+                            const mediaElement = entry.target;
+                            const url = mediaElement.dataset.src;
+                            const hash = mediaElement.dataset.hash;
+                            if (mediaElement.tagName === "SOURCE") {
+                                mediaElement.src = url;
+                                mediaElement.parentElement.load();
+                                mediaElement.parentElement.style.display = "block";
+                            }
+                            observer.unobserve(mediaElement);
+                        }
+                    });
+                },
+                { rootMargin: "100px" }
+            );
+            return observer;
+        };
+
+        const lazyLoadObserver = setupLazyLoading();
+
+        const abbreviateAddress = (address) =>
+            address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "";
+
+        const createSearchLink = (text, mainnet, isUnacknowledged = false) => {
+            if (!text) return "";
+            const urn = text.startsWith("@") ? text.slice(1) : text;
+            return `<span class="urn-link${isUnacknowledged ? " unacknowledged" : ""
+                }" data-urn="${text}" data-mainnet="${mainnet}">${urn}</span>`;
+        };
+
+        const renderUrnLink = (urn, mainnet) => {
+            if (!urn) return "URN: None";
+            if (urn.startsWith("IPFS:") || /^ipfs[:/]+/i.test(urn)) {
+                const hash = urn.replace(/^ipfs[:/]+/i, "").split("/")[0].replace(/\s+/g, "");
+                return `URN: <a href="https://ipfs.io/ipfs/${hash}" target="_blank" style="color:#bb86fc">${urn}</a>`;
+            }
+            if (
+                /^(BTC|LTC|DOG|MZC):/i.test(urn) ||
+                /^[A-Za-z0-9]+\/.+/.test(urn)
+            ) {
+                const parts = urn.split(":").pop().split("/");
+                return `URN: <a href="https://bitfossil.org/${parts[0]}/${parts[1] || ""
+                    }" target="_blank" style="color:#bb86fc">${urn}</a>`;
+            }
+            return `URN: ${createSearchLink(urn, mainnet)}`;
+        };
+
+        const parseMessage = async (message, mainnet, searchId) => {
+            if (state.currentSearchId !== searchId) {
+                console.log(`Aborting parseMessage for outdated search ID: ${searchId}`);
+                return { cleanMessage: "", attachments: [], links: [] };
+            }
+            const attachments = [];
+            const links = [];
+            const urnRegex = /@([A-Za-z0-9]+(?:\/[A-Za-z0-9]+)?)/g;
+            const keywordRegex = /#([\w]+)/g;
+            let cleanMessage = message
+                .replace(/<<[^>]+>>/g, "")
+                .trim();
+            const attachmentMatches = message.match(/<<[^>]+>>/g) || [];
+            attachmentMatches.forEach((match) => {
+                const content = match.slice(2, -2).replace(/\s+/g, "").trim();
+                if (content.match(/^-?\d+$/) || content.match(/#[\w\s#]+/) || content.match(/^#[\w\s]+$/)) {
+                    return;
+                }
+                if (/^https?:\/\//i.test(content)) {
+                    links.push(content);
+                } else {
+                    attachments.push(content);
+                }
+            });
+            const parsedAttachments = attachments.map((attach) => {
+                const parts = attach.split(/[\/\\]/);
+                const hash = parts[0].replace(/^IPFS:/i, "").trim();
+                const filename = parts[1] || hash;
+                return { hash, filename };
+            });
+            const parsedLinks = links.map(url => ({ url }));
+            const matches = [...cleanMessage.matchAll(urnRegex)];
+            if (matches.length) {
+                for (const match of matches) {
+                    if (state.currentSearchId !== searchId) {
+                        console.log(`Aborting profile fetch for outdated search ID: ${searchId}`);
+                        return { cleanMessage, attachments: parsedAttachments, links: parsedLinks };
+                    }
+                    const urn = match[1];
+                    if (!/^[a-zA-Z0-9]{26,35}$/.test(urn) && !/^[a-zA-Z0-9]+\/[a-zA-Z0-9]+$/.test(urn)) {
+                        console.warn(`Invalid URN format: ${urn}`);
+                        continue;
+                    }
+                    const profile = await fetchProfileByAddress(urn, mainnet, state.abortController?.signal);
+                    if (!profile) continue;
+                    const displayName = profile
+                        ? profile.DisplayName || profile.URN || urn
+                        : urn;
+                    const isUnacknowledged =
+                        profile && profile.Creators?.[urn] === "0001-01-01T00:00:00";
+                    cleanMessage = cleanMessage.replace(
+                        match[0],
+                        createSearchLink(displayName, mainnet, isUnacknowledged)
+                    );
+                }
+            }
+            const keywordMatches = [...cleanMessage.matchAll(keywordRegex)];
+            if (keywordMatches.length) {
+                for (const match of keywordMatches) {
+                    const keyword = match[1];
+                    cleanMessage = cleanMessage.replace(
+                        `#${keyword}`,
+                        `<span class="keyword-link" data-keyword="${keyword}" data-mainnet="${mainnet}">#${keyword}</span>`
+                    );
+                }
+            }
+            return { cleanMessage, attachments: parsedAttachments, links: parsedLinks };
+        };
+
+        const displayProfile = async (profile, mainnet, isKeywordSearch = false, searchTerm = "", searchId) => {
+            if (state.currentSearchId !== searchId) {
+                console.log(`Aborting displayProfile for outdated search ID: ${searchId}`);
+                return;
+            }
+            const $ = (id) => document.getElementById(id);
+            let imageUrl;
+            if (isKeywordSearch) {
+                const canvas = document.createElement("canvas");
+                canvas.width = 100;
+                canvas.height = 100;
+                const ctx = canvas.getContext("2d");
+                ctx.fillStyle = "#333";
+                ctx.fillRect(0, 0, 100, 100);
+                ctx.fillStyle = "#bb86fc";
+                ctx.font = "bold 14px Arial";
+                ctx.textAlign = "center";
+                ctx.fillText(searchTerm, 50, 50);
+                imageUrl = canvas.toDataURL();
+            } else {
+                imageUrl = getImageUrl(profile.Image, profile.URN);
+            }
+            $("profileImage").src = state.fallbackImage;
+            loadImageWithTimeout(imageUrl)
+                .then((url) => {
+                    if (state.currentSearchId !== searchId) {
+                        console.log(`Aborting profile image update for outdated search ID: ${searchId}`);
+                        return;
+                    }
+                    $("profileImage").src = url;
+                })
+                .catch(() => {
+                    console.error(`Failed to load profile image: ${imageUrl}`);
+                    if (state.currentSearchId !== searchId) return;
+                    $("profileImage").src = state.fallbackImage;
+                });
+            $("profileName").textContent =
+                isKeywordSearch ? `Keyword Search: ${searchTerm}` : (profile.DisplayName || profile.URN || "Unknown");
+            $("profileBio").textContent = `Bio: ${isKeywordSearch ? "Keyword-derived address" : (profile.Bio || "No bio available")}`;
+            $("profileLocation").textContent = `Location: ${isKeywordSearch ? "N/A" : (profile.Location?.quark || "Unknown")
+                }`;
+            const linksHtml = !isKeywordSearch && profile.URL
+                ? Object.entries(profile.URL || {})
+                    .map(([k, v]) =>
+                        v.startsWith("@")
+                            ? `<a href="#" onclick="searchProfile('${v
+                                .slice(1)
+                                .replace(/'/g, "\\'")}', ${mainnet}); event.preventDefault();" style="color:#bb86fc; text-decoration:underline; cursor:pointer;">${v
+                                    .slice(1)
+                                    .replace(/'/g, "\\'")}</a>`
+                            : `<a href="${v}" target="_blank" style="color:#bb86fc;">${k}</a>`
+                    )
+                    .join(" | ") || "None"
+                : "None";
+            $("profileLinks").innerHTML = `Links: ${linksHtml}`;
+            $("profileCreated").textContent = `Created: ${isKeywordSearch ? "N/A" : profile.CreatedDate}`;
+            $("profileChanged").textContent = `Last Changed: ${isKeywordSearch ? "N/A" : profile.ChangeDate}`;
+            $("profileSection").style.display = "flex";
+            $("profileLoading").style.display = "none";
+            state.creatorAddress = isKeywordSearch ? state.creatorAddress : (profile?.Creators?.[0] || "");
+            console.log(`Profile displayed, creatorAddress set to: ${state.creatorAddress}`);
+            updateTotalMessages();
+        };
+
+        const displayMessages = async (messages, mainnet, searchId, prepend = false) => {
+            if (state.currentSearchId !== searchId) {
+                console.log(`Aborting displayMessages for outdated search ID: ${searchId}`);
+                return;
+            }
+            const messagesThread = document.getElementById("messagesThread");
+            const messageCards = [];
+            const imageElements = [];
+
+            console.log(`Displaying ${messages.length} messages, prepend=${prepend}`);
+            for (const msg of messages) {
+                if (state.displayedMessageIds.has(msg.TransactionId)) {
+                    console.log(`Skipping duplicate message, TransactionId: ${msg.TransactionId}`);
+                    continue;
+                }
+                state.displayedMessageIds.add(msg.TransactionId);
+                const { cleanMessage, attachments, links } = await parseMessage(
+                    msg.Message,
+                    mainnet,
+                    searchId
+                );
+                const fromProfile = await fetchProfileByAddress(msg.FromAddress, mainnet, state.abortController?.signal);
+                const toProfile = await fetchProfileByAddress(msg.ToAddress, mainnet, state.abortController?.signal);
+                const fromName = fromProfile
+                    ? fromProfile.DisplayName ||
+                    fromProfile.URN ||
+                    abbreviateAddress(msg.FromAddress)
+                    : abbreviateAddress(msg.FromAddress);
+                const toName = toProfile
+                    ? toProfile.DisplayName ||
+                    toProfile.URN ||
+                    abbreviateAddress(msg.ToAddress)
+                    : abbreviateAddress(msg.ToAddress);
+                const card = document.createElement("div");
+                card.className = "message-card";
+                card.innerHTML = `
+         <p>${cleanMessage || "No message content"}</p>
+         <div class="message-attachments"></div>
+         <div class="message-meta">
+         From: ${createSearchLink(fromName, mainnet)} |
+         To: ${createSearchLink(toName, mainnet)} |
+         Date: ${msg.BlockDate}
+         </div>
+         `;
+                card.addEventListener("click", (event) => {
+                    const urnLink = event.target.closest(".urn-link");
+                    const keywordLink = event.target.closest(".keyword-link");
+                    if (urnLink) {
+                        event.preventDefault();
+                        const urn = urnLink.getAttribute("data-urn");
+                        const isMainnet = urnLink.getAttribute("data-mainnet") === "true";
+                        console.log(`Clicked urn-link: ${urn}, mainnet: ${isMainnet}`);
+                        searchProfile(urn, isMainnet, false);
+                    } else if (keywordLink) {
+                        event.preventDefault();
+                        const keyword = keywordLink.getAttribute("data-keyword");
+                        const isMainnet = keywordLink.getAttribute("data-mainnet") === "true";
+                        console.log(`Clicked keyword-link: ${keyword}, mainnet: ${isMainnet}`);
+                        searchProfile(`#${keyword}`, isMainnet, true);
+                    }
+                });
+                const attachmentsContainer = card.querySelector(".message-attachments");
+                for (const { hash, filename } of attachments) {
+                    const mediaElement = document.createElement("div");
+                    const url = `https://ipfs.io/ipfs/${hash}`;
+                    const isImage = filename.match(/\.(jpg|jpeg|png|gif|webp)$/i);
+                    const isAudio = filename.match(/\.(mp3|wav)$/i);
+                    const isVideo = filename.match(/\.(mp4)$/i);
+                    if (isImage) {
+                        mediaElement.innerHTML = `<img class="media-placeholder" src="${state.fallbackImage}" alt="Attachment" style="display: block;">`;
+                        const img = mediaElement.querySelector("img");
+                        imageElements.push({ img, url, hash, mediaElement, mainnet });
+                    } else if (isAudio) {
+                        mediaElement.innerHTML = `<audio controls style="display: none;"><source data-src="${url}" data-hash="${hash}" type="${filename.match(/\.mp3$/i) ? "audio/mpeg" : "audio/wav"
+                            }">Your browser does not support the audio element.</audio>`;
+                        const source = mediaElement.querySelector("source");
+                        const audio = source.parentElement;
+                        const rect = audio.getBoundingClientRect();
+                        if (rect.top >= 0 && rect.top <= window.innerHeight) {
+                            source.src = url;
+                            audio.load();
+                            audio.style.display = "block";
+                        } else {
+                            lazyLoadObserver.observe(source);
+                        }
+                    } else if (isVideo) {
+                        mediaElement.innerHTML = `<video controls style="display: none;"><source data-src="${url}" data-hash="${hash}" type="video/mp4">Your browser does not support the video element.</video>`;
+                        const source = mediaElement.querySelector("source");
+                        const video = source.parentElement;
+                        const rect = video.getBoundingClientRect();
+                        if (rect.top >= 0 && rect.top <= window.innerHeight) {
+                            source.src = url;
+                            video.load();
+                            video.style.display = "block";
+                        } else {
+                            lazyLoadObserver.observe(source);
+                        }
+                    } else {
+                        mediaElement.innerHTML = `<div class="media-error">${renderUrnLink(
+                            `IPFS:${hash}`,
+                            mainnet
+                        )}</div>`;
+                    }
+                    attachmentsContainer.appendChild(mediaElement);
+                }
+                for (const { url } of links) {
+                    const linkElement = document.createElement("a");
+                    linkElement.href = url;
+                    linkElement.target = "_blank";
+                    linkElement.className = "link-url";
+                    linkElement.textContent = url;
+                    attachmentsContainer.appendChild(linkElement);
+                }
+                messageCards.push(card);
+            }
+
+            console.log(`Appending ${messageCards.length} message cards to thread, prepend=${prepend}`);
+            if (prepend) {
+                messageCards.reverse().forEach(card => messagesThread.prepend(card));
+            } else {
+                messageCards.forEach(card => messagesThread.appendChild(card));
+            }
+
+            for (const { img, url, hash, mediaElement, mainnet } of imageElements) {
+                console.log(`Processing image: ${url}`);
+                await loadImageWithTimeout(url)
+                    .then((resolvedUrl) => {
+                        console.log(`Image resolved: ${url} -> ${resolvedUrl}`);
+                        img.src = resolvedUrl;
+                        img.classList.remove("media-placeholder");
+                        img.style.display = "block";
+                    })
+                    .catch(() => {
+                        console.error(`Failed to load image: ${url}`);
+                        mediaElement.innerHTML = `<div class="media-error">Failed to load: ${renderUrnLink(
+                            `IPFS:${hash}`,
+                            mainnet
+                        )}</div>`;
+                    });
+            }
+
+            updateTotalMessages();
+        };
+
+        const loadMessages = async (mainnet, prepend = false, searchId) => {
+            if (state.isLoading || state.currentSearchId !== searchId) {
+                console.log(`Aborting loadMessages: isLoading=${state.isLoading}, searchId=${searchId}, currentSearchId=${state.currentSearchId}`);
+                state.isLoading = false;
+                console.log(`Reset isLoading to false due to abort`);
+                return;
+            }
+            state.isLoading = true;
+            console.log(`Setting isLoading to true for loadMessages, prepend=${prepend}`);
+            const $ = (id) => document.getElementById(id);
+            $("loading").style.display = "block";
+            $("error").style.display = "none";
+            try {
+                if (!state.allMessages.length && state.creatorAddress) {
+                    console.log(`Initial fetch for messages, address: ${state.creatorAddress}, mainnet: ${mainnet}`);
+                    const messages = await fetchMessages(
+                        state.creatorAddress,
+                        mainnet,
+                        0,
+                        5000,
+                        state.abortController?.signal
+                    );
+                    if (state.currentSearchId !== searchId) {
+                        console.log(`Aborting initial message processing for outdated search ID: ${searchId}`);
+                        state.isLoading = false;
+                        console.log(`Setting isLoading to false due to outdated search ID`);
+                        return;
+                    }
+                    state.allMessages = messages || [];
+                    console.log(`Fetched ${state.allMessages.length} messages initially`);
+                    state.allMessages.sort(
+                        (a, b) => new Date(b.BlockDate) - new Date(a.BlockDate)
+                    );
+                    state.totalMessages = state.allMessages.length;
+                    if (!state.totalMessages) {
+                        console.log(`No messages found for address: ${state.creatorAddress}`);
+                        $("loading").style.display = "none";
+                        $("messagesThread").innerHTML =
+                            '<div class="loading">No messages found.</div>';
+                        state.isLoading = false;
+                        console.log(`Setting isLoading to false due to no messages`);
+                        setTimeout(() => {
+                            console.log(`Retrying initial loadMessages after ${state.retryDelay}ms`);
+                            loadMessages(mainnet, false, searchId);
+                        }, state.retryDelay);
+                        return;
+                    }
+                    try {
+                        console.log(`Caching ${state.allMessages.length} messages for address: ${state.creatorAddress}`);
+                        cacheMessages(state.creatorAddress, mainnet, state.allMessages);
+                    } catch (e) {
+                        console.error(`Failed to cache messages : ${e.message}`);
+                    }
+                    state.retryDelay = 2000;
+                }
+                if (prepend) {
+                    console.log(`Refresh triggered for address: ${state.creatorAddress}, mainnet: ${mainnet}`);
+                    const newMessages = await fetchMessages(
+                        state.creatorAddress,
+                        mainnet,
+                        0,
+                        5000,
+                        state.abortController?.signal
+                    );
+                    if (state.currentSearchId !== searchId) {
+                        console.log(`Aborting refresh processing for outdated search ID: ${searchId}`);
+                        state.isLoading = false;
+                        console.log(`Setting isLoading to false due to outdated search ID in refresh`);
+                        return;
+                    }
+                    console.log(`Fetched ${newMessages.length} messages from p2fk.io`);
+                    newMessages.sort(
+                        (a, b) => new Date(b.BlockDate) - new Date(a.BlockDate)
+                    );
+                    const newIds = new Set(newMessages.map((m) => m.TransactionId));
+                    const existingIds = new Set(state.allMessages.map((m) => m.TransactionId));
+                    const additionalMessages = newMessages.filter(
+                        (m) => !existingIds.has(m.TransactionId)
+                    );
+                    console.log(`Found ${additionalMessages.length} new messages not in cache`);
+                    if (additionalMessages.length) {
+                        console.log(`Prepending ${additionalMessages.length} new messages to thread`);
+                        state.allMessages = [...additionalMessages, ...state.allMessages];
+                        state.totalMessages = state.allMessages.length;
+                        try {
+                            console.log(`Updating cache with ${state.allMessages.length} total messages`);
+                            cacheMessages(state.creatorAddress, mainnet, state.allMessages);
+                        } catch (e) {
+                            console.error(`Failed to update cache: ${e.message}`);
+                        }
+                        const messagesThread = $("messagesThread");
+                        const scrollTop = window.scrollY;
+                        const oldHeight = messagesThread.scrollHeight;
+                        console.log(`Current scroll position before prepend: ${scrollTop}, thread height: ${oldHeight}`);
+                        await displayMessages(additionalMessages, mainnet, searchId, true);
+                        if (state.currentSearchId !== searchId) {
+                            console.log(`Aborting message display for outdated search ID: ${searchId}`);
+                            state.isLoading = false;
+                            console.log(`Setting isLoading to false due to outdated search ID in display`);
+                            return;
+                        }
+                        const newHeight = messagesThread.scrollHeight;
+                        const heightDiff = newHeight - oldHeight;
+                        console.log(`Restoring scroll position, new height: ${newHeight}, height diff: ${heightDiff}`);
+                        window.scrollTo(0, scrollTop + heightDiff);
+                    } else {
+                        console.log(`No new messages to prepend`);
+                    }
+                    state.isLoading = false;
+                    console.log(`Setting isLoading to false after refresh`);
+                    $("loading").style.display = "none";
+                    updateTotalMessages();
+                    console.log(`Refresh completed, total messages: ${state.totalMessages}`);
+                    return;
+                }
+                const batch = state.allMessages.slice(
+                    state.skip,
+                    state.skip + state.batchSize
+                );
+                console.log(`Loading batch of ${batch.length} messages, skip: ${state.skip}`);
+                state.hasMore = state.skip + batch.length < state.totalMessages;
+                if (!batch.length && state.totalMessages > 0) {
+                    console.log(`No more messages to load, total: ${state.totalMessages}`);
+                    state.hasMore = false;
+                    state.isLoading = false;
+                    console.log(`Setting isLoading to false due to no more messages`);
+                    $("loading").style.display = "none";
+                    updateTotalMessages();
+                    return;
+                }
+                if (state.totalMessages === 0) {
+                    console.log(`No messages available to display`);
+                    $("messagesThread").innerHTML =
+                        '<div class="loading">No messages found.</div>';
+                    state.hasMore = false;
+                    state.isLoading = false;
+                    console.log(`Setting isLoading to false due to no messages available`);
+                    $("loading").style.display = "none";
+                    updateTotalMessages();
+                    return;
+                }
+                await displayMessages(batch, mainnet, searchId);
+                if (state.currentSearchId !== searchId) {
+                    console.log(`Aborting batch display for outdated search ID: ${searchId}`);
+                    state.isLoading = false;
+                    console.log(`Setting isLoading to false due to outdated search ID in batch`);
+                    return;
+                }
+                state.skip += batch.length;
+                console.log(`Batch displayed, new skip: ${state.skip}`);
+                state.isLoading = false;
+                console.log(`Setting isLoading to false after batch load`);
+                updateTotalMessages();
+            } catch (error) {
+                if (error.name === 'AbortError') {
+                    console.log(`Messages fetch aborted for search ID: ${searchId}`);
+                    state.isLoading = false;
+                    console.log(`Setting isLoading to false due to abort`);
+                    return;
+                }
+                console.error(`Error loading messages: ${error.message}`);
+                showError(error.message);
+                state.isLoading = false;
+                console.log(`Setting isLoading to false due to error`);
+                setTimeout(() => {
+                    state.retryDelay = Math.min(state.retryDelay * 2, 30000);
+                    console.log(`Retrying loadMessages after ${state.retryDelay}ms`);
+                    loadMessages(mainnet, false, searchId);
+                }, state.retryDelay);
+            } finally {
+                state.isLoading = false;
+                console.log(`Setting isLoading to false in finally block`);
+                $("loading").style.display = "none";
+            }
+        };
+
+        const showError = (msg) => {
+            const errorEl = document.getElementById("error");
+            errorEl.textContent = msg;
+            errorEl.style.display = "block";
+            console.log(`Displaying error: ${msg}`);
+            setTimeout(() => {
+                errorEl.style.display = "none";
+                console.log(`Hiding error message`);
+            }, 5000);
+        };
+
+        const getPublicAddressByKeyword = async (keyword, mainnet, signal) => {
+            const cacheKey = `${keyword}_${mainnet ? "mainnet" : "testnet"}`;
+            if (state.keywordCache.has(cacheKey)) {
+                console.log(`Cache hit for keyword: ${keyword}`);
+                return state.keywordCache.get(cacheKey);
+            }
+            try {
+                const url = `https://p2fk.io/GetPublicAddressByKeyword/${encodeURIComponent(keyword)}?mainnet=${mainnet}`;
+                const response = await fetchAPI(url, `Failed to fetch address for keyword: ${keyword}`, signal);
+                if (!response) {
+                    console.log(`No address found for keyword: ${keyword}`);
+                    return null;
+                }
+                const address = response;
+                state.keywordCache.set(cacheKey, address);
+                console.log(`Cached address for keyword: ${keyword}, address: ${address}`);
+                return address;
+            } catch (error) {
+                if (error.name === 'AbortError') {
+                    console.log(`Keyword fetch aborted for: ${keyword}`);
+                    return null;
+                }
+                console.error(`Error fetching keyword address: ${error.message}`);
+                throw error;
+            }
+        };
+
+        const searchProfile = async (urn = null, mainnet = null, isKeywordSearch = false) => {
+            if (state.abortController) {
+                state.abortController.abort();
+                console.log(`Aborted previous search with ID: ${state.currentSearchId}`);
+            }
+            state.abortController = new AbortController();
+            const searchId = Date.now() + Math.random().toString(36).slice(2);
+            state.currentSearchId = searchId;
+
+            document.querySelectorAll("source[data-src]").forEach((el) => {
+                lazyLoadObserver.unobserve(el);
+            });
+
+            const inputUrn = urn || document.getElementById("urnInput").value.trim();
+            const isMainnet =
+                mainnet !== null
+                    ? mainnet
+                    : document.getElementById("mainnetToggle").checked;
+            if (!inputUrn && !getQueryParam("address") && !getQueryParam("urn")) {
+                showError("Please enter a URN or #keyword");
+                state.currentSearchId = null;
+                state.abortController = null;
+                return;
+            }
+            Object.assign(state, {
+                creatorAddress: "",
+                allMessages: [],
+                skip: 0,
+                hasMore: true,
+                retryDelay: 2000,
+                displayedMessageIds: new Set(),
+                totalMessages: 0,
+                currentURN: inputUrn,
+                currentMainnet: isMainnet,
+            });
+            const $ = (id) => document.getElementById(id);
+            $("error").style.display = "none";
+            $("profileSection").style.display = "none";
+            $("profileLoading").style.display = "block";
+            $("urnInput").value = inputUrn;
+            $("mainnetToggle").checked = isMainnet;
+            $("totalMessages").textContent = "Total Messages: Loading...";
+            try {
+                let profile = null;
+                let address = null;
+                console.log(`Starting search for URN: ${inputUrn}, isKeywordSearch: ${isKeywordSearch}, mainnet: ${isMainnet}`);
+                if (isKeywordSearch || inputUrn.startsWith("#")) {
+                    const searchTerm = isKeywordSearch ? inputUrn.slice(1) : inputUrn.slice(1);
+                    const keywordAddress = await getPublicAddressByKeyword(searchTerm, isMainnet, state.abortController.signal);
+                    if (state.currentSearchId !== searchId) {
+                        console.log(`Aborting keyword search for outdated search ID: ${searchId}`);
+                        return;
+                    }
+                    if (!keywordAddress) {
+                        throw new Error(`No address found for keyword: ${searchTerm}`);
+                    }
+                    console.log(`Keyword search resolved address: ${keywordAddress}`);
+                    state.creatorAddress = keywordAddress;
+                    profile = await fetchProfileByAddress(keywordAddress, isMainnet, state.abortController.signal);
+                    await displayProfile(profile || {}, isMainnet, true, searchTerm, searchId);
+                } else {
+                    profile = await fetchProfile(inputUrn, isMainnet, state.abortController.signal);
+                    if (state.currentSearchId !== searchId) {
+                        console.log(`Aborting profile fetch for outdated search ID: ${searchId}`);
+                        return;
+                    }
+                    if (profile && profile.Creators?.[0]) {
+                        address = profile.Creators[0];
+                        console.log(`Profile found for URN: ${inputUrn}, address: ${address}`);
+                    } else {
+                        address = getQueryParam("address") || inputUrn;
+                        console.log(`No profile found for URN, using address: ${address}`);
+                        profile = await fetchProfileByAddress(address, isMainnet, state.abortController.signal);
+                    }
+                    state.creatorAddress = address;
+                    console.log(`Set creatorAddress: ${state.creatorAddress}`);
+                    await displayProfile(profile || {}, isMainnet, false, inputUrn, searchId);
+                }
+                if (state.currentSearchId !== searchId) {
+                    console.log(`Aborting profile display for outdated search ID: ${searchId}`);
+                    return;
+                }
+                $("messagesThread").innerHTML = "";
+                if (!state.creatorAddress) {
+                    console.error(`No creator address set for URN: ${inputUrn}`);
+                    throw new Error("No creator address found for the profile");
+                }
+                console.log(`Calling loadMessages for address: ${state.creatorAddress}`);
+                await loadMessages(isMainnet, false, searchId);
+            } catch (error) {
+                if (error.name === 'AbortError') {
+                    console.log(`Search aborted for ID: ${searchId}`);
+                    return;
+                }
+                console.error(`Search error: ${error.message}`);
+                showError(error.message);
+                $("profileSection").style.display = "none";
+                $("messagesThread").innerHTML = '<div class="loading">No messages found.</div>';
+            } finally {
+                if (state.currentSearchId === searchId) {
+                    $("loading").style.display = "none";
+                    $("profileLoading").style.display = "none";
+                    state.currentSearchId = null;
+                    state.abortController = null;
+                    updateTotalMessages();
+                }
+            }
+        };
+
+        const searchProfileFromLink = (event, urn, mainnet) => {
+            event.preventDefault();
+            console.log(`searchProfileFromLink called with urn: ${urn}, mainnet: ${mainnet}`);
+            searchProfile(urn, mainnet, urn.startsWith("#"));
+        };
+
+        const updateTotalMessages = () => {
+            const $total = document.getElementById("totalMessages");
+            if ($total) {
+                const loadedMessages = state.displayedMessageIds.size;
+                const total = state.totalMessages || 0;
+                $total.textContent = total === 0 ? "Total Messages: Loading..." : `Total Messages: ${loadedMessages} / ${total}`;
+                console.log(`Updated total messages: ${loadedMessages} / ${total}`);
+            }
+        };
+
+        const getQueryParam = (name) => {
+            const params = new URLSearchParams(window.location.search);
+            return params.get(name);
+        };
+
+        window.addEventListener("load", () => {
+            const address = getQueryParam("address");
+            const urn = getQueryParam("urn");
+            const mainnet = getQueryParam("mainnet") === "true";
+            if (urn || address) {
+                state.currentMainnet = mainnet;
+                document.getElementById("mainnetToggle").checked = mainnet;
+                console.log(`Initial load with urn: ${urn}, address: ${address}, mainnet: ${mainnet}`);
+                searchProfile(urn || null, mainnet, false);
+            }
+        });
+
+        window.addEventListener("scroll", () => {
+            if (
+                window.scrollY === 0 &&
+                !state.isLoading &&
+                state.creatorAddress
+            ) {
+                console.log(`Reached top of thread, triggering refresh for address: ${state.creatorAddress}`);
+                loadMessages(document.getElementById("mainnetToggle").checked, true, state.currentSearchId);
+            }
+            if (
+                window.innerHeight + window.scrollY >=
+                document.body.offsetHeight - 100 &&
+                !state.isLoading &&
+                state.hasMore
+            ) {
+                console.log(`Reached bottom, loading more messages`);
+                loadMessages(document.getElementById("mainnetToggle").checked, false, state.currentSearchId);
+            }
+        });
+
+        let debounceTimeout;
+        document.getElementById("urnInput").addEventListener("keypress", (e) => {
+            if (e.key === "Enter") {
+                clearTimeout(debounceTimeout);
+                debounceTimeout = setTimeout(() => {
+                    console.log(`Enter key pressed, initiating search`);
+                    searchProfile();
+                }, 300);
+            }
+        });
+
+        document.getElementById("mainnetToggle").addEventListener("change", () => {
+            state.currentMainnet = document.getElementById("mainnetToggle").checked;
+            console.log(`Mainnet toggle changed to: ${state.currentMainnet}`);
+        });
+    </script>
+</body>
+</html>

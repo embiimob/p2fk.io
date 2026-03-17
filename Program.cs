@@ -35,7 +35,47 @@ app.UseSwaggerUI(options =>
                 width: 50px;
                 height: auto;
             }
-        </style>";
+            #api-examples-nav {
+                background: #1e1e1e;
+                padding: 10px 20px;
+                display: flex;
+                align-items: center;
+                gap: 16px;
+                border-bottom: 1px solid #333;
+                font-family: sans-serif;
+            }
+            #api-examples-nav span {
+                color: #bb86fc;
+                font-weight: bold;
+                font-size: 14px;
+                white-space: nowrap;
+            }
+            #api-examples-nav a {
+                color: #bb86fc;
+                text-decoration: none;
+                font-size: 14px;
+                padding: 6px 14px;
+                border: 1px solid #bb86fc;
+                border-radius: 4px;
+                transition: background 0.2s, color 0.2s;
+            }
+            #api-examples-nav a:hover {
+                background: #bb86fc;
+                color: #1e1e1e;
+            }
+        </style>
+        <script>
+            document.addEventListener('DOMContentLoaded', function() {
+                var nav = document.createElement('div');
+                nav.id = 'api-examples-nav';
+                nav.innerHTML = '<span>API Examples:</span>'
+                    + '<a href=""/socials.html"" target=""_blank"">Socials</a>'
+                    + '<a href=""/objects.html"" target=""_blank"">Objects</a>'
+                    + '<a href=""/lotto.html"" target=""_blank"">Lotto</a>'
+                    + '<a href=""/world.html"" target=""_blank"">World</a>';
+                document.body.insertBefore(nav, document.body.firstChild);
+            });
+        </script>";
 
 
         //added because large json output styling slows down the swagger ui

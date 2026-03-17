@@ -23,6 +23,10 @@
     <None Include="wwwroot\favicon-16x16.png" />
     <None Include="wwwroot\favicon-32x32.png" />
     <None Include="wwwroot\HugPuddle.jpg" />
+    <None Include="wwwroot\objects.html" />
+    <None Include="wwwroot\socials.html" />
+    <None Include="wwwroot\lotto.html" />
+    <None Include="wwwroot\world.html" />
   </ItemGroup>
 
   <ItemGroup>
@@ -40,6 +44,18 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <Content Update="wwwroot\HugPuddle.jpg">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Update="wwwroot\objects.html">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Update="wwwroot\socials.html">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Update="wwwroot\lotto.html">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Update="wwwroot\world.html">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
