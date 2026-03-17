@@ -504,7 +504,7 @@
                     // Not a valid URL, proceed with other checks
                 }
                 if (lower.startsWith("ipfs") || lower.startsWith("ipfs:")) {
-                    const hashMatch = value.match(/ipfs[:/]*([a-zA-Z0-9]+)(\/[^\/]*)?$/i);
+                    const hashMatch = value.match(/ipfs[:/]*([a-zA-Z0-9]+)/i);
                     if (hashMatch) return `https://ipfs.io/ipfs/${hashMatch[1]}`;
                     return null;
                 }
@@ -551,7 +551,7 @@
                 }
             } catch (e) {
                 console.warn(`Invalid URL format, treating as IPFS hash: ${url}`);
-                const hashMatch = url.match(/ipfs[:/]*([a-zA-Z0-9]+)(\/[^\/]*)?$/i);
+                const hashMatch = url.match(/ipfs[:/]*([a-zA-Z0-9]+)/i);
                 if (hashMatch) {
                     currentUrl = `${gateways[0]}${hashMatch[1]}`;
                 } else {
@@ -849,16 +849,18 @@
                 for (const { hash, filename } of attachments) {
                     const mediaElement = document.createElement("div");
                     const url = `https://ipfs.io/ipfs/${hash}`;
-                    const isImage = filename.match(/\.(jpg|jpeg|png|gif|webp)$/i);
-                    const isAudio = filename.match(/\.(mp3|wav)$/i);
-                    const isVideo = filename.match(/\.(mp4)$/i);
+                    const ext = (filename.match(/\.([^.]+)$/) || [])[1]?.toLowerCase() || "";
+                    const isImage = /^(jpg|jpeg|png|gif|webp|bmp|svg|tiff|tif|ico|avif)$/.test(ext);
+                    const isAudio = /^(mp3|wav|ogg|flac)$/.test(ext);
+                    const isVideo = /^(mp4|webm|avi|mov)$/.test(ext);
+                    const audioMimeTypes = { mp3: "audio/mpeg", wav: "audio/wav", ogg: "audio/ogg", flac: "audio/flac" };
+                    const videoMimeTypes = { mp4: "video/mp4", webm: "video/webm", avi: "video/avi", mov: "video/quicktime" };
                     if (isImage) {
                         mediaElement.innerHTML = `<img class="media-placeholder" src="${state.fallbackImage}" alt="Attachment" style="display: block;">`;
                         const img = mediaElement.querySelector("img");
                         imageElements.push({ img, url, hash, mediaElement, mainnet });
                     } else if (isAudio) {
-                        mediaElement.innerHTML = `<audio controls style="display: none;"><source data-src="${url}" data-hash="${hash}" type="${filename.match(/\.mp3$/i) ? "audio/mpeg" : "audio/wav"
-                            }">Your browser does not support the audio element.</audio>`;
+                        mediaElement.innerHTML = `<audio controls style="display: none;"><source data-src="${url}" data-hash="${hash}" type="${audioMimeTypes[ext] || "audio/wav"}">Your browser does not support the audio element.</audio>`;
                         const source = mediaElement.querySelector("source");
                         const audio = source.parentElement;
                         const rect = audio.getBoundingClientRect();
@@ -870,7 +872,7 @@
                             lazyLoadObserver.observe(source);
                         }
                     } else if (isVideo) {
-                        mediaElement.innerHTML = `<video controls style="display: none;"><source data-src="${url}" data-hash="${hash}" type="video/mp4">Your browser does not support the video element.</video>`;
+                        mediaElement.innerHTML = `<video controls style="display: none;"><source data-src="${url}" data-hash="${hash}" type="${videoMimeTypes[ext] || "video/mp4"}">Your browser does not support the video element.</video>`;
                         const source = mediaElement.querySelector("source");
                         const video = source.parentElement;
                         const rect = video.getBoundingClientRect();
