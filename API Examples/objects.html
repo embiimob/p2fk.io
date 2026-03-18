@@ -846,10 +846,19 @@
 
   const abbreviateAddress = (address) => address ? `${address.slice(0, 6)}...${address.slice(-4)}` : '';
 
-  const createSearchLink = (text, mainnet, isUnacknowledged = false) => {
+  const isBitcoinAddress = (str) => {
+    if (!str || typeof str !== 'string') return false;
+    const s = str.trim();
+    return /^[13][1-9A-HJ-NP-Za-km-z]{24,33}$/.test(s) ||
+           /^bc1[ac-hj-np-z02-9]{39,59}$/.test(s) ||
+           /^[mn2][1-9A-HJ-NP-Za-km-z]{24,33}$/.test(s) ||
+           /^tb1[ac-hj-np-z02-9]{39,59}$/.test(s);
+  };
+
+  const createSearchLink = (text, mainnet, isUnacknowledged = false, fullAddress = null) => {
     if (!text) return '';
-    const urn = text.startsWith('@') ? text.slice(1) : text;
-    return `<span class="urn-link${isUnacknowledged ? ' unacknowledged' : ''}" onclick="searchProfile('${urn.replace(/'/g, "\\'")}', ${mainnet})">${text}</span>`;
+    const searchTarget = fullAddress || (text.startsWith('@') ? text.slice(1) : text);
+    return `<span class="urn-link${isUnacknowledged ? ' unacknowledged' : ''}" onclick="searchProfile('${searchTarget.replace(/'/g, "\\'")}', ${mainnet})">${text}</span>`;
   };
 
   const displayProfile = async (profile, mainnet, isKeywordSearch = false, searchTerm = '') => {
@@ -917,8 +926,8 @@
         </div>
         <h3>${obj.Name || 'Unnamed Object'}</h3>
         ${description ? `<p>${description}</p>` : ''}
-        ${collectionURN ? `<p>${createSearchLink(collectionURN, mainnet, isCollectionUnacknowledged)}</p>` : ''}
-        ${additionalCreatorURN ? `<p>${createSearchLink(additionalCreatorURN, mainnet, isAdditionalUnacknowledged)}</p>` : ''}
+        ${collectionURN ? `<p>${createSearchLink(collectionURN, mainnet, isCollectionUnacknowledged, creators[0])}</p>` : ''}
+        ${additionalCreatorURN ? `<p>${createSearchLink(additionalCreatorURN, mainnet, isAdditionalUnacknowledged, creators[1])}</p>` : ''}
         ${lowestPrice !== null ? `<div class="listing-price">${lowestPrice} BTC</div>` : ''}
       `;
       card.onclick = () => {
@@ -993,7 +1002,7 @@
           const isUnacknowledged = date === "0001-01-01T00:00:00";
           const profile = await fetchProfileByAddress(address, mainnet);
           const name = profile ? profile.DisplayName || profile.URN || abbreviateAddress(address) : abbreviateAddress(address);
-          return createSearchLink(name, mainnet, isUnacknowledged);
+          return createSearchLink(name, mainnet, isUnacknowledged, address);
         })
       );
       $('modalCreators').innerHTML = `<p>Creators: ${creatorsList.length ? creatorsList.join(', ') : 'None'}</p>`;
@@ -1001,7 +1010,7 @@
         Object.entries(obj.Owners || {}).map(async ([address, { Item1: units }]) => {
           const profile = await fetchProfileByAddress(address, mainnet);
           const name = profile ? profile.DisplayName || profile.URN || abbreviateAddress(address) : abbreviateAddress(address);
-          return address === objectAddress ? `Primary: ${units} Units` : `${createSearchLink(name, mainnet)}: ${units} Units`;
+          return address === objectAddress ? `Primary: ${units} Units` : `${createSearchLink(name, mainnet, false, address)}: ${units} Units`;
         })
       );
       $('modalOwners').innerHTML = `<p>Owners: ${ownersList.length ? ownersList.join(', ') : 'None'}</p>`;
@@ -1016,7 +1025,7 @@
             const statusClass = status.toLowerCase().includes('success') ? 'status-success' : 'status-failed';
             return `<div class="changelog-entry ${statusClass}">
                       <span class="action-icon ${action.toLowerCase()}">${actionIcon}</span>
-                      <span>${date || 'Unknown date'}: ${action} by ${abbreviateAddress(from)} to ${abbreviateAddress(to)}${qty ? ` (Qty: ${qty})` : ''}${details ? ` (${details})` : ''}</span>
+                      <span>${date || 'Unknown date'}: ${action} by ${createSearchLink(abbreviateAddress(from), mainnet, false, from)} to ${createSearchLink(abbreviateAddress(to), mainnet, false, to)}${qty ? ` (Qty: ${qty})` : ''}${details ? ` (${details})` : ''}</span>
                     </div>`;
           }
           return `<div class="changelog-entry"><span>${entry.Date || 'Unknown date'}: ${entry.Description || 'No details'}</span></div>`;
@@ -1242,6 +1251,11 @@
         state.creatorAddress = keywordAddress;
         state.allObjects = await fetchObjectsByKeyword(searchTerm, isMainnet);
         state.filteredObjects = sortObjects(state.allObjects, $('sortSelect').value); // Initialize sorted
+      } else if (isBitcoinAddress(inputUrn)) {
+        profile = await fetchProfileByAddress(inputUrn, isMainnet);
+        state.creatorAddress = inputUrn;
+        state.allObjects = await fetchObjectsByAddress(inputUrn, isMainnet);
+        state.filteredObjects = sortObjects(state.allObjects, $('sortSelect').value);
       } else {
         const cachedObjects = sessionStorage.getItem(cacheKey);
         if (cachedObjects) {
