@@ -240,6 +240,15 @@
                 display: block;
             }
 
+            .message-attachments .video-embed {
+                width: 100%;
+                aspect-ratio: 16 / 9;
+                border: none;
+                border-radius: 5px;
+                background: #1e1e1e;
+                display: block;
+            }
+
             .message-attachments .file-card {
                 display: flex;
                 align-items: center;
@@ -851,21 +860,6 @@
                     );
                 }
             }
-            // Detect inline bare URLs in message text, linkify them and collect
-            // PDF ones for iframe display below the message body.
-            const inlineUrlRegex = /https?:\/\/[^\s<>"'[\]]+/g;
-            for (const match of [...cleanMessage.matchAll(inlineUrlRegex)]) {
-                const raw = match[0].replace(/[.,;:!?)]+$/, "");
-                try { new URL(raw); } catch { continue; } // skip malformed strings
-                if (!parsedLinks.some(l => l.url === raw)) {
-                    const inlineExt = (raw.match(/\.([^./?#]+)(?:[?#].*)?$/) || [])[1]?.toLowerCase() || "";
-                    parsedLinks.push({ url: raw, inline: true, ext: inlineExt });
-                }
-                const safeRaw = escapeHtml(raw);
-                cleanMessage = cleanMessage.split(raw).join(
-                    `<a href="${safeRaw}" target="_blank" rel="noopener noreferrer" style="color:#bb86fc;word-break:break-all;">${safeRaw}</a>`
-                );
-            }
             return { cleanMessage, attachments: parsedAttachments, links: parsedLinks };
         };
 
@@ -1057,28 +1051,27 @@
                     }
                     attachmentsContainer.appendChild(mediaElement);
                 }
-                for (const { url, inline, ext: linkExt } of links) {
-                    // Inline links are already shown as clickable text in the message body;
-                    // only render a viewer/card when the URL points to a file we can display.
-                    const resolvedExt = linkExt || (url.match(/\.([^./?#]+)(?:[?#].*)?$/) || [])[1]?.toLowerCase() || "";
-                    const isLinkPDF = resolvedExt === "pdf";
-                    const isLinkImage = /^(jpg|jpeg|png|gif|webp|bmp|svg|avif)$/.test(resolvedExt);
-                    // Skip generic inline web links that have no recognisable file type –
-                    // they are already clickable in the message text.
-                    if (inline && !isLinkPDF && !isLinkImage) continue;
+                for (const { url } of links) {
+                    const ext = (url.match(/\.([^./?#]+)(?:[?#].*)?$/) || [])[1]?.toLowerCase() || "";
+                    const isImage = /^(jpg|jpeg|png|gif|webp|bmp|svg|avif)$/.test(ext);
+                    // Detect YouTube: youtube.com/watch?v=ID (v= may appear after other params) or youtu.be/ID
+                    const ytMatch = url.match(
+                        /(?:youtube\.com\/watch\?(?:[^#]*&)?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/
+                    );
                     const linkMedia = document.createElement("div");
-                    if (isLinkPDF) {
-                        const safeTitle = escapeHtml(url);
-                        linkMedia.innerHTML = `<iframe class="pdf-viewer" src="${escapeHtml(url)}" title="${safeTitle}"></iframe>`;
-                    } else if (isLinkImage) {
+                    if (ytMatch) {
+                        const videoId = ytMatch[1];
+                        linkMedia.innerHTML = `<iframe class="video-embed" src="https://www.youtube.com/embed/${videoId}" title="YouTube video" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`;
+                    } else if (isImage) {
                         linkMedia.innerHTML = `<img class="media-placeholder" src="${state.fallbackImage}" alt="Image" style="display:block;">`;
                         const img = linkMedia.querySelector("img");
                         imageElements.push({ img, url, hash: "", mediaElement: linkMedia, mainnet });
                     } else {
-                        const icon = getFileCardIcon(resolvedExt);
-                        const typeLabel = resolvedExt ? resolvedExt.toUpperCase() + " File" : "Link";
+                        // PDF links, generic web links, and all other <<link>> URLs → file card
+                        const icon = ext === "pdf" ? "📄" : getFileCardIcon(ext);
+                        const typeLabel = ext ? ext.toUpperCase() + " File" : "Link";
                         let displayName = url;
-                        try { const u = new URL(url); displayName = u.hostname + (u.pathname !== "/" ? u.pathname : ""); } catch {}
+                        try { const u = new URL(url); displayName = u.hostname + (u.pathname !== "/" ? u.pathname : ""); } catch { /* URL constructor throws on relative URLs; fall back to raw string */ }
                         const safeName = escapeHtml(displayName);
                         const safeUrl = escapeHtml(url);
                         linkMedia.innerHTML = `
