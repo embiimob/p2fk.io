@@ -1700,7 +1700,16 @@
             return params.get(name);
         };
 
+        function updateSidebarTop() {
+            const wrapper = document.querySelector('.search-bar-wrapper');
+            const sidebar = document.querySelector('.sidebar');
+            if (!wrapper || !sidebar) return;
+            const stickyTop = parseFloat(window.getComputedStyle(wrapper).top) || 0; // CSS top is always in px here
+            sidebar.style.top = (stickyTop + wrapper.offsetHeight + 5) + 'px';
+        }
+
         window.addEventListener("load", () => {
+            updateSidebarTop();
             const address = getQueryParam("address");
             const urn = getQueryParam("urn");
             const mainnet = getQueryParam("mainnet") === "true";
@@ -1732,6 +1741,8 @@
                 loadMessages(document.getElementById("mainnetToggle").checked, false, state.currentSearchId);
             }
         });
+
+        window.addEventListener("resize", updateSidebarTop);
 
         document.getElementById("urnInput").addEventListener("keypress", (e) => {
             if (e.key === "Enter") {

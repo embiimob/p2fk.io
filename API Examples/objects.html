@@ -1354,7 +1354,18 @@
     positionModalNavButtons();
   });
 
-  window.addEventListener('resize', positionModalNavButtons);
+  function updateContainerPadding() {
+    const searchBar = document.querySelector('.search-bar');
+    const container = document.querySelector('.container');
+    if (searchBar && container) {
+      container.style.paddingTop = (searchBar.offsetHeight + 5) + 'px';
+    }
+  }
+
+  window.addEventListener('resize', () => {
+    positionModalNavButtons();
+    updateContainerPadding();
+  });
 
   document.getElementById('modalOverlay').addEventListener('click', (e) => {
     if (!document.querySelector('.modal-content').contains(e.target) && e.target.id === 'modalOverlay') {
@@ -1470,6 +1481,7 @@
   };
 
   window.addEventListener('load', async () => {
+    updateContainerPadding();
     const urn = getQueryParam('urn');
     const mainnet = getQueryParam('mainnet') === 'true';
     const sort = getQueryParam('sort');
