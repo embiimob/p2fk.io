@@ -353,6 +353,23 @@
     z-index: 3050;
   }
   .urn-row { display: flex; align-items: center; gap: 6px; margin: 8px 0; flex-wrap: wrap; }
+  .object-meta-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 4px 0;
+    flex-wrap: wrap;
+  }
+  .copy-address {
+    color: #03dac6;
+    cursor: pointer;
+    font-size: 0.85em;
+    font-family: monospace;
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid #03dac6;
+  }
+  .copy-address:hover { background: #03dac6; color: #121212; }
   .refresh-btn {
     background: none;
     border: none;
@@ -361,12 +378,20 @@
     cursor: pointer;
     padding: 5px;
     border-radius: 5px;
-    order: -1;
+    display: block;
+    margin-top: 6px;
   }
   .refresh-btn:hover { color: #7c4dff; }
   .refresh-btn.loading { animation: spin 1s linear infinite; transform-origin: center; }
   @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-  .creators-list, .owners-list, .changelog {
+  .listing-cheapest {
+    background: #03dac6;
+    color: #121212;
+    border-radius: 4px;
+    padding: 2px 4px;
+    font-weight: bold;
+  }
+  .creators-list, .owners-list, .changelog, .listings-list {
     max-height: 140px;
     overflow-y: auto;
     background: #121212;
@@ -614,13 +639,17 @@
       <h2 id="modalName"></h2>
       <p id="modalDescription"></p>
       <div class="urn-row">
-        <button id="refreshButton" class="refresh-btn" title="Refresh object (verbose)">🔄</button>
         <span id="modalURN"></span>
       </div>
-      <p id="modalBuyStatus"></p>
+      <div class="object-meta-row">
+        <span id="modalCreatedDate" class="date-label"></span>
+        <span id="modalObjectAddress" class="copy-address" title="Click to copy address"></span>
+      </div>
       <p id="modalOwners"></p>
       <div id="modalCreators" class="creators-list"></div>
-      <p id="modalRoyalties"></p>
+      <div id="modalRoyalties" class="creators-list"></div>
+      <button id="refreshButton" class="refresh-btn" title="Refresh object (verbose)">🔄</button>
+      <div id="modalListings" class="listings-list"></div>
       <div id="modalChangelog" class="changelog"></div>
     </div>
     <button id="modalNavRight" class="modal-nav" aria-label="Next object" style="display:none;" onclick="navigateObject(1)">&rarr;</button>
@@ -992,11 +1021,28 @@
       loadImageWithTimeout(imageUrl).then(url => modalImage.src = url).catch(() => modalImage.src = state.fallbackImage);
       $('modalName').textContent = obj.Name || 'Unnamed Object';
       $('modalDescription').textContent = `Description: ${obj.Description || 'No description available'}`;
-      const isAvailable = obj.Listings && Object.keys(obj.Listings).length > 0;
-      const lowestPrice = isAvailable ? Math.min(...Object.values(obj.Listings).map(l => l.Value)) : null;
-      $('modalBuyStatus').className = `buy-status ${isAvailable ? 'available' : 'not-available'}`;
-      $('modalBuyStatus').textContent = isAvailable ? `Available for purchase: ${lowestPrice} BTC` : 'Not available for purchase';
       const objectAddress = Object.keys(obj.Creators || {})[0] || 'Unknown';
+      // Created date with tooltip
+      const createdShort = formatDateToLocalShort(obj.CreatedDate);
+      const createdFull = formatDateToLocalFull(obj.CreatedDate);
+      $('modalCreatedDate').innerHTML = (createdShort === 'Invalid Date' || createdShort === 'N/A')
+        ? 'Unknown date'
+        : `Created: ${createdShort}<span class="date-tooltip">${createdFull}</span>`;
+      // Copyable object address
+      const addrEl = $('modalObjectAddress');
+      addrEl.textContent = abbreviateAddress(objectAddress);
+      addrEl.title = `Click to copy: ${objectAddress}`;
+      addrEl.onclick = () => {
+        navigator.clipboard.writeText(objectAddress).then(() => {
+          const orig = addrEl.textContent;
+          addrEl.textContent = 'Copied!';
+          setTimeout(() => { addrEl.textContent = orig; }, 1500);
+        }).catch(() => {
+          const orig = addrEl.textContent;
+          addrEl.textContent = 'Failed to copy';
+          setTimeout(() => { addrEl.textContent = orig; }, 1500);
+        });
+      };
       const creatorsList = await Promise.all(
         Object.entries(obj.Creators || {}).filter(([addr]) => addr !== objectAddress).map(async ([address, date]) => {
           const isUnacknowledged = date === "0001-01-01T00:00:00";
@@ -1015,8 +1061,32 @@
       );
       $('modalOwners').innerHTML = `<p>Owners: ${ownersList.length ? ownersList.join(', ') : 'None'}</p>`;
       $('modalOwners').className = 'owners-list';
-      const royaltiesList = Object.entries(obj.Royalties || {}).map(([addr, perc]) => `${abbreviateAddress(addr)}: ${perc}%`);
-      $('modalRoyalties').textContent = `Royalties: ${royaltiesList.length ? royaltiesList.join(', ') : 'None'}`;
+      // Royalties with profile resolution
+      const royaltiesEntries = await Promise.all(
+        Object.entries(obj.Royalties || {}).map(async ([addr, perc]) => {
+          const profile = await fetchProfileByAddress(addr, mainnet);
+          const name = profile ? profile.DisplayName || profile.URN || abbreviateAddress(addr) : abbreviateAddress(addr);
+          return `<p>${createSearchLink(name, mainnet, false, addr)}: ${perc}%</p>`;
+        })
+      );
+      $('modalRoyalties').innerHTML = `<p>Royalties:</p>${royaltiesEntries.length ? royaltiesEntries.join('') : '<p>None</p>'}`;
+      // Listings sorted cheapest first
+      const listingsEntries = obj.Listings ? Object.entries(obj.Listings) : [];
+      if (listingsEntries.length === 0) {
+        $('modalListings').innerHTML = '<p>No listings available</p>';
+      } else {
+        listingsEntries.sort((a, b) => a[1].Value - b[1].Value);
+        const listingItems = await Promise.all(
+          listingsEntries.map(async ([addr, listing], i) => {
+            const profile = await fetchProfileByAddress(addr, mainnet);
+            const name = profile ? profile.DisplayName || profile.URN || abbreviateAddress(addr) : abbreviateAddress(addr);
+            const sellerLink = createSearchLink(name, mainnet, false, addr);
+            const cheapestClass = i === 0 ? 'listing-cheapest' : '';
+            return `<p${cheapestClass ? ` class="${cheapestClass}"` : ''}>${sellerLink}: ${listing.Value} BTC</p>`;
+          })
+        );
+        $('modalListings').innerHTML = `<p>Listings:</p>${listingItems.join('')}`;
+      }
       const changelog = (obj.ChangeLog || []).slice().reverse().map(entry => {
         try {
           if (typeof entry === 'string') {
