@@ -231,6 +231,78 @@
                 border: 1px dashed #bb86fc;
             }
 
+            .message-attachments .pdf-viewer {
+                width: 100%;
+                height: 500px;
+                border: none;
+                border-radius: 5px;
+                background: #1e1e1e;
+                display: block;
+            }
+
+            .message-attachments .file-card {
+                display: flex;
+                align-items: center;
+                gap: 14px;
+                padding: 14px 16px;
+                background: #1e1e1e;
+                border: 1px solid #333;
+                border-radius: 8px;
+                color: #e0e0e0;
+                text-decoration: none;
+                transition: border-color 0.2s, background 0.2s;
+            }
+
+            .message-attachments .file-card:hover {
+                border-color: #bb86fc;
+                background: #252525;
+            }
+
+            .file-card-icon {
+                font-size: 2em;
+                line-height: 1;
+                flex-shrink: 0;
+                width: 44px;
+                text-align: center;
+            }
+
+            .file-card-info {
+                flex: 1;
+                min-width: 0;
+            }
+
+            .file-card-name {
+                font-size: 0.9em;
+                font-weight: bold;
+                color: #e0e0e0;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+
+            .file-card-meta {
+                font-size: 0.75em;
+                color: #888;
+                margin-top: 3px;
+            }
+
+            .file-card-download {
+                flex-shrink: 0;
+                padding: 7px 14px;
+                background: #7c4dff;
+                color: #fff;
+                border-radius: 5px;
+                font-size: 0.8em;
+                text-decoration: none;
+                white-space: nowrap;
+                transition: background 0.2s;
+            }
+
+            .file-card-download:hover {
+                background: #bb86fc;
+                color: #121212;
+            }
+
         .link-url {
             font-size: 0.75em;
             color: #b0b0b0;
@@ -318,6 +390,14 @@
             .message-attachments .media-placeholder,
             .message-attachments .media-error {
                 height: 200px;
+            }
+
+            .message-attachments .pdf-viewer {
+                height: 300px;
+            }
+
+            .file-card-download {
+                padding: 6px 10px;
             }
         }
     </style>
@@ -522,6 +602,42 @@
                 state.imageCache.delete(firstKey);
             }
             state.imageCache.set(url, resolvedUrl);
+        };
+
+        const fetchFileSize = async (url, sizeEl) => {
+            try {
+                const res = await fetch(url, { method: "HEAD", signal: AbortSignal.timeout(8000) });
+                const len = res.headers.get("content-length");
+                if (len) {
+                    const bytes = parseInt(len, 10);
+                    const mb = bytes / (1024 * 1024);
+                    const kb = bytes / 1024;
+                    sizeEl.textContent = mb >= 1 ? `${mb.toFixed(1)} MB` : kb >= 1 ? `${kb.toFixed(1)} KB` : `${bytes} B`;
+                } else {
+                    sizeEl.textContent = "Size unknown";
+                }
+            } catch {
+                sizeEl.textContent = "Size unavailable";
+            }
+        };
+
+        const escapeHtml = (str) => str
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#39;");
+
+        const getFileCardIcon = (ext) => {
+            if (/^(zip|tar|gz|bz2|xz|rar|7z|tgz)$/.test(ext)) return "📦";
+            if (/^(doc|docx|odt|rtf)$/.test(ext)) return "📝";
+            if (/^(xls|xlsx|ods|csv)$/.test(ext)) return "📊";
+            if (/^(ppt|pptx|odp)$/.test(ext)) return "📋";
+            if (/^(txt|log|md)$/.test(ext)) return "📃";
+            if (/^(exe|dmg|apk|deb|rpm|msi)$/.test(ext)) return "⚙️";
+            if (/^(json|xml|yaml|yml|toml|ini|cfg)$/.test(ext)) return "🔧";
+            if (/^(js|ts|py|java|c|cpp|cs|go|rs|php|rb|sh)$/.test(ext)) return "💻";
+            return "📎";
         };
 
         const loadImageWithTimeout = async (url, timeout = 15000, retries = 3) => {
@@ -853,6 +969,7 @@
                     const isImage = /^(jpg|jpeg|png|gif|webp|bmp|svg|tiff|tif|ico|avif)$/.test(ext);
                     const isAudio = /^(mp3|wav|ogg|flac)$/.test(ext);
                     const isVideo = /^(mp4|webm|avi|mov)$/.test(ext);
+                    const isPDF = ext === "pdf";
                     const audioMimeTypes = { mp3: "audio/mpeg", wav: "audio/wav", ogg: "audio/ogg", flac: "audio/flac" };
                     const videoMimeTypes = { mp4: "video/mp4", webm: "video/webm", avi: "video/avi", mov: "video/quicktime" };
                     if (isImage) {
@@ -883,11 +1000,27 @@
                         } else {
                             lazyLoadObserver.observe(source);
                         }
+                    } else if (isPDF) {
+                        mediaElement.innerHTML = `<iframe class="pdf-viewer" src="${url}" title="${filename}"></iframe>`;
                     } else {
-                        mediaElement.innerHTML = `<div class="media-error">${renderUrnLink(
-                            `IPFS:${hash}`,
-                            mainnet
-                        )}</div>`;
+                        const icon = getFileCardIcon(ext);
+                        const typeLabel = ext ? ext.toUpperCase() + " File" : "File";
+                        const safeName = escapeHtml(filename);
+                        mediaElement.innerHTML = `
+                            <div class="file-card">
+                                <div class="file-card-icon">${icon}</div>
+                                <div class="file-card-info">
+                                    <div class="file-card-name" title="${safeName}">${safeName}</div>
+                                    <div class="file-card-meta">
+                                        <span class="file-card-type">${escapeHtml(typeLabel)}</span>
+                                        &nbsp;&middot;&nbsp;
+                                        <span class="file-card-size">Fetching size...</span>
+                                    </div>
+                                </div>
+                                <a class="file-card-download" href="${url}" target="_blank" rel="noopener noreferrer">Download</a>
+                            </div>`;
+                        const sizeEl = mediaElement.querySelector(".file-card-size");
+                        fetchFileSize(url, sizeEl);
                     }
                     attachmentsContainer.appendChild(mediaElement);
                 }
