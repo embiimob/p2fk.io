@@ -276,9 +276,17 @@
     width: 90%;
     max-height: 80vh;
     overflow-y: auto;
+    overflow-x: hidden;
     position: relative;
     box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+    /* Firefox custom scrollbar */
+    scrollbar-width: thin;
+    scrollbar-color: #5600ca #1a1a1a;
   }
+  .modal-content::-webkit-scrollbar { width: 5px; }
+  .modal-content::-webkit-scrollbar-track { background: #1a1a1a; border-radius: 3px; }
+  .modal-content::-webkit-scrollbar-thumb { background: #5600ca; border-radius: 3px; }
+  .modal-content::-webkit-scrollbar-thumb:hover { background: #bb86fc; }
   .modal-content img {
     width: 100%;
     max-height: 280px;
@@ -352,33 +360,142 @@
     cursor: pointer;
     z-index: 3050;
   }
-  .urn-row { display: flex; align-items: center; gap: 6px; margin: 8px 0; flex-wrap: wrap; }
-  .refresh-btn {
-    background: none;
-    border: none;
-    color: #03dac6;
-    font-size: 1.2em;
-    cursor: pointer;
-    padding: 5px;
-    border-radius: 5px;
-    order: -1;
+  .urn-row { display: flex; align-items: flex-start; gap: 6px; margin: 8px 0; flex-wrap: wrap; word-break: break-all; overflow-wrap: anywhere; }
+  .urn-row span, .urn-row a { word-break: break-all; overflow-wrap: anywhere; min-width: 0; }
+  .object-meta-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 4px 0;
+    flex-wrap: wrap;
   }
-  .refresh-btn:hover { color: #7c4dff; }
+  .copy-address {
+    color: #03dac6;
+    cursor: pointer;
+    font-size: 0.82em;
+    font-family: monospace;
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid #03dac6;
+    word-break: break-all;
+    overflow-wrap: anywhere;
+  }
+  .copy-address:hover { background: #03dac6; color: #121212; }
+  .refresh-btn {
+    background: #1a1a1a;
+    border: 1px solid #2c2c2c;
+    color: #03dac6;
+    font-size: 0.78em;
+    cursor: pointer;
+    padding: 3px 9px;
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin: 5px 0 2px;
+    letter-spacing: 0.03em;
+  }
+  .refresh-btn:hover { background: #222; border-color: #03dac6; color: #03dac6; }
   .refresh-btn.loading { animation: spin 1s linear infinite; transform-origin: center; }
   @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-  .creators-list, .owners-list, .changelog {
-    max-height: 140px;
+  /* ── Scrollable panels ─────────────────────────────────────────── */
+  .creators-list, .owners-list, .changelog, .listings-list {
+    max-height: 160px;
     overflow-y: auto;
+    overflow-x: hidden;
     background: #121212;
-    padding: 8px;
-    border-radius: 5px;
-    margin-top: 8px;
-    font-size: 0.85em;
+    padding: 6px 8px 6px;
+    border-radius: 6px;
+    margin-top: 4px;
+    font-size: 0.82em;
     color: #b0b0b0;
     max-width: 100%;
     word-break: break-word;
-    overflow-x: hidden;
+    /* Firefox */
+    scrollbar-width: thin;
+    scrollbar-color: #5600ca #1a1a1a;
   }
+  .changelog { max-height: 200px; }
+  /* WebKit custom scrollbar */
+  .creators-list::-webkit-scrollbar,
+  .owners-list::-webkit-scrollbar,
+  .changelog::-webkit-scrollbar,
+  .listings-list::-webkit-scrollbar { width: 5px; height: 5px; }
+  .creators-list::-webkit-scrollbar-track,
+  .owners-list::-webkit-scrollbar-track,
+  .changelog::-webkit-scrollbar-track,
+  .listings-list::-webkit-scrollbar-track { background: #1a1a1a; border-radius: 3px; }
+  .creators-list::-webkit-scrollbar-thumb,
+  .owners-list::-webkit-scrollbar-thumb,
+  .changelog::-webkit-scrollbar-thumb,
+  .listings-list::-webkit-scrollbar-thumb { background: #5600ca; border-radius: 3px; }
+  .creators-list::-webkit-scrollbar-thumb:hover,
+  .owners-list::-webkit-scrollbar-thumb:hover,
+  .changelog::-webkit-scrollbar-thumb:hover,
+  .listings-list::-webkit-scrollbar-thumb:hover { background: #bb86fc; }
+
+  /* ── Section labels ────────────────────────────────────────────── */
+  .modal-section-label {
+    font-size: 0.68em;
+    font-weight: 700;
+    color: #6200ea;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    padding: 8px 0 2px;
+    border-top: 1px solid #2a2a2a;
+    margin-top: 6px;
+  }
+
+  /* ── Column header row (inside scrollable panel, sticky) ───────── */
+  .list-col-header {
+    display: flex;
+    gap: 8px;
+    padding: 2px 4px 5px;
+    margin-bottom: 1px;
+    border-bottom: 1px solid #2c2c2c;
+    font-size: 0.72em;
+    font-weight: 700;
+    color: #444;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    position: sticky;
+    top: 0;
+    background: #121212;
+    z-index: 1;
+  }
+
+  /* ── Data row ──────────────────────────────────────────────────── */
+  .list-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 3px 4px;
+    border-radius: 3px;
+    line-height: 1.5;
+    flex-wrap: wrap;
+  }
+  .list-row:nth-child(even) { background: rgba(255,255,255,0.025); }
+
+  /* ── Column cells ──────────────────────────────────────────────── */
+  .col-name  { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .col-price { flex: 0 0 auto; min-width: 72px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; color: #e0e0e0; }
+  .col-qty   { flex: 0 0 auto; min-width: 28px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; color: #bb86fc; }
+  .col-date  { flex: 0 0 auto; min-width: 82px; white-space: nowrap; color: #555; font-size: 0.88em; }
+  .col-icon  { flex: 0 0 18px; text-align: center; line-height: 1; }
+  .col-action { flex: 0 0 auto; min-width: 52px; white-space: nowrap; text-transform: capitalize; color: #bb86fc; font-size: 0.9em; }
+  .col-pct   { flex: 0 0 auto; white-space: nowrap; color: #03dac6; }
+  .col-parties { flex: 1 1 0; min-width: 0; color: #9e9e9e; word-break: break-word; overflow: hidden; }
+  .meta-label { font-size: 0.75em; color: #b0b0b0; white-space: nowrap; }
+
+  /* ── Listings ──────────────────────────────────────────────────── */
+  .listing-cheapest { background: rgba(3, 218, 198, 0.12); border-radius: 4px; }
+  .listing-cheapest .col-price { color: #03dac6; font-weight: 700; }
+
+  /* ── Changelog status ──────────────────────────────────────────── */
+  .status-success { border-left: 2px solid rgba(3, 218, 198, 0.5); padding-left: 5px; }
+  .status-failed  { border-left: 2px solid rgba(207, 102, 121, 0.5); padding-left: 5px; }
+
+  /* legacy; keep for any older usage */
   .changelog-entry { white-space: normal; word-break: break-word; }
   .urn-tooltip { display: none; }
   .keyword-link { color: #bb86fc; cursor: pointer; text-decoration: underline; }
@@ -400,6 +517,13 @@
     .name-social-container {
       flex-wrap: wrap;
     }
+    /* Modal tweaks on small screens */
+    .modal-content {
+      max-height: 90vh;
+      padding: 10px;
+    }
+    /* On narrow screens hide the date column in changelog to save space */
+    .changelog .col-date { display: none; }
   }
   @media (min-width: 769px) {
     .profile-content {
@@ -614,13 +738,18 @@
       <h2 id="modalName"></h2>
       <p id="modalDescription"></p>
       <div class="urn-row">
-        <button id="refreshButton" class="refresh-btn" title="Refresh object (verbose)">🔄</button>
         <span id="modalURN"></span>
       </div>
-      <p id="modalBuyStatus"></p>
-      <p id="modalOwners"></p>
+      <div class="object-meta-row">
+        <span class="meta-label">Object ID:</span>
+        <span id="modalObjectAddress" class="copy-address" title="Click to copy address"></span>
+        <span id="modalCreatedDate" class="date-label" style="margin-left:auto"></span>
+      </div>
+      <div id="modalOwners" class="owners-list"></div>
       <div id="modalCreators" class="creators-list"></div>
-      <p id="modalRoyalties"></p>
+      <div id="modalRoyalties" class="creators-list"></div>
+      <div id="modalListings" class="listings-list"></div>
+      <button id="refreshButton" class="refresh-btn" title="Refresh object data">🔄 Refresh</button>
       <div id="modalChangelog" class="changelog"></div>
     </div>
     <button id="modalNavRight" class="modal-nav" aria-label="Next object" style="display:none;" onclick="navigateObject(1)">&rarr;</button>
@@ -992,11 +1121,28 @@
       loadImageWithTimeout(imageUrl).then(url => modalImage.src = url).catch(() => modalImage.src = state.fallbackImage);
       $('modalName').textContent = obj.Name || 'Unnamed Object';
       $('modalDescription').textContent = `Description: ${obj.Description || 'No description available'}`;
-      const isAvailable = obj.Listings && Object.keys(obj.Listings).length > 0;
-      const lowestPrice = isAvailable ? Math.min(...Object.values(obj.Listings).map(l => l.Value)) : null;
-      $('modalBuyStatus').className = `buy-status ${isAvailable ? 'available' : 'not-available'}`;
-      $('modalBuyStatus').textContent = isAvailable ? `Available for purchase: ${lowestPrice} BTC` : 'Not available for purchase';
       const objectAddress = Object.keys(obj.Creators || {})[0] || 'Unknown';
+      // Created date with tooltip
+      const createdShort = formatDateToLocalShort(obj.CreatedDate);
+      const createdFull = formatDateToLocalFull(obj.CreatedDate);
+      $('modalCreatedDate').innerHTML = (createdShort === 'Invalid Date' || createdShort === 'N/A')
+        ? 'Unknown date'
+        : `Created: ${createdShort}<span class="date-tooltip">${createdFull}</span>`;
+      // Copyable object address
+      const addrEl = $('modalObjectAddress');
+      addrEl.textContent = objectAddress;
+      addrEl.title = 'Click to copy address';
+      addrEl.onclick = () => {
+        navigator.clipboard.writeText(objectAddress).then(() => {
+          const orig = addrEl.textContent;
+          addrEl.textContent = 'Copied!';
+          setTimeout(() => { addrEl.textContent = orig; }, 1500);
+        }).catch(() => {
+          const orig = addrEl.textContent;
+          addrEl.textContent = 'Failed to copy';
+          setTimeout(() => { addrEl.textContent = orig; }, 1500);
+        });
+      };
       const creatorsList = await Promise.all(
         Object.entries(obj.Creators || {}).filter(([addr]) => addr !== objectAddress).map(async ([address, date]) => {
           const isUnacknowledged = date === "0001-01-01T00:00:00";
@@ -1005,35 +1151,81 @@
           return createSearchLink(name, mainnet, isUnacknowledged, address);
         })
       );
-      $('modalCreators').innerHTML = `<p>Creators: ${creatorsList.length ? creatorsList.join(', ') : 'None'}</p>`;
+      $('modalCreators').innerHTML = `<div class="list-col-header"><span class="col-name">Creators</span></div>${creatorsList.length ? creatorsList.map(c => `<div class="list-row"><span class="col-name">${c}</span></div>`).join('') : '<div class="list-row"><span class="col-name">None</span></div>'}`;
       const ownersList = await Promise.all(
-        Object.entries(obj.Owners || {}).map(async ([address, { Item1: units }]) => {
+        Object.entries(obj.Owners || {})
+          .sort((a, b) => (b[1].Item1 || 0) - (a[1].Item1 || 0))
+          .map(async ([address, { Item1: units }]) => {
           const profile = await fetchProfileByAddress(address, mainnet);
           const name = profile ? profile.DisplayName || profile.URN || abbreviateAddress(address) : abbreviateAddress(address);
-          return address === objectAddress ? `Primary: ${units} Units` : `${createSearchLink(name, mainnet, false, address)}: ${units} Units`;
+          return address === objectAddress
+            ? `<div class="list-row"><span class="col-name">Primary</span><span class="col-qty">${units}</span></div>`
+            : `<div class="list-row"><span class="col-name">${createSearchLink(name, mainnet, false, address)}</span><span class="col-qty">${units}</span></div>`;
         })
       );
-      $('modalOwners').innerHTML = `<p>Owners: ${ownersList.length ? ownersList.join(', ') : 'None'}</p>`;
-      $('modalOwners').className = 'owners-list';
-      const royaltiesList = Object.entries(obj.Royalties || {}).map(([addr, perc]) => `${abbreviateAddress(addr)}: ${perc}%`);
-      $('modalRoyalties').textContent = `Royalties: ${royaltiesList.length ? royaltiesList.join(', ') : 'None'}`;
-      const changelog = (obj.ChangeLog || []).slice().reverse().map(entry => {
-        try {
-          if (typeof entry === 'string') {
-            const [from, to, action, qty, details, status, date] = JSON.parse(entry);
-            const actionIcon = state.actionIcons[action.toLowerCase()] || '⚙️';
-            const statusClass = status.toLowerCase().includes('success') ? 'status-success' : 'status-failed';
-            return `<div class="changelog-entry ${statusClass}">
-                      <span class="action-icon ${action.toLowerCase()}">${actionIcon}</span>
-                      <span>${date || 'Unknown date'}: ${action} by ${createSearchLink(abbreviateAddress(from), mainnet, false, from)} to ${createSearchLink(abbreviateAddress(to), mainnet, false, to)}${qty ? ` (Qty: ${qty})` : ''}${details ? ` (${details})` : ''}</span>
-                    </div>`;
+      $('modalOwners').innerHTML = `<div class="list-col-header"><span class="col-name">Owners</span><span class="col-qty">Units</span></div>${ownersList.length ? ownersList.join('') : '<div class="list-row"><span>None</span></div>'}`;
+      // Royalties with profile resolution
+      const royaltiesEntries = await Promise.all(
+        Object.entries(obj.Royalties || {}).map(async ([addr, perc]) => {
+          const profile = await fetchProfileByAddress(addr, mainnet);
+          const name = profile ? profile.DisplayName || profile.URN || abbreviateAddress(addr) : abbreviateAddress(addr);
+          return `<div class="list-row"><span class="col-name">${createSearchLink(name, mainnet, false, addr)}</span><span class="col-pct">${perc}%</span></div>`;
+        })
+      );
+      $('modalRoyalties').innerHTML = `<div class="list-col-header"><span class="col-name">Royalties</span><span class="col-pct">%</span></div>${royaltiesEntries.length ? royaltiesEntries.join('') : '<div class="list-row"><span>None</span></div>'}`;
+      // Listings sorted cheapest first
+      const listingsEntries = obj.Listings ? Object.entries(obj.Listings) : [];
+      if (listingsEntries.length === 0) {
+        $('modalListings').innerHTML = '<div class="list-col-header"><span class="col-name">Listings</span></div><div class="list-row"><span class="col-name">No listings available</span></div>';
+      } else {
+        listingsEntries.sort((a, b) => a[1].Value - b[1].Value);
+        const listingItems = await Promise.all(
+          listingsEntries.map(async ([addr, listing], i) => {
+            const profile = await fetchProfileByAddress(addr, mainnet);
+            const name = profile ? profile.DisplayName || profile.URN || abbreviateAddress(addr) : abbreviateAddress(addr);
+            const sellerLink = createSearchLink(name, mainnet, false, addr);
+            const qty = listing.Qty ?? listing.Item1 ?? '';           // API may use either field name
+            return `<div class="list-row${i === 0 ? ' listing-cheapest' : ''}"><span class="col-name">${sellerLink}</span><span class="col-price">${listing.Value} BTC</span><span class="col-qty">${qty}</span></div>`;
+          })
+        );
+        $('modalListings').innerHTML = `<div class="list-col-header"><span class="col-name">Listings</span><span class="col-price">Price</span><span class="col-qty">Qty</span></div>${listingItems.join('')}`;
+      }
+      const fmtShort = (d) => { try { const s = formatDateToLocalShort(d); return s === 'Invalid Date' ? d : s; } catch { return d || ''; } };
+      const fmtFull  = (d) => { try { return formatDateToLocalFull(d) || ''; } catch { return d || ''; } };
+      const changelog = await Promise.all(
+        (obj.ChangeLog || []).slice().reverse().map(async entry => {
+          try {
+            if (typeof entry === 'string') {
+              const [from, to, action, qty, details, status, date] = JSON.parse(entry);
+              const [fromProfile, toProfile] = await Promise.all([
+                fetchProfileByAddress(from, mainnet),
+                fetchProfileByAddress(to, mainnet)
+              ]);
+              const fromName = fromProfile ? (fromProfile.DisplayName || fromProfile.URN || abbreviateAddress(from)) : abbreviateAddress(from);
+              const toName   = toProfile   ? (toProfile.DisplayName   || toProfile.URN   || abbreviateAddress(to))   : abbreviateAddress(to);
+              const actionIcon = state.actionIcons[action.toLowerCase()] || '⚙️';
+              const statusClass = status.toLowerCase().includes('success') ? 'status-success' : 'status-failed';
+              const short = fmtShort(date);
+              const full  = fmtFull(date);
+              const dateHtml = short
+                ? `<span class="col-date date-label">${short}<span class="date-tooltip">${full}</span></span>`
+                : `<span class="col-date"></span>`;
+              const parties = `${createSearchLink(fromName, mainnet, false, from)} → ${createSearchLink(toName, mainnet, false, to)}${qty ? ` ×${qty}` : ''}${details ? ` (${details})` : ''}`;
+              return `<div class="list-row ${statusClass}"><span class="col-name">${parties}</span>${dateHtml}<span class="col-action">${actionIcon} ${action}</span></div>`;
+            }
+            const d = entry.Date || '';
+            const short = fmtShort(d);
+            const full  = fmtFull(d);
+            const dateHtml = short
+              ? `<span class="col-date date-label">${short}<span class="date-tooltip">${full}</span></span>`
+              : `<span class="col-date"></span>`;
+            return `<div class="list-row"><span class="col-name">${entry.Description || 'No details'}</span>${dateHtml}<span class="col-action">⚙️</span></div>`;
+          } catch (error) {
+            return `<div class="list-row"><span class="col-name">Invalid provenance entry</span></div>`;
           }
-          return `<div class="changelog-entry"><span>${entry.Date || 'Unknown date'}: ${entry.Description || 'No details'}</span></div>`;
-        } catch (error) {
-          return `<div class="changelog-entry"><span>Invalid changelog entry</span></div>`;
-        }
-      });
-      $('modalChangelog').innerHTML = changelog.length ? changelog.join('') : '<p>No changelog available</p>';
+        })
+      );
+      $('modalChangelog').innerHTML = `<div class="list-col-header"><span class="col-name">Provenance</span><span class="col-date">Date</span><span class="col-action">Action</span></div>${changelog.length ? changelog.join('') : '<div class="list-row"><span class="col-name">No provenance available</span></div>'}`;
       $('modalURN').innerHTML = renderUrnLink(obj.URN);
       $('refreshButton').onclick = () => refreshSingleObject(obj, mainnet);
       // Update navigation button states
