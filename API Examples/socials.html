@@ -80,8 +80,19 @@
                 cursor: pointer;
             }
 
-                .search-bar button:hover {
+                .search-bar button:hover:not(:disabled) {
                     background: #7c4dff;
+                }
+
+                .search-bar button:disabled {
+                    background: #444;
+                    cursor: not-allowed;
+                    opacity: 0.7;
+                }
+
+                .search-bar input[type="text"]:disabled {
+                    opacity: 0.6;
+                    cursor: not-allowed;
                 }
 
         .sidebar {
@@ -555,7 +566,7 @@
             <div class="search-bar">
                 <input type="text" id="urnInput" placeholder="Enter URN (e.g., embii4u) or #keyword" />
                 <label><input type="checkbox" id="mainnetToggle" /> Mainnet</label>
-                <button onclick="searchProfile()">Search</button>
+                <button id="searchBtn" onclick="searchProfile()">Search</button>
                 <button class="url-help-btn" onclick="openUrlBuilder()" title="URL Builder — generate a shareable search link">?</button>
             </div>
         </div>
@@ -609,6 +620,7 @@
             skip: 0,
             batchSize: 20,
             isLoading: false,
+            isSearching: false,
             hasMore: true,
             currentURN: "",
             creatorAddress: "",
@@ -1542,10 +1554,9 @@
         };
 
         const searchProfile = async (urn = null, mainnet = null, isKeywordSearch = false) => {
-            if (state.abortController) {
-                state.abortController.abort();
-                console.log(`Aborted previous search with ID: ${state.currentSearchId}`);
-            }
+            if (state.isSearching) return;
+            state.isSearching = true;
+
             state.abortController = new AbortController();
             const searchId = Date.now() + Math.random().toString(36).slice(2);
             state.currentSearchId = searchId;
@@ -1563,8 +1574,18 @@
                 showError("Please enter a URN or #keyword");
                 state.currentSearchId = null;
                 state.abortController = null;
+                state.isSearching = false;
                 return;
             }
+
+            const $searchBtn = document.getElementById("searchBtn");
+            const $urnInput = document.getElementById("urnInput");
+            if ($searchBtn) {
+                $searchBtn.disabled = true;
+                $searchBtn.textContent = "Searching…";
+            }
+            if ($urnInput) $urnInput.disabled = true;
+
             Object.assign(state, {
                 creatorAddress: "",
                 allMessages: [],
@@ -1647,6 +1668,12 @@
                     state.abortController = null;
                     updateTotalMessages();
                 }
+                state.isSearching = false;
+                if ($searchBtn) {
+                    $searchBtn.disabled = false;
+                    $searchBtn.textContent = "Search";
+                }
+                if ($urnInput) $urnInput.disabled = false;
             }
         };
 
@@ -1704,14 +1731,9 @@
             }
         });
 
-        let debounceTimeout;
         document.getElementById("urnInput").addEventListener("keypress", (e) => {
             if (e.key === "Enter") {
-                clearTimeout(debounceTimeout);
-                debounceTimeout = setTimeout(() => {
-                    console.log(`Enter key pressed, initiating search`);
-                    searchProfile();
-                }, 300);
+                searchProfile();
             }
         });
 

@@ -47,6 +47,18 @@
   .search-bar label, .search-bar select {
     flex: 0 0 auto;
   }
+  #searchBtn {
+    padding: 8px 15px;
+    background: #6200ea;
+    border: none;
+    color: white;
+    border-radius: 5px;
+    cursor: pointer;
+    flex: 0 0 auto;
+  }
+  #searchBtn:hover:not(:disabled) { background: #7c4dff; }
+  #searchBtn:disabled { background: #444; cursor: not-allowed; opacity: 0.7; }
+  .search-bar input[type="text"]:disabled { opacity: 0.6; cursor: not-allowed; }
   .filter-buttons {
     display: flex;
     flex-wrap: wrap;
@@ -548,6 +560,7 @@
   <div class="container">
     <div class="search-bar">
       <input type="text" id="urnInput" placeholder="Enter URN (e.g., embii4u) or #keyword">
+      <button id="searchBtn" onclick="searchProfile()">Search</button>
       <label><input type="checkbox" id="mainnetToggle"> Mainnet</label>
       <select id="sortSelect">
         <option value="newest">Newest</option>
@@ -1172,10 +1185,22 @@
   const searchProfile = async (urn = null, mainnet = null) => {
     if (state.isSearching) return;
     state.isSearching = true;
-    const inputUrn = urn || document.getElementById('urnInput').value.trim();
+    const $searchBtn = document.getElementById('searchBtn');
+    const $urnInput = document.getElementById('urnInput');
+    if ($searchBtn) {
+      $searchBtn.disabled = true;
+      $searchBtn.textContent = 'Searching…';
+    }
+    if ($urnInput) $urnInput.disabled = true;
+    const inputUrn = urn || $urnInput.value.trim();
     const isMainnet = mainnet !== null ? mainnet : document.getElementById('mainnetToggle').checked;
     if (!inputUrn) {
       showError('Please enter a URN or #keyword');
+      if ($searchBtn) {
+        $searchBtn.disabled = false;
+        $searchBtn.textContent = 'Search';
+      }
+      if ($urnInput) $urnInput.disabled = false;
       state.isSearching = false;
       return;
     }
@@ -1244,6 +1269,11 @@
     } finally {
       $('loading').style.display = 'none';
       state.isSearching = false;
+      if ($searchBtn) {
+        $searchBtn.disabled = false;
+        $searchBtn.textContent = 'Search';
+      }
+      if ($urnInput) $urnInput.disabled = false;
     }
   };
 
