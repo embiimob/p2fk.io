@@ -20,6 +20,7 @@ namespace P2FK.IO.Controllers
         [HttpGet("{address}")]
         public async Task<ActionResult> Get(string address, int skip = 0, int qty = 10, bool mainnet = true, bool verbose = false)
         {
+            verbose = false; // Force verbose off - third party callers causing issues with verbose mode
 
       
                 // Regular expression for cryptocurrency address validation

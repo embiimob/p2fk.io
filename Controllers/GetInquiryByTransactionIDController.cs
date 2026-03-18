@@ -20,6 +20,7 @@ namespace P2FK.IO.Controllers
         [HttpGet("{id}")]
         public async Task<ActionResult> Get(string id, bool mainnet = true, bool verbose = false)
         {
+            verbose = false; // Force verbose off - third party callers causing issues with verbose mode
             // Regular expression for cryptocurrency address validation
             string pattern = @"^[0-9a-fA-F]{64}$";
             if (Regex.IsMatch(id, pattern))
