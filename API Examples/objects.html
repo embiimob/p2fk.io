@@ -276,6 +276,7 @@
     width: 90%;
     max-height: 80vh;
     overflow-y: auto;
+    overflow-x: hidden;
     position: relative;
     box-shadow: 0 4px 10px rgba(0,0,0,0.5);
   }
@@ -352,7 +353,8 @@
     cursor: pointer;
     z-index: 3050;
   }
-  .urn-row { display: flex; align-items: center; gap: 6px; margin: 8px 0; flex-wrap: wrap; }
+  .urn-row { display: flex; align-items: flex-start; gap: 6px; margin: 8px 0; flex-wrap: wrap; word-break: break-all; overflow-wrap: anywhere; }
+  .urn-row span, .urn-row a { word-break: break-all; overflow-wrap: anywhere; min-width: 0; }
   .object-meta-row {
     display: flex;
     align-items: center;
@@ -363,11 +365,13 @@
   .copy-address {
     color: #03dac6;
     cursor: pointer;
-    font-size: 0.85em;
+    font-size: 0.82em;
     font-family: monospace;
     padding: 2px 6px;
     border-radius: 4px;
     border: 1px solid #03dac6;
+    word-break: break-all;
+    overflow-wrap: anywhere;
   }
   .copy-address:hover { background: #03dac6; color: #121212; }
   .refresh-btn {
@@ -1114,8 +1118,8 @@
         : `Created: ${createdShort}<span class="date-tooltip">${createdFull}</span>`;
       // Copyable object address
       const addrEl = $('modalObjectAddress');
-      addrEl.textContent = abbreviateAddress(objectAddress);
-      addrEl.title = `Click to copy: ${objectAddress}`;
+      addrEl.textContent = objectAddress;
+      addrEl.title = 'Click to copy address';
       addrEl.onclick = () => {
         navigator.clipboard.writeText(objectAddress).then(() => {
           const orig = addrEl.textContent;
