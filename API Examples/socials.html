@@ -708,7 +708,8 @@
             );
 
         const fetchProfileByAddress = async (address, mainnet, signal) => {
-            if (!address || typeof address !== 'string' || !/^[a-zA-Z0-9]{26,35}$/.test(address.trim())) {
+            if (!address || typeof address !== 'string' ||
+                !(/^[a-zA-Z0-9]{26,35}$/.test(address.trim()) || /^(bc1|tb1)[a-z0-9]{39,59}$/.test(address.trim()))) {
                 console.warn(`Fetch aborted: Invalid address "${address}"`);
                 return null;
             }
@@ -945,11 +946,21 @@
         const abbreviateAddress = (address) =>
             address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "";
 
-        const createSearchLink = (text, mainnet, isUnacknowledged = false) => {
+        const isBitcoinAddress = (str) => {
+            if (!str || typeof str !== "string") return false;
+            const s = str.trim();
+            return /^[13][1-9A-HJ-NP-Za-km-z]{24,33}$/.test(s) ||
+                   /^bc1[ac-hj-np-z02-9]{39,59}$/.test(s) ||
+                   /^[mn2][1-9A-HJ-NP-Za-km-z]{24,33}$/.test(s) ||
+                   /^tb1[ac-hj-np-z02-9]{39,59}$/.test(s);
+        };
+
+        const createSearchLink = (text, mainnet, isUnacknowledged = false, fullAddress = null) => {
             if (!text) return "";
             const urn = text.startsWith("@") ? text.slice(1) : text;
+            const searchTarget = fullAddress || text;
             return `<span class="urn-link${isUnacknowledged ? " unacknowledged" : ""
-                }" data-urn="${text}" data-mainnet="${mainnet}">${urn}</span>`;
+                }" data-urn="${searchTarget}" data-mainnet="${mainnet}">${urn}</span>`;
         };
 
         const renderUrnLink = (urn, mainnet) => {
@@ -1097,7 +1108,7 @@
             $("profileChanged").textContent = `Last Changed: ${isKeywordSearch ? "N/A" : profile.ChangeDate}`;
             $("profileSection").style.display = "flex";
             $("profileLoading").style.display = "none";
-            state.creatorAddress = isKeywordSearch ? state.creatorAddress : (profile?.Creators?.[0] || "");
+            state.creatorAddress = isKeywordSearch ? state.creatorAddress : (profile?.Creators?.[0] || state.creatorAddress);
             console.log(`Profile displayed, creatorAddress set to: ${state.creatorAddress}`);
             updateTotalMessages();
         };
@@ -1141,8 +1152,8 @@
          <p>${cleanMessage || "No message content"}</p>
          <div class="message-attachments"></div>
          <div class="message-meta">
-         From: ${createSearchLink(fromName, mainnet)} |
-         To: ${createSearchLink(toName, mainnet)} |
+         From: ${createSearchLink(fromName, mainnet, false, msg.FromAddress)} |
+         To: ${createSearchLink(toName, mainnet, false, msg.ToAddress)} |
          Date: ${msg.BlockDate}
          </div>
          `;
@@ -1624,6 +1635,17 @@
                     state.creatorAddress = keywordAddress;
                     profile = await fetchProfileByAddress(keywordAddress, isMainnet, state.abortController.signal);
                     await displayProfile(profile || {}, isMainnet, true, searchTerm, searchId);
+                } else if (isBitcoinAddress(inputUrn)) {
+                    console.log(`Bitcoin address detected: ${inputUrn}`);
+                    profile = await fetchProfileByAddress(inputUrn, isMainnet, state.abortController.signal);
+                    if (state.currentSearchId !== searchId) {
+                        console.log(`Aborting address search for outdated search ID: ${searchId}`);
+                        return;
+                    }
+                    address = inputUrn;
+                    state.creatorAddress = address;
+                    console.log(`Set creatorAddress from Bitcoin address: ${state.creatorAddress}`);
+                    await displayProfile(profile || {}, isMainnet, false, inputUrn, searchId);
                 } else {
                     profile = await fetchProfile(inputUrn, isMainnet, state.abortController.signal);
                     if (state.currentSearchId !== searchId) {
