@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>NFT Profile & Objects Lookup</title>
+  <title>Sup!? Object Lookup</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.7.1/jszip.min.js"></script>
 <style>
   body {
@@ -649,7 +649,7 @@
         <button class="ub-btn-go" onclick="goUrlBuilder()">Go</button>
       </div>
       <div class="ub-output" id="ubOutput"></div>
-      <p class="ub-example">Example: <code>index.html?urn=AllenVandever&amp;mainnet=true&amp;sort=highestPrice&amp;filter=created</code></p>
+      <p class="ub-example">Example: <code>objects.html?urn=AllenVandever&amp;mainnet=true&amp;sort=highestPrice&amp;filter=created</code></p>
     </div>
   </div>
 
@@ -861,8 +861,8 @@
     $('profileCreated').innerHTML = createdDateShort === 'N/A' ? 'N/A' : `Created: ${createdDateShort}<span class="date-tooltip">${createdDateFull}</span>`;
     $('profileChanged').innerHTML = changedDateShort === 'N/A' ? 'N/A' : `Last Modified: ${changedDateShort}<span class="date-tooltip">${changedDateFull}</span>`;
     $('socialLink').href = isKeywordSearch 
-      ? `SupThread.html?mainnet=${mainnet}&urn=${encodeURIComponent(state.currentURN)}`
-      : `SupThread.html?mainnet=${mainnet}&urn=${encodeURIComponent(profile.URN || state.currentURN)}`;
+      ? `socials.html?mainnet=${mainnet}&urn=${encodeURIComponent(state.currentURN)}`
+      : `socials.html?mainnet=${mainnet}&urn=${encodeURIComponent(profile.URN || state.currentURN)}`;
     $('profileSection').style.display = 'block';
     state.creatorAddress = isKeywordSearch ? state.creatorAddress : (profile?.Creators[0] || '');
   };
@@ -1492,7 +1492,7 @@
     if (mainnet) params.set('mainnet', 'true');
     params.set('sort', sort);
     params.set('filter', filter);
-    const url = 'index.html?' + params.toString();
+    const url = 'objects.html?' + params.toString();
     document.getElementById('ubOutput').textContent = url;
     return url;
   }
