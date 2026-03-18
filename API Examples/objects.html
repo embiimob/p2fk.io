@@ -887,7 +887,7 @@
       ? `socials.html?mainnet=${mainnet}&urn=${encodeURIComponent(state.currentURN)}`
       : `socials.html?mainnet=${mainnet}&urn=${encodeURIComponent(profile.URN || state.currentURN)}`;
     $('profileSection').style.display = 'block';
-    state.creatorAddress = isKeywordSearch ? state.creatorAddress : (profile?.Creators[0] || '');
+    state.creatorAddress = isKeywordSearch ? state.creatorAddress : (profile?.Creators?.[0] || state.creatorAddress);
   };
 
   const displayObjects = async (objects, mainnet) => {
@@ -1270,7 +1270,7 @@
           state.filteredObjects = sortObjects(state.allObjects, $('sortSelect').value); // Initialize sorted
         }
       }
-      await displayProfile(profile, isMainnet, isKeywordSearch, searchTerm);
+      await displayProfile(profile || {}, isMainnet, isKeywordSearch, searchTerm);
       if (state.creatorAddress || isKeywordSearch) {
         state.totalObjects = state.allObjects.length;
         await loadObjects(isMainnet);

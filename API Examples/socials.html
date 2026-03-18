@@ -1108,7 +1108,7 @@
             $("profileChanged").textContent = `Last Changed: ${isKeywordSearch ? "N/A" : profile.ChangeDate}`;
             $("profileSection").style.display = "flex";
             $("profileLoading").style.display = "none";
-            state.creatorAddress = isKeywordSearch ? state.creatorAddress : (profile?.Creators?.[0] || "");
+            state.creatorAddress = isKeywordSearch ? state.creatorAddress : (profile?.Creators?.[0] || state.creatorAddress);
             console.log(`Profile displayed, creatorAddress set to: ${state.creatorAddress}`);
             updateTotalMessages();
         };
