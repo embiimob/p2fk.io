@@ -608,14 +608,7 @@
             try {
                 const res = await fetch(url, { method: "HEAD", signal: AbortSignal.timeout(8000) });
                 const len = res.headers.get("content-length");
-                if (len) {
-                    const bytes = parseInt(len, 10);
-                    const mb = bytes / (1024 * 1024);
-                    const kb = bytes / 1024;
-                    sizeEl.textContent = mb >= 1 ? `${mb.toFixed(1)} MB` : kb >= 1 ? `${kb.toFixed(1)} KB` : `${bytes} B`;
-                } else {
-                    sizeEl.textContent = "Size unknown";
-                }
+                sizeEl.textContent = len ? (formatBytes(parseInt(len, 10)) || "Size unknown") : "Size unknown";
             } catch {
                 sizeEl.textContent = "Size unavailable";
             }
@@ -637,7 +630,32 @@
             if (/^(exe|dmg|apk|deb|rpm|msi)$/.test(ext)) return "⚙️";
             if (/^(json|xml|yaml|yml|toml|ini|cfg)$/.test(ext)) return "🔧";
             if (/^(js|ts|py|java|c|cpp|cs|go|rs|php|rb|sh)$/.test(ext)) return "💻";
+            if (!ext) return "🔗";
             return "📎";
+        };
+
+        const formatBytes = (bytes) => {
+            const n = Number(bytes);
+            if (!Number.isFinite(n) || n < 0) return null;
+            if (n === 0) return "0 B";
+            const mb = n / (1024 * 1024);
+            const kb = n / 1024;
+            return mb >= 1 ? `${mb.toFixed(1)} MB` : kb >= 1 ? `${kb.toFixed(1)} KB` : `${n} B`;
+        };
+
+        const fetchRootByTransactionId = async (txid, mainnet, signal) => {
+            if (!txid || !/^[0-9a-fA-F]{64}$/.test(txid)) return null;
+            try {
+                return await fetchAPI(
+                    `https://p2fk.io/GetRootByTransactionID/${encodeURIComponent(txid)}?mainnet=${mainnet}&verbose=false`,
+                    `Root not found for transaction: ${txid}`,
+                    signal,
+                    15000
+                );
+            } catch (e) {
+                if (e.name !== "AbortError") console.warn(`GetRootByTransactionID failed for ${txid}:`, e.message);
+                return null;
+            }
         };
 
         const loadImageWithTimeout = async (url, timeout = 15000, retries = 3) => {
@@ -833,6 +851,21 @@
                     );
                 }
             }
+            // Detect inline bare URLs in message text, linkify them and collect
+            // PDF ones for iframe display below the message body.
+            const inlineUrlRegex = /https?:\/\/[^\s<>"'[\]]+/g;
+            for (const match of [...cleanMessage.matchAll(inlineUrlRegex)]) {
+                const raw = match[0].replace(/[.,;:!?)]+$/, "");
+                try { new URL(raw); } catch { continue; } // skip malformed strings
+                if (!parsedLinks.some(l => l.url === raw)) {
+                    const inlineExt = (raw.match(/\.([^./?#]+)(?:[?#].*)?$/) || [])[1]?.toLowerCase() || "";
+                    parsedLinks.push({ url: raw, inline: true, ext: inlineExt });
+                }
+                const safeRaw = escapeHtml(raw);
+                cleanMessage = cleanMessage.split(raw).join(
+                    `<a href="${safeRaw}" target="_blank" rel="noopener noreferrer" style="color:#bb86fc;word-break:break-all;">${safeRaw}</a>`
+                );
+            }
             return { cleanMessage, attachments: parsedAttachments, links: parsedLinks };
         };
 
@@ -1024,13 +1057,85 @@
                     }
                     attachmentsContainer.appendChild(mediaElement);
                 }
-                for (const { url } of links) {
-                    const linkElement = document.createElement("a");
-                    linkElement.href = url;
-                    linkElement.target = "_blank";
-                    linkElement.className = "link-url";
-                    linkElement.textContent = url;
-                    attachmentsContainer.appendChild(linkElement);
+                for (const { url, inline, ext: linkExt } of links) {
+                    // Inline links are already shown as clickable text in the message body;
+                    // only render a viewer/card when the URL points to a file we can display.
+                    const resolvedExt = linkExt || (url.match(/\.([^./?#]+)(?:[?#].*)?$/) || [])[1]?.toLowerCase() || "";
+                    const isLinkPDF = resolvedExt === "pdf";
+                    const isLinkImage = /^(jpg|jpeg|png|gif|webp|bmp|svg|avif)$/.test(resolvedExt);
+                    // Skip generic inline web links that have no recognisable file type –
+                    // they are already clickable in the message text.
+                    if (inline && !isLinkPDF && !isLinkImage) continue;
+                    const linkMedia = document.createElement("div");
+                    if (isLinkPDF) {
+                        const safeTitle = escapeHtml(url);
+                        linkMedia.innerHTML = `<iframe class="pdf-viewer" src="${escapeHtml(url)}" title="${safeTitle}"></iframe>`;
+                    } else if (isLinkImage) {
+                        linkMedia.innerHTML = `<img class="media-placeholder" src="${state.fallbackImage}" alt="Image" style="display:block;">`;
+                        const img = linkMedia.querySelector("img");
+                        imageElements.push({ img, url, hash: "", mediaElement: linkMedia, mainnet });
+                    } else {
+                        const icon = getFileCardIcon(resolvedExt);
+                        const typeLabel = resolvedExt ? resolvedExt.toUpperCase() + " File" : "Link";
+                        let displayName = url;
+                        try { const u = new URL(url); displayName = u.hostname + (u.pathname !== "/" ? u.pathname : ""); } catch {}
+                        const safeName = escapeHtml(displayName);
+                        const safeUrl = escapeHtml(url);
+                        linkMedia.innerHTML = `
+                            <div class="file-card">
+                                <div class="file-card-icon">${icon}</div>
+                                <div class="file-card-info">
+                                    <div class="file-card-name" title="${safeUrl}">${safeName}</div>
+                                    <div class="file-card-meta">
+                                        <span class="file-card-type">${escapeHtml(typeLabel)}</span>
+                                        &nbsp;&middot;&nbsp;
+                                        <span class="file-card-size">Fetching size...</span>
+                                    </div>
+                                </div>
+                                <a class="file-card-download" href="${safeUrl}" target="_blank" rel="noopener noreferrer">Open</a>
+                            </div>`;
+                        const sizeEl = linkMedia.querySelector(".file-card-size");
+                        fetchFileSize(url, sizeEl);
+                    }
+                    attachmentsContainer.appendChild(linkMedia);
+                }
+                // On-chain attachments: fetch file metadata (name + size) from the blockchain
+                // via GetRootByTransactionID and render each file entry.
+                const root = await fetchRootByTransactionId(msg.TransactionId, mainnet, state.abortController?.signal);
+                if (root && root.File && typeof root.File === "object") {
+                    for (const [filename, fileSize] of Object.entries(root.File)) {
+                        if (!filename || filename === "SIG") continue;
+                        const txid = msg.TransactionId;
+                        const downloadUrl = `https://bitfossil.org/${txid}/${encodeURIComponent(filename)}`;
+                        const ext = (filename.match(/\.([^.]+)$/) || [])[1]?.toLowerCase() || "";
+                        const onchainMedia = document.createElement("div");
+                        if (ext === "pdf") {
+                            onchainMedia.innerHTML = `<iframe class="pdf-viewer" src="${downloadUrl}" title="${escapeHtml(filename)}"></iframe>`;
+                        } else if (/^(jpg|jpeg|png|gif|webp|bmp|svg|tiff|tif|ico|avif)$/.test(ext)) {
+                            onchainMedia.innerHTML = `<img class="media-placeholder" src="${state.fallbackImage}" alt="${escapeHtml(filename)}" style="display:block;">`;
+                            const img = onchainMedia.querySelector("img");
+                            imageElements.push({ img, url: downloadUrl, hash: txid, mediaElement: onchainMedia, mainnet });
+                        } else {
+                            const icon = getFileCardIcon(ext);
+                            const typeLabel = ext ? ext.toUpperCase() + " File" : "File";
+                            const knownSize = formatBytes(fileSize);
+                            const safeName = escapeHtml(filename);
+                            onchainMedia.innerHTML = `
+                                <div class="file-card">
+                                    <div class="file-card-icon">${icon}</div>
+                                    <div class="file-card-info">
+                                        <div class="file-card-name" title="${safeName}">${safeName}</div>
+                                        <div class="file-card-meta">
+                                            <span class="file-card-type">${escapeHtml(typeLabel)}</span>
+                                            &nbsp;&middot;&nbsp;
+                                            <span class="file-card-size">${knownSize || "Size unknown"}</span>
+                                        </div>
+                                    </div>
+                                    <a class="file-card-download" href="${downloadUrl}" target="_blank" rel="noopener noreferrer">Download</a>
+                                </div>`;
+                        }
+                        attachmentsContainer.appendChild(onchainMedia);
+                    }
                 }
                 messageCards.push(card);
             }
