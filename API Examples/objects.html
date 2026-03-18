@@ -369,6 +369,34 @@
     margin: 4px 0;
     flex-wrap: wrap;
   }
+  .modal-header-panel {
+    background: #121212;
+    border-radius: 6px;
+    padding: 10px;
+    margin-bottom: 6px;
+  }
+  .lock-icon {
+    margin-left: auto;
+    font-size: 1em;
+    cursor: default;
+    position: relative;
+    flex-shrink: 0;
+  }
+  .lock-icon .lock-tooltip {
+    visibility: hidden;
+    background: #333;
+    color: #e0e0e0;
+    padding: 4px 7px;
+    border-radius: 4px;
+    position: absolute;
+    z-index: 1100;
+    bottom: 120%;
+    right: 0;
+    font-size: 0.75em;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+  .lock-icon:hover .lock-tooltip { visibility: visible; }
   .copy-address {
     color: #03dac6;
     cursor: pointer;
@@ -734,16 +762,19 @@
     <button id="modalNavLeft" class="modal-nav" aria-label="Previous object" style="display:none;" onclick="navigateObject(-1)">&larr;</button>
     <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="modalName">
       <button class="modal-close" onclick="closeModal()">X</button>
-      <img id="modalImage" src="" alt="Object Image">
-      <h2 id="modalName"></h2>
-      <p id="modalDescription"></p>
-      <div class="urn-row">
-        <span id="modalURN"></span>
-      </div>
-      <div class="object-meta-row">
-        <span class="meta-label">Object ID:</span>
-        <span id="modalObjectAddress" class="copy-address" title="Click to copy address"></span>
-        <span id="modalCreatedDate" class="date-label" style="margin-left:auto"></span>
+      <div class="modal-header-panel">
+        <img id="modalImage" src="" alt="Object Image">
+        <h2 id="modalName"></h2>
+        <p id="modalDescription"></p>
+        <div class="urn-row">
+          <span id="modalURN"></span>
+        </div>
+        <div class="object-meta-row">
+          <span id="modalCreatedDate" class="date-label"></span>
+          <span class="meta-label">ID:</span>
+          <span id="modalObjectAddress" class="copy-address" title="Click to copy address"></span>
+          <span id="modalLockIcon" class="lock-icon"></span>
+        </div>
       </div>
       <div id="modalOwners" class="owners-list"></div>
       <div id="modalCreators" class="creators-list"></div>
@@ -930,7 +961,9 @@
         const resp = await fetch(`https://p2fk.io/GetRootByTransactionID/${encodeURIComponent(urn)}?mainnet=${!!mainnet}`);
         if (resp.ok) {
           const data = await resp.json();
-          text = data && data.MSG != null ? String(data.MSG) : null;
+          if (data && data.Message != null) {
+            text = Array.isArray(data.Message) ? data.Message.join('\n') : String(data.Message);
+          }
         }
       }
     } catch (e) {
@@ -1228,12 +1261,20 @@
       $('modalName').textContent = obj.Name || 'Unnamed Object';
       $('modalDescription').textContent = `Description: ${obj.Description || 'No description available'}`;
       const objectAddress = Object.keys(obj.Creators || {})[0] || 'Unknown';
-      // Created date with tooltip
+      // Created date on left, lock/unlock icon on right (based on LockedDate field)
       const createdShort = formatDateToLocalShort(obj.CreatedDate);
       const createdFull = formatDateToLocalFull(obj.CreatedDate);
-      $('modalCreatedDate').innerHTML = (createdShort === 'Invalid Date' || createdShort === 'N/A')
-        ? 'Unknown date'
-        : `Created: ${createdShort}<span class="date-tooltip">${createdFull}</span>`;
+      const hasCreatedDate = createdShort && createdShort !== 'Invalid Date' && createdShort !== 'N/A';
+      $('modalCreatedDate').innerHTML = hasCreatedDate
+        ? `Created: ${createdShort}<span class="date-tooltip">${createdFull}</span>`
+        : 'Date unknown';
+      // LockedDate: "0001-01-01T00:00:00" is .NET DateTime.MinValue meaning no lock
+      const isLocked = obj.LockedDate && obj.LockedDate !== '0001-01-01T00:00:00';
+      const lockedFull = isLocked ? formatDateToLocalFull(obj.LockedDate) : '';
+      $('modalLockIcon').setAttribute('aria-label', isLocked ? `Locked on ${lockedFull}` : 'Object is unlocked and can be edited');
+      $('modalLockIcon').innerHTML = isLocked
+        ? `🔒<span class="lock-tooltip">Locked: ${lockedFull}</span>`
+        : `🔓<span class="lock-tooltip">Object is unlocked and can be edited</span>`;
       // Copyable object address
       const addrEl = $('modalObjectAddress');
       addrEl.textContent = objectAddress;
