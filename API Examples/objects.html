@@ -369,6 +369,34 @@
     margin: 4px 0;
     flex-wrap: wrap;
   }
+  .modal-header-panel {
+    background: #121212;
+    border-radius: 6px;
+    padding: 10px;
+    margin-bottom: 6px;
+  }
+  .lock-icon {
+    margin-left: auto;
+    font-size: 1em;
+    cursor: default;
+    position: relative;
+    flex-shrink: 0;
+  }
+  .lock-icon .lock-tooltip {
+    visibility: hidden;
+    background: #333;
+    color: #e0e0e0;
+    padding: 4px 7px;
+    border-radius: 4px;
+    position: absolute;
+    z-index: 1100;
+    bottom: 120%;
+    right: 0;
+    font-size: 0.75em;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+  .lock-icon:hover .lock-tooltip { visibility: visible; }
   .copy-address {
     color: #03dac6;
     cursor: pointer;
@@ -734,16 +762,19 @@
     <button id="modalNavLeft" class="modal-nav" aria-label="Previous object" style="display:none;" onclick="navigateObject(-1)">&larr;</button>
     <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="modalName">
       <button class="modal-close" onclick="closeModal()">X</button>
-      <img id="modalImage" src="" alt="Object Image">
-      <h2 id="modalName"></h2>
-      <p id="modalDescription"></p>
-      <div class="urn-row">
-        <span id="modalURN"></span>
-      </div>
-      <div class="object-meta-row">
-        <span class="meta-label">Object ID:</span>
-        <span id="modalObjectAddress" class="copy-address" title="Click to copy address"></span>
-        <span id="modalCreatedDate" class="date-label" style="margin-left:auto"></span>
+      <div class="modal-header-panel">
+        <img id="modalImage" src="" alt="Object Image">
+        <h2 id="modalName"></h2>
+        <p id="modalDescription"></p>
+        <div class="urn-row">
+          <span id="modalURN"></span>
+        </div>
+        <div class="object-meta-row">
+          <span id="modalCreatedDate" class="date-label"></span>
+          <span class="meta-label">ID:</span>
+          <span id="modalObjectAddress" class="copy-address" title="Click to copy address"></span>
+          <span id="modalLockIcon" class="lock-icon"></span>
+        </div>
       </div>
       <div id="modalOwners" class="owners-list"></div>
       <div id="modalCreators" class="creators-list"></div>
@@ -904,6 +935,117 @@
     }
   };
 
+  const isTextUrn = (urn) => {
+    if (!urn) return false;
+    // Bare BTC txid: exactly 64 hex chars
+    if (/^[0-9a-fA-F]{64}$/.test(urn)) return true;
+    // Chain-prefixed txid: BTC:, LTC:, MZC:, DOG: followed by exactly 64 hex chars
+    if (/^(BTC|LTC|MZC|DOG):[0-9a-fA-F]{64}$/i.test(urn)) return true;
+    return false;
+  };
+
+  const fetchTextForUrn = async (urn, mainnet) => {
+    const cacheKey = `text_${urn}_${mainnet}`;
+    if (state.imageCache.has(cacheKey)) return state.imageCache.get(cacheKey);
+    let text = null;
+    try {
+      const colonIdx = urn.indexOf(':');
+      const hasChainPrefix = colonIdx !== -1 && colonIdx < 5;
+      if (hasChainPrefix) {
+        // Sidechain URN (LTC/MZC/DOG etc.) — browser cannot fetch bitfossil.org directly due to CORS.
+        // Display the URN itself as the text content.
+        console.log(`[fetchTextForUrn] Sidechain URN "${urn}" — CORS prevents direct fetch; displaying URN as text`);
+        text = urn;
+      } else {
+        // Bare BTC txid — fetch from p2fk.io API
+        const url = `https://p2fk.io/GetRootByTransactionID/${encodeURIComponent(urn)}?mainnet=${!!mainnet}`;
+        console.log(`[fetchTextForUrn] Mainchain URN detected: "${urn}" → fetching ${url}`);
+        const resp = await fetch(url);
+        console.log(`[fetchTextForUrn] Response for ${url}: status=${resp.status} ok=${resp.ok}`);
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data && data.Message != null) {
+            text = Array.isArray(data.Message) ? data.Message.join('\n') : String(data.Message);
+            console.log(`[fetchTextForUrn] Message retrieved (${text.length} chars):`, text.substring(0, 120));
+          } else {
+            console.warn(`[fetchTextForUrn] No Message field in response for "${urn}":`, data);
+          }
+        } else {
+          console.warn(`[fetchTextForUrn] Non-OK response for ${url}: ${resp.status} ${resp.statusText}`);
+        }
+      }
+    } catch (e) {
+      console.error(`[fetchTextForUrn] Exception for URN "${urn}":`, e.message, e);
+    }
+    if (text != null) state.imageCache.set(cacheKey, text);
+    return text;
+  };
+
+  const generateTextImage = (text, width, height) => {
+    const cacheKey = `textimg_${width}x${height}_${text}`;
+    if (state.imageCache.has(cacheKey)) return state.imageCache.get(cacheKey);
+    const pad = 12;
+    const maxW = width - pad * 2;
+    const maxH = height - pad * 2;
+    const approxCharWidth = 8;
+    const charsPerRow = Math.max(1, Math.floor(maxW / approxCharWidth));
+    const estimatedRows = Math.max(1, Math.ceil(text.length / charsPerRow));
+    const rowHeight = Math.max(9, Math.min(16, Math.floor(maxH / estimatedRows)));
+    const fontSize = rowHeight;
+    const charsPerLine = Math.max(1, Math.floor(maxW / (fontSize * 0.6)));
+    const maxLines = Math.floor(maxH / (fontSize * 1.4));
+    const truncateLine = (s) => s.length > charsPerLine ? s.slice(0, charsPerLine - 1) + '…' : s;
+    // Preserve explicit newlines, then word-wrap each paragraph line
+    const inputLines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+    const lines = [];
+    let truncated = false;
+    outer: for (const inputLine of inputLines) {
+      if (inputLine.trim() === '') {
+        // Preserve blank lines as empty visual rows
+        if (lines.length < maxLines) { lines.push(''); } else { truncated = true; break; }
+        continue;
+      }
+      const words = inputLine.split(/[ \t]+/);
+      let line = '';
+      for (const word of words) {
+        const test = line ? line + ' ' + word : word;
+        if (test.length > charsPerLine && line) {
+          if (lines.length >= maxLines) { truncated = true; break outer; }
+          lines.push(line);
+          line = truncateLine(word);
+        } else if (test.length > charsPerLine) {
+          if (lines.length >= maxLines) { truncated = true; break outer; }
+          lines.push(truncateLine(test));
+          line = '';
+          truncated = true;
+        } else {
+          line = test;
+        }
+      }
+      if (line) {
+        if (lines.length >= maxLines) { truncated = true; break; }
+        lines.push(line);
+      }
+    }
+    if (truncated && lines.length > 0 && !lines[lines.length - 1].endsWith('…')) {
+      const last = lines[lines.length - 1];
+      lines[lines.length - 1] = last.length < charsPerLine ? last + '…' : last.slice(0, charsPerLine - 1) + '…';
+    }
+    const lineHeight = fontSize * 1.4;
+    const totalTextH = lines.length * lineHeight;
+    const startY = (height - totalTextH) / 2 + fontSize;
+    const escapedLines = lines.map(l =>
+      l.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+    );
+    const textEls = escapedLines.map((l, i) =>
+      `<text x="${width / 2}" y="${startY + i * lineHeight}" text-anchor="middle" dominant-baseline="auto" fill="#e0e0e0" font-size="${fontSize}" font-family="monospace,sans-serif">${l}</text>`
+    ).join('');
+    const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='${width}' height='${height}'><rect width='100%' height='100%' fill='#333' rx='6'/>${textEls}</svg>`;
+    const dataUrl = `data:image/svg+xml,${encodeURIComponent(svg)}`;
+    state.imageCache.set(cacheKey, dataUrl);
+    return dataUrl;
+  };
+
   const resolveUrnPath = (urn) => {
     if (!urn) return '';
     urn = urn.replace(/\\/g, '/');
@@ -926,6 +1068,8 @@
         const hash = value.replace(/^ipfs[:/]+/i, "").split("/")[0];
         return hash ? `https://ipfs.io/ipfs/${hash}` : null;
       }
+      // Chain-prefixed bare txids (no file path) are text URNs — return null so they use the text-fetch path
+      if (/^(BTC|LTC|DOG|MZC):[0-9a-fA-F]{64}$/i.test(value)) return null;
       return /^(BTC|LTC|DOG|MZC):/i.test(value) || /^[A-Za-z0-9]+\/.+/.test(value) ? resolveUrnPath(value) : null;
     };
     return resolve(image) || resolve(urn) || state.fallbackImage;
@@ -1069,18 +1213,28 @@
         showObjectDetails(index, mainnet);
       };
       objectsGrid.appendChild(card);
-      loadImageWithTimeout(imageUrl).then(url => {
-        const img = card.querySelector('img');
-        img.src = url;
-        img.style.display = 'block';
-      }).catch(() => {
-        card.querySelector('div').innerHTML = `
-          <div class="image-error">Unable to fetch image</div>
-          <span class="urn-source-label">${urnSource}<span class="urn-tooltip">${obj.URN || 'No URN'}</span></span>
-          ${ownedUnits > 0 ? `<span class="owned-qty">${ownedUnits} Owned</span>` : ''}
-          <span class="unit-qty">${totalUnits} Units</span>
-        `;
-      });
+      if (imageUrl === state.fallbackImage && isTextUrn(obj.URN)) {
+        fetchTextForUrn(obj.URN, mainnet).then(text => {
+          if (text) {
+            const img = card.querySelector('img');
+            img.src = generateTextImage(text, 250, 140);
+            img.style.display = 'block';
+          }
+        }).catch(() => {});
+      } else {
+        loadImageWithTimeout(imageUrl).then(url => {
+          const img = card.querySelector('img');
+          img.src = url;
+          img.style.display = 'block';
+        }).catch(() => {
+          card.querySelector('div').innerHTML = `
+            <div class="image-error">Unable to fetch image</div>
+            <span class="urn-source-label">${urnSource}<span class="urn-tooltip">${obj.URN || 'No URN'}</span></span>
+            ${ownedUnits > 0 ? `<span class="owned-qty">${ownedUnits} Owned</span>` : ''}
+            <span class="unit-qty">${totalUnits} Units</span>
+          `;
+        });
+      }
     }
   };
 
@@ -1101,7 +1255,11 @@
     }
     if (/^(BTC|LTC|DOG|MZC):/i.test(urn) || /^[A-Za-z0-9]+\/.+/.test(urn)) {
       const parts = urn.split(':').pop().split('/');
-      return `URN: <a href="https://bitfossil.org/${parts[0]}/${parts[1] || ''}" target="_blank" style="color:#bb86fc">${urn}</a>`;
+      const txid = parts[0];
+      const filePath = parts[1] || '';
+      // Chain-prefixed bare txid (no file) → link to MSG1 text document
+      const href = filePath ? `https://bitfossil.org/${txid}/${filePath}` : `https://bitfossil.org/${txid}/MSG1`;
+      return `URN: <a href="${href}" target="_blank" style="color:#bb86fc">${urn}</a>`;
     }
     return `URN: ${urn}`;
   };const showObjectDetails = async (index, mainnet) => {
@@ -1118,16 +1276,30 @@
       const modalImage = $('modalImage');
       const imageUrl = getImageUrl(obj.Image, obj.URN);
       modalImage.src = state.fallbackImage;
-      loadImageWithTimeout(imageUrl).then(url => modalImage.src = url).catch(() => modalImage.src = state.fallbackImage);
+      if (imageUrl === state.fallbackImage && isTextUrn(obj.URN)) {
+        fetchTextForUrn(obj.URN, mainnet).then(text => {
+          if (text) modalImage.src = generateTextImage(text, 400, 280);
+        }).catch(() => {});
+      } else {
+        loadImageWithTimeout(imageUrl).then(url => modalImage.src = url).catch(() => modalImage.src = state.fallbackImage);
+      }
       $('modalName').textContent = obj.Name || 'Unnamed Object';
       $('modalDescription').textContent = `Description: ${obj.Description || 'No description available'}`;
       const objectAddress = Object.keys(obj.Creators || {})[0] || 'Unknown';
-      // Created date with tooltip
+      // Created date on left, lock/unlock icon on right (based on LockedDate field)
       const createdShort = formatDateToLocalShort(obj.CreatedDate);
       const createdFull = formatDateToLocalFull(obj.CreatedDate);
-      $('modalCreatedDate').innerHTML = (createdShort === 'Invalid Date' || createdShort === 'N/A')
-        ? 'Unknown date'
-        : `Created: ${createdShort}<span class="date-tooltip">${createdFull}</span>`;
+      const hasCreatedDate = createdShort && createdShort !== 'Invalid Date' && createdShort !== 'N/A';
+      $('modalCreatedDate').innerHTML = hasCreatedDate
+        ? `Created: ${createdShort}<span class="date-tooltip">${createdFull}</span>`
+        : 'Date unknown';
+      // LockedDate: "0001-01-01T00:00:00" is .NET DateTime.MinValue meaning no lock
+      const isLocked = obj.LockedDate && obj.LockedDate !== '0001-01-01T00:00:00';
+      const lockedFull = isLocked ? formatDateToLocalFull(obj.LockedDate) : '';
+      $('modalLockIcon').setAttribute('aria-label', isLocked ? `Locked on ${lockedFull}` : 'Object is unlocked and can be edited');
+      $('modalLockIcon').innerHTML = isLocked
+        ? `🔒<span class="lock-tooltip">Locked: ${lockedFull}</span>`
+        : `🔓<span class="lock-tooltip">Object is unlocked and can be edited</span>`;
       // Copyable object address
       const addrEl = $('modalObjectAddress');
       addrEl.textContent = objectAddress;
