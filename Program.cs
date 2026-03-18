@@ -8,6 +8,12 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddSingleton<P2FK.IO.Wrapper>();
+builder.Services.AddHttpClient("bitfossil", client =>
+{
+    client.BaseAddress = new Uri("https://bitfossil.org/");
+    client.Timeout = TimeSpan.FromSeconds(30);
+    client.DefaultRequestHeaders.Add("User-Agent", "p2fk.io/1.0");
+});
 
 // Allow requests to take up to MaxTimeoutSeconds before the server cancels them
 builder.Services.AddRequestTimeouts(options =>
