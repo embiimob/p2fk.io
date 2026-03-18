@@ -279,7 +279,14 @@
     overflow-x: hidden;
     position: relative;
     box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+    /* Firefox custom scrollbar */
+    scrollbar-width: thin;
+    scrollbar-color: #5600ca #1a1a1a;
   }
+  .modal-content::-webkit-scrollbar { width: 5px; }
+  .modal-content::-webkit-scrollbar-track { background: #1a1a1a; border-radius: 3px; }
+  .modal-content::-webkit-scrollbar-thumb { background: #5600ca; border-radius: 3px; }
+  .modal-content::-webkit-scrollbar-thumb:hover { background: #bb86fc; }
   .modal-content img {
     width: 100%;
     max-height: 280px;
@@ -469,12 +476,13 @@
   /* ── Column cells ──────────────────────────────────────────────── */
   .col-name  { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .col-price { flex: 0 0 auto; white-space: nowrap; font-variant-numeric: tabular-nums; color: #e0e0e0; }
-  .col-qty   { flex: 0 0 28px; text-align: right; font-variant-numeric: tabular-nums; color: #bb86fc; }
+  .col-qty   { flex: 0 0 auto; min-width: 28px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; color: #bb86fc; }
   .col-date  { flex: 0 0 auto; white-space: nowrap; color: #555; font-size: 0.88em; }
   .col-icon  { flex: 0 0 18px; text-align: center; line-height: 1; }
   .col-action { flex: 0 0 auto; white-space: nowrap; text-transform: capitalize; color: #bb86fc; font-size: 0.9em; }
   .col-pct   { flex: 0 0 auto; white-space: nowrap; color: #03dac6; }
   .col-parties { flex: 1 1 0; min-width: 0; color: #9e9e9e; word-break: break-word; overflow: hidden; }
+  .meta-label { font-size: 0.75em; color: #b0b0b0; white-space: nowrap; }
 
   /* ── Listings ──────────────────────────────────────────────────── */
   .listing-cheapest { background: rgba(3, 218, 198, 0.12); border-radius: 4px; }
@@ -730,8 +738,9 @@
         <span id="modalURN"></span>
       </div>
       <div class="object-meta-row">
-        <span id="modalCreatedDate" class="date-label"></span>
+        <span class="meta-label">Object ID:</span>
         <span id="modalObjectAddress" class="copy-address" title="Click to copy address"></span>
+        <span id="modalCreatedDate" class="date-label" style="margin-left:auto"></span>
       </div>
       <div id="modalOwners" class="owners-list"></div>
       <div id="modalCreators" class="creators-list"></div>
