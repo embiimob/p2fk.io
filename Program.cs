@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Http.Timeouts;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.OpenApi.Models;
 using Swashbuckle.AspNetCore.SwaggerUI;
 
@@ -7,10 +9,25 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddSingleton<P2FK.IO.Wrapper>();
 
+// Allow requests to take up to MaxTimeoutSeconds before the server cancels them
+builder.Services.AddRequestTimeouts(options =>
+    options.DefaultPolicy = new RequestTimeoutPolicy
+    {
+        Timeout = TimeSpan.FromSeconds(P2FK.IO.Wrapper.MaxTimeoutSeconds)
+    });
+
+// Keep the Kestrel keep-alive and header timeouts well above the max query time
+builder.WebHost.ConfigureKestrel(kestrel =>
+{
+    kestrel.Limits.KeepAliveTimeout = TimeSpan.FromSeconds(P2FK.IO.Wrapper.MaxTimeoutSeconds + 10);
+    kestrel.Limits.RequestHeadersTimeout = TimeSpan.FromSeconds(P2FK.IO.Wrapper.MaxTimeoutSeconds + 10);
+});
+
 var app = builder.Build();
 
 app.UseSwagger();
 app.UseStaticFiles();
+app.UseRequestTimeouts();
 app.UseSwaggerUI(options =>
     {
         //removes the /swagger/ from the path

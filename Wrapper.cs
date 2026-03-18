@@ -21,8 +21,10 @@ namespace P2FK.IO
         public string TestRPCUser = "good-user";
         public string TestRPCPassword = "better-password";
 
+        public const int MaxTimeoutSeconds = 420;
+
         private static readonly SemaphoreSlim _semaphore = new SemaphoreSlim(5, 5);
-        private static readonly TimeSpan _timeout = TimeSpan.FromSeconds(90);
+        private static readonly TimeSpan _timeout = TimeSpan.FromSeconds(MaxTimeoutSeconds);
 
         public async Task<string> RunCommandAsync(string executablePath, string arguments, CancellationToken cancellationToken = default)
         {
