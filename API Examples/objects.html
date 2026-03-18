@@ -954,21 +954,40 @@
       if (hasChainPrefix) {
         // LTC/MZC/DOG sidechain prefix — fetch directly from bitfossil.org
         const txid = urn.slice(colonIdx + 1);
-        if (!/^[0-9a-fA-F]{64}$/.test(txid)) return null;
-        const resp = await fetch(`https://bitfossil.org/${txid}/MSG1`);
-        if (resp.ok) text = await resp.text();
+        if (!/^[0-9a-fA-F]{64}$/.test(txid)) {
+          console.warn(`[fetchTextForUrn] URN "${urn}" has chain prefix but txid part is not 64 hex chars — skipping`);
+          return null;
+        }
+        const url = `https://bitfossil.org/${txid}/MSG1`;
+        console.log(`[fetchTextForUrn] Sidechain URN detected: "${urn}" → fetching ${url}`);
+        const resp = await fetch(url);
+        console.log(`[fetchTextForUrn] Response for ${url}: status=${resp.status} ok=${resp.ok}`);
+        if (resp.ok) {
+          text = await resp.text();
+          console.log(`[fetchTextForUrn] Text retrieved (${text.length} chars):`, text.substring(0, 120));
+        } else {
+          console.warn(`[fetchTextForUrn] Non-OK response for ${url}: ${resp.status} ${resp.statusText}`);
+        }
       } else {
         // Bare BTC txid — fetch from p2fk.io API
-        const resp = await fetch(`https://p2fk.io/GetRootByTransactionID/${encodeURIComponent(urn)}?mainnet=${!!mainnet}`);
+        const url = `https://p2fk.io/GetRootByTransactionID/${encodeURIComponent(urn)}?mainnet=${!!mainnet}`;
+        console.log(`[fetchTextForUrn] Mainchain URN detected: "${urn}" → fetching ${url}`);
+        const resp = await fetch(url);
+        console.log(`[fetchTextForUrn] Response for ${url}: status=${resp.status} ok=${resp.ok}`);
         if (resp.ok) {
           const data = await resp.json();
           if (data && data.Message != null) {
             text = Array.isArray(data.Message) ? data.Message.join('\n') : String(data.Message);
+            console.log(`[fetchTextForUrn] Message retrieved (${text.length} chars):`, text.substring(0, 120));
+          } else {
+            console.warn(`[fetchTextForUrn] No Message field in response for "${urn}":`, data);
           }
+        } else {
+          console.warn(`[fetchTextForUrn] Non-OK response for ${url}: ${resp.status} ${resp.statusText}`);
         }
       }
     } catch (e) {
-      console.warn(`fetchTextForUrn failed for ${urn}:`, e.message);
+      console.error(`[fetchTextForUrn] Exception for URN "${urn}":`, e.message, e);
     }
     if (text != null) state.imageCache.set(cacheKey, text);
     return text;
@@ -1248,7 +1267,11 @@
     }
     if (/^(BTC|LTC|DOG|MZC):/i.test(urn) || /^[A-Za-z0-9]+\/.+/.test(urn)) {
       const parts = urn.split(':').pop().split('/');
-      return `URN: <a href="https://bitfossil.org/${parts[0]}/${parts[1] || ''}" target="_blank" style="color:#bb86fc">${urn}</a>`;
+      const txid = parts[0];
+      const filePath = parts[1] || '';
+      // Chain-prefixed bare txid (no file) → link to MSG1 text document
+      const href = filePath ? `https://bitfossil.org/${txid}/${filePath}` : `https://bitfossil.org/${txid}/MSG1`;
+      return `URN: <a href="${href}" target="_blank" style="color:#bb86fc">${urn}</a>`;
     }
     return `URN: ${urn}`;
   };const showObjectDetails = async (index, mainnet) => {
