@@ -991,7 +991,12 @@
                 const attachmentsContainer = card.querySelector(".message-attachments");
                 for (const { hash, filename } of attachments) {
                     const mediaElement = document.createElement("div");
-                    const url = `https://ipfs.io/ipfs/${hash}`;
+                    // A 64-character lowercase hex string is a blockchain transaction ID;
+                    // everything else (e.g. "Qm…" CIDv0, base32 CIDv1) is an IPFS hash.
+                    const isTxid = /^[0-9a-f]{64}$/i.test(hash);
+                    const url = isTxid
+                        ? `https://bitfossil.org/${hash}/${encodeURIComponent(filename)}`
+                        : `https://ipfs.io/ipfs/${hash}`;
                     const ext = (filename.match(/\.([^.]+)$/) || [])[1]?.toLowerCase() || "";
                     const isImage = /^(jpg|jpeg|png|gif|webp|bmp|svg|tiff|tif|ico|avif)$/.test(ext);
                     const isAudio = /^(mp3|wav|ogg|flac)$/.test(ext);
