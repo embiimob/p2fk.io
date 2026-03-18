@@ -382,17 +382,20 @@
   }
   .copy-address:hover { background: #03dac6; color: #121212; }
   .refresh-btn {
-    background: none;
-    border: none;
+    background: #1a1a1a;
+    border: 1px solid #2c2c2c;
     color: #03dac6;
-    font-size: 1.2em;
+    font-size: 0.78em;
     cursor: pointer;
-    padding: 5px;
-    border-radius: 5px;
-    display: block;
-    margin-top: 6px;
+    padding: 3px 9px;
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin: 5px 0 2px;
+    letter-spacing: 0.03em;
   }
-  .refresh-btn:hover { color: #7c4dff; }
+  .refresh-btn:hover { background: #222; border-color: #03dac6; color: #03dac6; }
   .refresh-btn.loading { animation: spin 1s linear infinite; transform-origin: center; }
   @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
   /* ── Scrollable panels ─────────────────────────────────────────── */
@@ -475,11 +478,11 @@
 
   /* ── Column cells ──────────────────────────────────────────────── */
   .col-name  { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .col-price { flex: 0 0 auto; white-space: nowrap; font-variant-numeric: tabular-nums; color: #e0e0e0; }
+  .col-price { flex: 0 0 auto; min-width: 72px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; color: #e0e0e0; }
   .col-qty   { flex: 0 0 auto; min-width: 28px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; color: #bb86fc; }
-  .col-date  { flex: 0 0 auto; white-space: nowrap; color: #555; font-size: 0.88em; }
+  .col-date  { flex: 0 0 auto; min-width: 82px; white-space: nowrap; color: #555; font-size: 0.88em; }
   .col-icon  { flex: 0 0 18px; text-align: center; line-height: 1; }
-  .col-action { flex: 0 0 auto; white-space: nowrap; text-transform: capitalize; color: #bb86fc; font-size: 0.9em; }
+  .col-action { flex: 0 0 auto; min-width: 52px; white-space: nowrap; text-transform: capitalize; color: #bb86fc; font-size: 0.9em; }
   .col-pct   { flex: 0 0 auto; white-space: nowrap; color: #03dac6; }
   .col-parties { flex: 1 1 0; min-width: 0; color: #9e9e9e; word-break: break-word; overflow: hidden; }
   .meta-label { font-size: 0.75em; color: #b0b0b0; white-space: nowrap; }
@@ -745,8 +748,8 @@
       <div id="modalOwners" class="owners-list"></div>
       <div id="modalCreators" class="creators-list"></div>
       <div id="modalRoyalties" class="creators-list"></div>
-      <button id="refreshButton" class="refresh-btn" title="Refresh object (verbose)">🔄</button>
       <div id="modalListings" class="listings-list"></div>
+      <button id="refreshButton" class="refresh-btn" title="Refresh object data">🔄 Refresh</button>
       <div id="modalChangelog" class="changelog"></div>
     </div>
     <button id="modalNavRight" class="modal-nav" aria-label="Next object" style="display:none;" onclick="navigateObject(1)">&rarr;</button>
@@ -1150,7 +1153,9 @@
       );
       $('modalCreators').innerHTML = `<div class="list-col-header"><span class="col-name">Creators</span></div>${creatorsList.length ? creatorsList.map(c => `<div class="list-row"><span class="col-name">${c}</span></div>`).join('') : '<div class="list-row"><span class="col-name">None</span></div>'}`;
       const ownersList = await Promise.all(
-        Object.entries(obj.Owners || {}).map(async ([address, { Item1: units }]) => {
+        Object.entries(obj.Owners || {})
+          .sort((a, b) => (b[1].Item1 || 0) - (a[1].Item1 || 0))
+          .map(async ([address, { Item1: units }]) => {
           const profile = await fetchProfileByAddress(address, mainnet);
           const name = profile ? profile.DisplayName || profile.URN || abbreviateAddress(address) : abbreviateAddress(address);
           return address === objectAddress
@@ -1180,45 +1185,47 @@
             const name = profile ? profile.DisplayName || profile.URN || abbreviateAddress(addr) : abbreviateAddress(addr);
             const sellerLink = createSearchLink(name, mainnet, false, addr);
             const qty = listing.Qty ?? listing.Item1 ?? '';           // API may use either field name
-            const rawDate = listing.Date || listing.ChangeDate || listing.Item2 || ''; // same
-            const listedShort = rawDate ? formatDateToLocalShort(rawDate) : '';
-            const listedFull  = rawDate ? formatDateToLocalFull(rawDate) : '';
-            const dateHtml = listedShort && listedShort !== 'Invalid Date'
-              ? `<span class="col-date date-label">${listedShort}<span class="date-tooltip">${listedFull}</span></span>`
-              : `<span class="col-date">—</span>`;
-            return `<div class="list-row${i === 0 ? ' listing-cheapest' : ''}"><span class="col-name">${sellerLink}</span><span class="col-price">${listing.Value} BTC</span><span class="col-qty">${qty !== '' ? qty : '—'}</span>${dateHtml}</div>`;
+            return `<div class="list-row${i === 0 ? ' listing-cheapest' : ''}"><span class="col-name">${sellerLink}</span><span class="col-price">${listing.Value} BTC</span><span class="col-qty">${qty}</span></div>`;
           })
         );
-        $('modalListings').innerHTML = `<div class="list-col-header"><span class="col-name">Listings</span><span class="col-price">Price</span><span class="col-qty">Qty</span><span class="col-date">Listed</span></div>${listingItems.join('')}`;
+        $('modalListings').innerHTML = `<div class="list-col-header"><span class="col-name">Listings</span><span class="col-price">Price</span><span class="col-qty">Qty</span></div>${listingItems.join('')}`;
       }
       const fmtShort = (d) => { try { const s = formatDateToLocalShort(d); return s === 'Invalid Date' ? d : s; } catch { return d || ''; } };
       const fmtFull  = (d) => { try { return formatDateToLocalFull(d) || ''; } catch { return d || ''; } };
-      const changelog = (obj.ChangeLog || []).slice().reverse().map(entry => {
-        try {
-          if (typeof entry === 'string') {
-            const [from, to, action, qty, details, status, date] = JSON.parse(entry);
-            const actionIcon = state.actionIcons[action.toLowerCase()] || '⚙️';
-            const statusClass = status.toLowerCase().includes('success') ? 'status-success' : 'status-failed';
-            const short = fmtShort(date);
-            const full  = fmtFull(date);
+      const changelog = await Promise.all(
+        (obj.ChangeLog || []).slice().reverse().map(async entry => {
+          try {
+            if (typeof entry === 'string') {
+              const [from, to, action, qty, details, status, date] = JSON.parse(entry);
+              const [fromProfile, toProfile] = await Promise.all([
+                fetchProfileByAddress(from, mainnet),
+                fetchProfileByAddress(to, mainnet)
+              ]);
+              const fromName = fromProfile ? (fromProfile.DisplayName || fromProfile.URN || abbreviateAddress(from)) : abbreviateAddress(from);
+              const toName   = toProfile   ? (toProfile.DisplayName   || toProfile.URN   || abbreviateAddress(to))   : abbreviateAddress(to);
+              const actionIcon = state.actionIcons[action.toLowerCase()] || '⚙️';
+              const statusClass = status.toLowerCase().includes('success') ? 'status-success' : 'status-failed';
+              const short = fmtShort(date);
+              const full  = fmtFull(date);
+              const dateHtml = short
+                ? `<span class="col-date date-label">${short}<span class="date-tooltip">${full}</span></span>`
+                : `<span class="col-date"></span>`;
+              const parties = `${createSearchLink(fromName, mainnet, false, from)} → ${createSearchLink(toName, mainnet, false, to)}${qty ? ` ×${qty}` : ''}${details ? ` (${details})` : ''}`;
+              return `<div class="list-row ${statusClass}"><span class="col-name">${parties}</span>${dateHtml}<span class="col-action">${actionIcon} ${action}</span></div>`;
+            }
+            const d = entry.Date || '';
+            const short = fmtShort(d);
+            const full  = fmtFull(d);
             const dateHtml = short
               ? `<span class="col-date date-label">${short}<span class="date-tooltip">${full}</span></span>`
-              : `<span class="col-date">—</span>`;
-            const parties = `${createSearchLink(abbreviateAddress(from), mainnet, false, from)} → ${createSearchLink(abbreviateAddress(to), mainnet, false, to)}${qty ? ` ×${qty}` : ''}${details ? ` (${details})` : ''}`;
-            return `<div class="list-row ${statusClass}"><span class="col-icon">${actionIcon}</span>${dateHtml}<span class="col-action">${action}</span><span class="col-parties">${parties}</span></div>`;
+              : `<span class="col-date"></span>`;
+            return `<div class="list-row"><span class="col-name">${entry.Description || 'No details'}</span>${dateHtml}<span class="col-action">⚙️</span></div>`;
+          } catch (error) {
+            return `<div class="list-row"><span class="col-name">Invalid provenance entry</span></div>`;
           }
-          const d = entry.Date || '';
-          const short = fmtShort(d);
-          const full  = fmtFull(d);
-          const dateHtml = short
-            ? `<span class="col-date date-label">${short}<span class="date-tooltip">${full}</span></span>`
-            : `<span class="col-date">—</span>`;
-          return `<div class="list-row"><span class="col-icon">⚙️</span>${dateHtml}<span class="col-parties">${entry.Description || 'No details'}</span></div>`;
-        } catch (error) {
-          return `<div class="list-row"><span class="col-parties">Invalid changelog entry</span></div>`;
-        }
-      });
-      $('modalChangelog').innerHTML = `<div class="list-col-header"><span class="col-icon"></span><span class="col-date">Date</span><span class="col-action">Action</span><span class="col-parties">Details</span></div>${changelog.length ? changelog.join('') : '<div class="list-row"><span class="col-parties">No changelog available</span></div>'}`;
+        })
+      );
+      $('modalChangelog').innerHTML = `<div class="list-col-header"><span class="col-name">Provenance</span><span class="col-date">Date</span><span class="col-action">Action</span></div>${changelog.length ? changelog.join('') : '<div class="list-row"><span class="col-name">No provenance available</span></div>'}`;
       $('modalURN').innerHTML = renderUrnLink(obj.URN);
       $('refreshButton').onclick = () => refreshSingleObject(obj, mainnet);
       // Update navigation button states
