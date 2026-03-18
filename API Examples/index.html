@@ -403,6 +403,145 @@
       min-width: 0;
     }
   }
+
+  /* URL Builder Help Button */
+  .url-help-btn {
+    width: 28px;
+    height: 28px;
+    min-width: 28px;
+    border-radius: 50%;
+    background: #6200ea;
+    color: white;
+    border: none;
+    cursor: pointer;
+    font-size: 0.9em;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    padding: 0;
+  }
+
+  .url-help-btn:hover {
+    background: #7c4dff;
+  }
+
+  /* URL Builder Modal */
+  .url-builder-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    z-index: 5000;
+    justify-content: center;
+    align-items: center;
+  }
+
+  .url-builder-modal {
+    background: #1e1e1e;
+    padding: 20px;
+    border-radius: 8px;
+    max-width: 480px;
+    width: 90%;
+    position: relative;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+    color: #e0e0e0;
+  }
+
+  .url-builder-modal h3 {
+    color: #bb86fc;
+    margin: 0 0 15px 0;
+  }
+
+  .url-builder-modal .ub-field-label {
+    display: block;
+    margin-bottom: 4px;
+    font-size: 0.85em;
+    color: #b0b0b0;
+  }
+
+  .url-builder-modal input[type="text"],
+  .url-builder-modal select {
+    width: 100%;
+    padding: 7px;
+    background: #333;
+    border: 1px solid #444;
+    color: #e0e0e0;
+    border-radius: 5px;
+    box-sizing: border-box;
+    margin-bottom: 12px;
+  }
+
+  .url-builder-modal .ub-checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 14px;
+    font-size: 0.9em;
+  }
+
+  .url-builder-modal .ub-output {
+    font-family: monospace;
+    font-size: 0.85em;
+    background: #121212;
+    border: 1px solid #444;
+    color: #03dac6;
+    padding: 8px;
+    border-radius: 5px;
+    word-break: break-all;
+    margin: 10px 0;
+    min-height: 36px;
+  }
+
+  .url-builder-modal .ub-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 10px;
+  }
+
+  .url-builder-modal .ub-actions button {
+    padding: 7px 14px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 0.9em;
+  }
+
+  .ub-btn-generate { background: #6200ea; color: white; }
+  .ub-btn-generate:hover { background: #7c4dff; }
+  .ub-btn-copy { background: #333; color: #e0e0e0; }
+  .ub-btn-copy:hover { background: #444; }
+  .ub-btn-go { background: #03dac6; color: #121212; }
+  .ub-btn-go:hover { background: #00b0a0; }
+
+  .url-builder-close {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: #cf6679;
+    color: white;
+    border: none;
+    padding: 4px 8px;
+    border-radius: 5px;
+    cursor: pointer;
+  }
+
+  .url-builder-close:hover { background: #e57373; }
+
+  .ub-example {
+    font-size: 0.75em;
+    color: #b0b0b0;
+    margin-top: 10px;
+  }
+
+  .ub-example code {
+    color: #bb86fc;
+  }
 </style>
 </head>
 <body>
@@ -423,6 +562,7 @@
         <button id="filterOwned" onclick="filterObjects('owned')">Owned</button>
       </div>
       <div id="objectCount" class="object-count" style="display: none;"></div>
+      <button class="url-help-btn" onclick="openUrlBuilder()" title="URL Builder — generate a shareable search link">?</button>
     </div>
     <div id="profileSection" class="profile-section">
       <div class="profile-content">
@@ -477,6 +617,42 @@
       <iframe id="zipContent" style="width:100%; height:100%; border:none;"></iframe>
     </div>
   </div>
+
+  <!-- URL Builder Modal -->
+  <div id="urlBuilderOverlay" class="url-builder-overlay">
+    <div class="url-builder-modal">
+      <button class="url-builder-close" onclick="closeUrlBuilder()">X</button>
+      <h3>🔗 URL Builder</h3>
+      <label class="ub-field-label" for="ubUrn">URN</label>
+      <input type="text" id="ubUrn" placeholder="e.g., AllenVandever" />
+      <div class="ub-checkbox-row">
+        <input type="checkbox" id="ubMainnet" />
+        <label for="ubMainnet">Mainnet</label>
+      </div>
+      <label class="ub-field-label" for="ubSort">Sort</label>
+      <select id="ubSort">
+        <option value="newest">Newest</option>
+        <option value="oldest">Oldest</option>
+        <option value="highestPrice">Highest Price</option>
+        <option value="lowestPrice">Lowest Price</option>
+        <option value="highestActivity">Highest Activity</option>
+      </select>
+      <label class="ub-field-label" for="ubFilter">Filter</label>
+      <select id="ubFilter">
+        <option value="all">All</option>
+        <option value="created">Created</option>
+        <option value="owned">Owned</option>
+      </select>
+      <div class="ub-actions">
+        <button class="ub-btn-generate" onclick="generateUrlBuilder()">Generate URL</button>
+        <button class="ub-btn-copy" onclick="copyUrlBuilder()">Copy</button>
+        <button class="ub-btn-go" onclick="goUrlBuilder()">Go</button>
+      </div>
+      <div class="ub-output" id="ubOutput"></div>
+      <p class="ub-example">Example: <code>index.html?urn=AllenVandever&amp;mainnet=true&amp;sort=highestPrice&amp;filter=created</code></p>
+    </div>
+  </div>
+
   <script>
   const state = {
     skip: 0,
@@ -1255,6 +1431,93 @@
       iframe.srcdoc = `<div>Error loading from IPFS: ${error.message}</div>`;
     }
   };
+
+  /* ---- Query-string deep-link support ---- */
+  const getQueryParam = (name) => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get(name);
+  };
+
+  window.addEventListener('load', () => {
+    const urn = getQueryParam('urn');
+    const mainnet = getQueryParam('mainnet') === 'true';
+    const sort = getQueryParam('sort');
+    const filter = getQueryParam('filter');
+
+    if (mainnet) {
+      state.currentMainnet = mainnet;
+      document.getElementById('mainnetToggle').checked = mainnet;
+    }
+    if (sort) {
+      const sortEl = document.getElementById('sortSelect');
+      const validSorts = ['newest', 'oldest', 'highestPrice', 'lowestPrice', 'highestActivity'];
+      if (validSorts.includes(sort)) sortEl.value = sort;
+    }
+    if (filter) {
+      const validFilters = { all: 'filterAll', created: 'filterCreated', owned: 'filterOwned' };
+      if (validFilters[filter]) {
+        document.querySelectorAll('.filter-buttons button').forEach(b => b.classList.remove('active'));
+        const btn = document.getElementById(validFilters[filter]);
+        if (btn) btn.classList.add('active');
+        state.filterType = filter;
+      }
+    }
+    if (urn) {
+      document.getElementById('urnInput').value = urn;
+      searchProfile();
+    }
+  });
+
+  /* ---- URL Builder ---- */
+  function openUrlBuilder() {
+    document.getElementById('ubUrn').value = document.getElementById('urnInput').value;
+    document.getElementById('ubMainnet').checked = document.getElementById('mainnetToggle').checked;
+    document.getElementById('ubSort').value = document.getElementById('sortSelect').value;
+    const activeFilter = document.querySelector('.filter-buttons button.active');
+    if (activeFilter) {
+      const filterMap = { filterAll: 'all', filterCreated: 'created', filterOwned: 'owned' };
+      document.getElementById('ubFilter').value = filterMap[activeFilter.id] || 'all';
+    }
+    document.getElementById('ubOutput').textContent = '';
+    document.getElementById('urlBuilderOverlay').style.display = 'flex';
+  }
+
+  function closeUrlBuilder() {
+    document.getElementById('urlBuilderOverlay').style.display = 'none';
+  }
+
+  function generateUrlBuilder() {
+    const urn = document.getElementById('ubUrn').value.trim();
+    const mainnet = document.getElementById('ubMainnet').checked;
+    const sort = document.getElementById('ubSort').value;
+    const filter = document.getElementById('ubFilter').value;
+    const params = new URLSearchParams();
+    if (urn) params.set('urn', urn);
+    if (mainnet) params.set('mainnet', 'true');
+    params.set('sort', sort);
+    params.set('filter', filter);
+    const url = 'index.html?' + params.toString();
+    document.getElementById('ubOutput').textContent = url;
+    return url;
+  }
+
+  function copyUrlBuilder() {
+    const url = document.getElementById('ubOutput').textContent;
+    if (url) {
+      navigator.clipboard.writeText(url).catch(() => {
+        document.getElementById('ubOutput').select?.();
+      });
+    }
+  }
+
+  function goUrlBuilder() {
+    const url = generateUrlBuilder();
+    if (url) window.location.href = url;
+  }
+
+  document.getElementById('urlBuilderOverlay').addEventListener('click', (e) => {
+    if (e.target.id === 'urlBuilderOverlay') closeUrlBuilder();
+  });
 </script>
 </body>
 </html>
