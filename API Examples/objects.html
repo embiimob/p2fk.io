@@ -952,21 +952,21 @@
       const colonIdx = urn.indexOf(':');
       const hasChainPrefix = colonIdx !== -1 && colonIdx < 5;
       if (hasChainPrefix) {
-        // LTC/MZC/DOG sidechain prefix — fetch directly from bitfossil.org
+        // LTC/MZC/DOG sidechain prefix — proxy through p2fk.io to avoid browser CORS restrictions
         const txid = urn.slice(colonIdx + 1);
         if (!/^[0-9a-fA-F]{64}$/.test(txid)) {
           console.warn(`[fetchTextForUrn] URN "${urn}" has chain prefix but txid part is not 64 hex chars — skipping`);
           return null;
         }
-        const url = `https://bitfossil.org/${txid}/MSG1`;
-        console.log(`[fetchTextForUrn] Sidechain URN detected: "${urn}" → fetching ${url}`);
+        const url = `https://p2fk.io/GetSidechainMessage/${txid}`;
+        console.log(`[fetchTextForUrn] Sidechain URN detected: "${urn}" → fetching via proxy ${url}`);
         const resp = await fetch(url);
-        console.log(`[fetchTextForUrn] Response for ${url}: status=${resp.status} ok=${resp.ok}`);
+        console.log(`[fetchTextForUrn] Proxy response for ${url}: status=${resp.status} ok=${resp.ok}`);
         if (resp.ok) {
           text = await resp.text();
           console.log(`[fetchTextForUrn] Text retrieved (${text.length} chars):`, text.substring(0, 120));
         } else {
-          console.warn(`[fetchTextForUrn] Non-OK response for ${url}: ${resp.status} ${resp.statusText}`);
+          console.warn(`[fetchTextForUrn] Non-OK proxy response for ${url}: ${resp.status} ${resp.statusText}`);
         }
       } else {
         // Bare BTC txid — fetch from p2fk.io API
