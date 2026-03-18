@@ -904,6 +904,96 @@
     }
   };
 
+  const isTextUrn = (urn) => {
+    if (!urn) return false;
+    // Bare BTC txid: exactly 64 hex chars
+    if (/^[0-9a-fA-F]{64}$/.test(urn)) return true;
+    // Chain-prefixed txid: LTC:, MZC:, DOG: followed by exactly 64 hex chars
+    if (/^(LTC|MZC|DOG):[0-9a-fA-F]{64}$/i.test(urn)) return true;
+    return false;
+  };
+
+  const fetchTextForUrn = async (urn, mainnet) => {
+    const cacheKey = `text_${urn}_${mainnet}`;
+    if (state.imageCache.has(cacheKey)) return state.imageCache.get(cacheKey);
+    let text = null;
+    try {
+      const colonIdx = urn.indexOf(':');
+      const hasChainPrefix = colonIdx !== -1 && colonIdx < 5;
+      if (hasChainPrefix) {
+        // LTC/MZC/DOG prefix — fetch from bitfossil.org
+        const txid = urn.slice(colonIdx + 1);
+        const resp = await fetch(`https://bitfossil.org/${txid}/MSG`);
+        if (resp.ok) text = await resp.text();
+      } else {
+        // Bare BTC txid — fetch from p2fk.io API
+        const resp = await fetch(`https://p2fk.io/GetRootByTransactionID/${encodeURIComponent(urn)}?mainnet=${!!mainnet}`);
+        if (resp.ok) {
+          const data = await resp.json();
+          text = data && data.MSG != null ? String(data.MSG) : null;
+        }
+      }
+    } catch (e) {
+      console.warn(`fetchTextForUrn failed for ${urn}:`, e.message);
+    }
+    if (text != null) state.imageCache.set(cacheKey, text);
+    return text;
+  };
+
+  const generateTextImage = (text, width, height) => {
+    const cacheKey = `textimg_${width}x${height}_${text}`;
+    if (state.imageCache.has(cacheKey)) return state.imageCache.get(cacheKey);
+    const pad = 12;
+    const maxW = width - pad * 2;
+    const maxH = height - pad * 2;
+    const approxCharWidth = 8;
+    const charsPerRow = Math.max(1, Math.floor(maxW / approxCharWidth));
+    const estimatedRows = Math.max(1, Math.ceil(text.length / charsPerRow));
+    const rowHeight = Math.max(9, Math.min(16, Math.floor(maxH / estimatedRows)));
+    const fontSize = rowHeight;
+    const charsPerLine = Math.max(1, Math.floor(maxW / (fontSize * 0.6)));
+    const maxLines = Math.floor(maxH / (fontSize * 1.4));
+    const truncateLine = (s) => s.length > charsPerLine ? s.slice(0, charsPerLine - 1) + '…' : s;
+    // Word-wrap text
+    const words = text.split(/\s+/);
+    const lines = [];
+    let line = '';
+    let truncated = false;
+    for (const word of words) {
+      const test = line ? line + ' ' + word : word;
+      if (test.length > charsPerLine && line) {
+        lines.push(line);
+        line = truncateLine(word);
+      } else if (test.length > charsPerLine) {
+        lines.push(truncateLine(test));
+        line = '';
+        truncated = true;
+      } else {
+        line = test;
+      }
+      if (lines.length >= maxLines) { truncated = true; break; }
+    }
+    if (line && lines.length < maxLines) lines.push(line);
+    else if (line) truncated = true;
+    if (truncated && lines.length > 0 && !lines[lines.length - 1].endsWith('…')) {
+      const last = lines[lines.length - 1];
+      lines[lines.length - 1] = last.length < charsPerLine ? last + '…' : last.slice(0, charsPerLine - 1) + '…';
+    }
+    const lineHeight = fontSize * 1.4;
+    const totalTextH = lines.length * lineHeight;
+    const startY = (height - totalTextH) / 2 + fontSize;
+    const escapedLines = lines.map(l =>
+      l.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+    );
+    const textEls = escapedLines.map((l, i) =>
+      `<text x="${width / 2}" y="${startY + i * lineHeight}" text-anchor="middle" dominant-baseline="auto" fill="#e0e0e0" font-size="${fontSize}" font-family="monospace,sans-serif">${l}</text>`
+    ).join('');
+    const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='${width}' height='${height}'><rect width='100%' height='100%' fill='%23333' rx='6'/>${textEls}</svg>`;
+    const dataUrl = `data:image/svg+xml;utf8,${svg}`;
+    state.imageCache.set(cacheKey, dataUrl);
+    return dataUrl;
+  };
+
   const resolveUrnPath = (urn) => {
     if (!urn) return '';
     urn = urn.replace(/\\/g, '/');
@@ -1069,18 +1159,28 @@
         showObjectDetails(index, mainnet);
       };
       objectsGrid.appendChild(card);
-      loadImageWithTimeout(imageUrl).then(url => {
-        const img = card.querySelector('img');
-        img.src = url;
-        img.style.display = 'block';
-      }).catch(() => {
-        card.querySelector('div').innerHTML = `
-          <div class="image-error">Unable to fetch image</div>
-          <span class="urn-source-label">${urnSource}<span class="urn-tooltip">${obj.URN || 'No URN'}</span></span>
-          ${ownedUnits > 0 ? `<span class="owned-qty">${ownedUnits} Owned</span>` : ''}
-          <span class="unit-qty">${totalUnits} Units</span>
-        `;
-      });
+      if (imageUrl === state.fallbackImage && isTextUrn(obj.URN)) {
+        fetchTextForUrn(obj.URN, mainnet).then(text => {
+          if (text) {
+            const img = card.querySelector('img');
+            img.src = generateTextImage(text, 250, 140);
+            img.style.display = 'block';
+          }
+        }).catch(() => {});
+      } else {
+        loadImageWithTimeout(imageUrl).then(url => {
+          const img = card.querySelector('img');
+          img.src = url;
+          img.style.display = 'block';
+        }).catch(() => {
+          card.querySelector('div').innerHTML = `
+            <div class="image-error">Unable to fetch image</div>
+            <span class="urn-source-label">${urnSource}<span class="urn-tooltip">${obj.URN || 'No URN'}</span></span>
+            ${ownedUnits > 0 ? `<span class="owned-qty">${ownedUnits} Owned</span>` : ''}
+            <span class="unit-qty">${totalUnits} Units</span>
+          `;
+        });
+      }
     }
   };
 
@@ -1118,7 +1218,13 @@
       const modalImage = $('modalImage');
       const imageUrl = getImageUrl(obj.Image, obj.URN);
       modalImage.src = state.fallbackImage;
-      loadImageWithTimeout(imageUrl).then(url => modalImage.src = url).catch(() => modalImage.src = state.fallbackImage);
+      if (imageUrl === state.fallbackImage && isTextUrn(obj.URN)) {
+        fetchTextForUrn(obj.URN, mainnet).then(text => {
+          if (text) modalImage.src = generateTextImage(text, 400, 280);
+        }).catch(() => {});
+      } else {
+        loadImageWithTimeout(imageUrl).then(url => modalImage.src = url).catch(() => modalImage.src = state.fallbackImage);
+      }
       $('modalName').textContent = obj.Name || 'Unnamed Object';
       $('modalDescription').textContent = `Description: ${obj.Description || 'No description available'}`;
       const objectAddress = Object.keys(obj.Creators || {})[0] || 'Unknown';
