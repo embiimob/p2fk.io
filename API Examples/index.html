@@ -1438,7 +1438,7 @@
     return params.get(name);
   };
 
-  window.addEventListener('load', () => {
+  window.addEventListener('load', async () => {
     const urn = getQueryParam('urn');
     const mainnet = getQueryParam('mainnet') === 'true';
     const sort = getQueryParam('sort');
@@ -1453,18 +1453,14 @@
       const validSorts = ['newest', 'oldest', 'highestPrice', 'lowestPrice', 'highestActivity'];
       if (validSorts.includes(sort)) sortEl.value = sort;
     }
-    if (filter) {
-      const validFilters = { all: 'filterAll', created: 'filterCreated', owned: 'filterOwned' };
-      if (validFilters[filter]) {
-        document.querySelectorAll('.filter-buttons button').forEach(b => b.classList.remove('active'));
-        const btn = document.getElementById(validFilters[filter]);
-        if (btn) btn.classList.add('active');
-        state.filterType = filter;
-      }
-    }
     if (urn) {
       document.getElementById('urnInput').value = urn;
-      searchProfile();
+      await searchProfile();
+      // Apply filter AFTER searchProfile() finishes — it resets filterType to 'all' internally
+      if (filter) {
+        const validFilters = ['all', 'created', 'owned'];
+        if (validFilters.includes(filter)) filterObjects(filter);
+      }
     }
   });
 
