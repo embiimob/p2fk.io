@@ -952,10 +952,10 @@
       const colonIdx = urn.indexOf(':');
       const hasChainPrefix = colonIdx !== -1 && colonIdx < 5;
       if (hasChainPrefix) {
-        // LTC/MZC/DOG sidechain prefix — fetch via server-side proxy to avoid CORS
+        // LTC/MZC/DOG sidechain prefix — fetch directly from bitfossil.org
         const txid = urn.slice(colonIdx + 1);
         if (!/^[0-9a-fA-F]{64}$/.test(txid)) return null;
-        const resp = await fetch(`https://p2fk.io/GetSidechainMessage/${txid}`);
+        const resp = await fetch(`https://bitfossil.org/${txid}/MSG1`);
         if (resp.ok) text = await resp.text();
       } else {
         // Bare BTC txid — fetch from p2fk.io API
