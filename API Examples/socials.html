@@ -8,7 +8,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Social Thread</title>
+    <title>Sup!? Social Search</title>
     <style>
         html {
             overscroll-behavior: none; /* Prevent pull-to-refresh */
@@ -600,7 +600,7 @@
                 <button class="ub-btn-go" onclick="goUrlBuilder()">Go</button>
             </div>
             <div class="ub-output" id="ubOutput"></div>
-            <p class="ub-example">Example: <code>SupThread.html?urn=AllenVandever&amp;mainnet=true</code></p>
+            <p class="ub-example">Example: <code>socials.html?urn=AllenVandever&amp;mainnet=true</code></p>
         </div>
     </div>
 
@@ -1738,7 +1738,7 @@
             const params = new URLSearchParams();
             if (urn) params.set("urn", urn);
             if (mainnet) params.set("mainnet", "true");
-            const url = "SupThread.html?" + params.toString();
+            const url = "socials.html?" + params.toString();
             document.getElementById("ubOutput").textContent = url;
             return url;
         }
