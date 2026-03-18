@@ -952,11 +952,23 @@
       const colonIdx = urn.indexOf(':');
       const hasChainPrefix = colonIdx !== -1 && colonIdx < 5;
       if (hasChainPrefix) {
-        // LTC/MZC/DOG/BTC prefix — fetch from bitfossil.org
+        // LTC/MZC/DOG/BTC sidechain prefix — try p2fk.io first (avoids CORS on direct fetch),
+        // then fall back to bitfossil.org
         const txid = urn.slice(colonIdx + 1);
         if (!/^[0-9a-fA-F]{64}$/.test(txid)) return null;
-        const resp = await fetch(`https://bitfossil.org/${txid}/MSG1`);
-        if (resp.ok) text = await resp.text();
+        try {
+          const apiResp = await fetch(`https://p2fk.io/GetRootByTransactionID/${encodeURIComponent(urn)}?mainnet=${!!mainnet}`);
+          if (apiResp.ok) {
+            const data = await apiResp.json();
+            if (data && data.Message != null) {
+              text = Array.isArray(data.Message) ? data.Message.join('\n') : String(data.Message);
+            }
+          }
+        } catch (_) { /* fall through to bitfossil */ }
+        if (text == null) {
+          const resp = await fetch(`https://bitfossil.org/${txid}/MSG1`);
+          if (resp.ok) text = await resp.text();
+        }
       } else {
         // Bare BTC txid — fetch from p2fk.io API
         const resp = await fetch(`https://p2fk.io/GetRootByTransactionID/${encodeURIComponent(urn)}?mainnet=${!!mainnet}`);
