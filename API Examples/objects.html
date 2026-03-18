@@ -939,8 +939,8 @@
     if (!urn) return false;
     // Bare BTC txid: exactly 64 hex chars
     if (/^[0-9a-fA-F]{64}$/.test(urn)) return true;
-    // Chain-prefixed txid: LTC:, MZC:, DOG: followed by exactly 64 hex chars
-    if (/^(LTC|MZC|DOG):[0-9a-fA-F]{64}$/i.test(urn)) return true;
+    // Chain-prefixed txid: BTC:, LTC:, MZC:, DOG: followed by exactly 64 hex chars
+    if (/^(BTC|LTC|MZC|DOG):[0-9a-fA-F]{64}$/i.test(urn)) return true;
     return false;
   };
 
@@ -952,9 +952,10 @@
       const colonIdx = urn.indexOf(':');
       const hasChainPrefix = colonIdx !== -1 && colonIdx < 5;
       if (hasChainPrefix) {
-        // LTC/MZC/DOG prefix — fetch from bitfossil.org
+        // LTC/MZC/DOG/BTC prefix — fetch from bitfossil.org
         const txid = urn.slice(colonIdx + 1);
-        const resp = await fetch(`https://bitfossil.org/${txid}/MSG`);
+        if (!/^[0-9a-fA-F]{64}$/.test(txid)) return null;
+        const resp = await fetch(`https://bitfossil.org/${txid}/MSG1`);
         if (resp.ok) text = await resp.text();
       } else {
         // Bare BTC txid — fetch from p2fk.io API
@@ -987,27 +988,38 @@
     const charsPerLine = Math.max(1, Math.floor(maxW / (fontSize * 0.6)));
     const maxLines = Math.floor(maxH / (fontSize * 1.4));
     const truncateLine = (s) => s.length > charsPerLine ? s.slice(0, charsPerLine - 1) + '…' : s;
-    // Word-wrap text
-    const words = text.split(/\s+/);
+    // Preserve explicit newlines, then word-wrap each paragraph line
+    const inputLines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
     const lines = [];
-    let line = '';
     let truncated = false;
-    for (const word of words) {
-      const test = line ? line + ' ' + word : word;
-      if (test.length > charsPerLine && line) {
-        lines.push(line);
-        line = truncateLine(word);
-      } else if (test.length > charsPerLine) {
-        lines.push(truncateLine(test));
-        line = '';
-        truncated = true;
-      } else {
-        line = test;
+    outer: for (const inputLine of inputLines) {
+      if (inputLine.trim() === '') {
+        // Preserve blank lines as empty visual rows
+        if (lines.length < maxLines) { lines.push(''); } else { truncated = true; break; }
+        continue;
       }
-      if (lines.length >= maxLines) { truncated = true; break; }
+      const words = inputLine.split(/[ \t]+/);
+      let line = '';
+      for (const word of words) {
+        const test = line ? line + ' ' + word : word;
+        if (test.length > charsPerLine && line) {
+          if (lines.length >= maxLines) { truncated = true; break outer; }
+          lines.push(line);
+          line = truncateLine(word);
+        } else if (test.length > charsPerLine) {
+          if (lines.length >= maxLines) { truncated = true; break outer; }
+          lines.push(truncateLine(test));
+          line = '';
+          truncated = true;
+        } else {
+          line = test;
+        }
+      }
+      if (line) {
+        if (lines.length >= maxLines) { truncated = true; break; }
+        lines.push(line);
+      }
     }
-    if (line && lines.length < maxLines) lines.push(line);
-    else if (line) truncated = true;
     if (truncated && lines.length > 0 && !lines[lines.length - 1].endsWith('…')) {
       const last = lines[lines.length - 1];
       lines[lines.length - 1] = last.length < charsPerLine ? last + '…' : last.slice(0, charsPerLine - 1) + '…';
@@ -1021,8 +1033,8 @@
     const textEls = escapedLines.map((l, i) =>
       `<text x="${width / 2}" y="${startY + i * lineHeight}" text-anchor="middle" dominant-baseline="auto" fill="#e0e0e0" font-size="${fontSize}" font-family="monospace,sans-serif">${l}</text>`
     ).join('');
-    const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='${width}' height='${height}'><rect width='100%' height='100%' fill='%23333' rx='6'/>${textEls}</svg>`;
-    const dataUrl = `data:image/svg+xml;utf8,${svg}`;
+    const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='${width}' height='${height}'><rect width='100%' height='100%' fill='#333' rx='6'/>${textEls}</svg>`;
+    const dataUrl = `data:image/svg+xml,${encodeURIComponent(svg)}`;
     state.imageCache.set(cacheKey, dataUrl);
     return dataUrl;
   };
@@ -1049,6 +1061,8 @@
         const hash = value.replace(/^ipfs[:/]+/i, "").split("/")[0];
         return hash ? `https://ipfs.io/ipfs/${hash}` : null;
       }
+      // Chain-prefixed bare txids (no file path) are text URNs — return null so they use the text-fetch path
+      if (/^(BTC|LTC|DOG|MZC):[0-9a-fA-F]{64}$/i.test(value)) return null;
       return /^(BTC|LTC|DOG|MZC):/i.test(value) || /^[A-Za-z0-9]+\/.+/.test(value) ? resolveUrnPath(value) : null;
     };
     return resolve(image) || resolve(urn) || state.fallbackImage;
