@@ -121,6 +121,11 @@ namespace P2FK.IO.Services
 
             var rows = await Task.Run(() => ExecuteSearchQuery(sql));
 
+            // If Windows Search returned nothing (index not ready or JSON not yet indexed),
+            // fall back to a direct filesystem scan so results are available immediately.
+            if (rows.Count == 0)
+                rows = await FallbackScanAsync("root.json", searchString);
+
             // Deduplicate by transaction ID, keeping the newest-modified row per txid
             var txMap = new Dictionary<string, SearchRow>(StringComparer.OrdinalIgnoreCase);
             foreach (var row in rows)
@@ -190,6 +195,11 @@ namespace P2FK.IO.Services
 
             var rows = await Task.Run(() => ExecuteSearchQuery(sql));
 
+            // If Windows Search returned nothing (index not ready or JSON not yet indexed),
+            // fall back to a direct filesystem scan so results are available immediately.
+            if (rows.Count == 0)
+                rows = await FallbackScanAsync("OBJ.json", searchString);
+
             // Deduplicate by file path
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var ordered = rows
@@ -252,6 +262,11 @@ namespace P2FK.IO.Services
 
             var rows = await Task.Run(() => ExecuteSearchQuery(sql));
 
+            // If Windows Search returned nothing (index not ready or JSON not yet indexed),
+            // fall back to a direct filesystem scan so results are available immediately.
+            if (rows.Count == 0)
+                rows = await FallbackScanAsync("GetProfileByAddress.json", searchString);
+
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var ordered = rows
                 .Where(r => seen.Add(r.Path))
@@ -284,6 +299,46 @@ namespace P2FK.IO.Services
 
             _cache.Set(cacheKey, results, CacheTtl);
             return results;
+        }
+
+        // ── Fallback filesystem scan ───────────────────────────────────────────
+
+        /// <summary>
+        /// Scans the <c>root</c> directory tree for files named
+        /// <paramref name="fileName"/> whose content contains
+        /// <paramref name="searchString"/> (case-insensitive).
+        /// Used when Windows Search has not yet indexed the JSON files.
+        /// </summary>
+        private Task<List<SearchRow>> FallbackScanAsync(string fileName, string searchString)
+        {
+            return Task.Run(() =>
+            {
+                var rows = new List<SearchRow>();
+
+                if (!Directory.Exists(_rootPath))
+                    return rows;
+
+                // Use '*' wildcard with SearchOption to avoid manual recursion
+                foreach (string filePath in Directory.EnumerateFiles(
+                    _rootPath, fileName, SearchOption.AllDirectories))
+                {
+                    try
+                    {
+                        string content = File.ReadAllText(filePath);
+                        if (content.Contains(searchString, StringComparison.OrdinalIgnoreCase))
+                        {
+                            DateTime modified = File.GetLastWriteTimeUtc(filePath);
+                            rows.Add(new SearchRow(filePath, modified));
+                        }
+                    }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                    {
+                        // Skip unreadable files
+                    }
+                }
+
+                return rows;
+            });
         }
 
         // ── Path helpers ───────────────────────────────────────────────────────
