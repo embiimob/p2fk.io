@@ -31,6 +31,27 @@ NOTICE: Update the Wrapper.cs file if you wish to use something other then the f
         public string TestRPCUser = "good-user";
         public string TestRPCPassword = "better-password";
 
+        //default litecoin mainnet connection info
+        public string LTCCLIPath = @"C:\SUP\SUP.exe";
+        public string LTCVersionByte = @"48";
+        public string LTCRPCURL = @"http://127.0.0.1:9332";
+        public string LTCRPCUser = "good-user";
+        public string LTCRPCPassword = "better-password";
+
+        //default dogecoin mainnet connection info
+        public string DOGCLIPath = @"C:\SUP\SUP.exe";
+        public string DOGVersionByte = @"30";
+        public string DOGRPCURL = @"http://127.0.0.1:22555";
+        public string DOGRPCUser = "good-user";
+        public string DOGRPCPassword = "better-password";
+
+        //default mazacoin mainnet connection info
+        public string MZCCLIPath = @"C:\SUP\SUP.exe";
+        public string MZCVersionByte = @"50";
+        public string MZCRPCURL = @"http://127.0.0.1:12832";
+        public string MZCRPCUser = "good-user";
+        public string MZCRPCPassword = "better-password";
+
 
 
 
