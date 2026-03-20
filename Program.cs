@@ -7,7 +7,11 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<P2FK.IO.Wrapper>();
+#pragma warning disable CA1416 // Windows Search service is intentionally Windows-only
+builder.Services.AddSingleton<P2FK.IO.Services.WindowsSearchService>();
+#pragma warning restore CA1416
 
 // Allow requests to take up to MaxTimeoutSeconds before the server cancels them
 builder.Services.AddRequestTimeouts(options =>
