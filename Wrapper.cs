@@ -35,6 +35,9 @@ namespace P2FK.IO
         public string DOGRPCUser = "good-user";
         public string DOGRPCPassword = "better-password";
 
+        //root folder where synced blockchain data (ROOT.json, OBJ.json, etc.) is stored
+        public string RootPath = @"C:\p2fk.io\root";
+
         //default mazacoin mainnet connection info
         public string MZCCLIPath = @"C:\SUP\SUP.exe";
         public string MZCVersionByte = @"50";

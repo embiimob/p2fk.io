@@ -16,11 +16,10 @@ namespace P2FK.IO.Services
         private static readonly Regex TxIdRegex = new Regex(@"[0-9a-fA-F]{64}", RegexOptions.Compiled);
         private const int MaxSearchLength = 2048;
 
-        public WindowsSearchService(IMemoryCache cache)
+        public WindowsSearchService(IMemoryCache cache, Wrapper wrapper)
         {
             _cache = cache;
-            // The root folder lives beside the application executable
-            _rootPath = Path.Combine(AppContext.BaseDirectory, "root");
+            _rootPath = wrapper.RootPath;
         }
 
         // ── Blockchain detection ───────────────────────────────────────────────
@@ -124,7 +123,7 @@ namespace P2FK.IO.Services
             // If Windows Search returned nothing (index not ready or JSON not yet indexed),
             // fall back to a direct filesystem scan so results are available immediately.
             if (rows.Count == 0)
-                rows = await FallbackScanAsync("root.json", searchString);
+                rows = await FallbackScanAsync("ROOT.json", searchString);
 
             // Deduplicate by transaction ID, keeping the newest-modified row per txid
             var txMap = new Dictionary<string, SearchRow>(StringComparer.OrdinalIgnoreCase);
@@ -146,7 +145,7 @@ namespace P2FK.IO.Services
                 if (results.Count >= qty) break;
 
                 string txId = kvp.Key;
-                string rootJsonPath = Path.Combine(_rootPath, txId, "root.json");
+                string rootJsonPath = Path.Combine(_rootPath, txId, "ROOT.json");
 
                 if (!File.Exists(rootJsonPath)) continue;
 
