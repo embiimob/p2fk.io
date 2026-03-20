@@ -979,30 +979,32 @@
     if (state.imageCache.has(cacheKey)) return state.imageCache.get(cacheKey);
     let text = null;
     try {
-      const colonIdx = urn.indexOf(':');
-      const hasChainPrefix = colonIdx !== -1 && colonIdx < 5;
-      if (hasChainPrefix) {
-        // Sidechain URN (LTC/MZC/DOG etc.) — browser cannot fetch bitfossil.org directly due to CORS.
-        // Display the URN itself as the text content.
-        console.log(`[fetchTextForUrn] Sidechain URN "${urn}" — CORS prevents direct fetch; displaying URN as text`);
-        text = urn;
+      const chainMatch = urn.match(/^(BTC|LTC|DOG|MZC):([0-9a-fA-F]{64})$/i);
+      let txid, blockchain;
+      if (chainMatch) {
+        blockchain = chainMatch[1].toUpperCase();
+        txid = chainMatch[2];
       } else {
-        // Bare BTC txid — fetch from p2fk.io API
-        const url = `https://p2fk.io/GetRootByTransactionID/${encodeURIComponent(urn)}?mainnet=${!!mainnet}`;
-        console.log(`[fetchTextForUrn] Mainchain URN detected: "${urn}" → fetching ${url}`);
-        const resp = await fetch(url);
-        console.log(`[fetchTextForUrn] Response for ${url}: status=${resp.status} ok=${resp.ok}`);
-        if (resp.ok) {
-          const data = await resp.json();
-          if (data && data.Message != null) {
-            text = Array.isArray(data.Message) ? data.Message.join('\n') : String(data.Message);
-            console.log(`[fetchTextForUrn] Message retrieved (${text.length} chars):`, text.substring(0, 120));
-          } else {
-            console.warn(`[fetchTextForUrn] No Message field in response for "${urn}":`, data);
-          }
+        blockchain = 'BTC';
+        txid = urn;
+      }
+      // Fetch from p2fk.io API using the blockchain parameter for sidechain support
+      const url = blockchain === 'BTC'
+        ? `https://p2fk.io/GetRootByTransactionID/${encodeURIComponent(txid)}?mainnet=${!!mainnet}`
+        : `https://p2fk.io/GetRootByTransactionID/${encodeURIComponent(txid)}?blockchain=${blockchain}`;
+      console.log(`[fetchTextForUrn] URN "${urn}" → fetching ${url}`);
+      const resp = await fetch(url);
+      console.log(`[fetchTextForUrn] Response for ${url}: status=${resp.status} ok=${resp.ok}`);
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data && data.Message != null) {
+          text = Array.isArray(data.Message) ? data.Message.join('\n') : String(data.Message);
+          console.log(`[fetchTextForUrn] Message retrieved (${text.length} chars):`, text.substring(0, 120));
         } else {
-          console.warn(`[fetchTextForUrn] Non-OK response for ${url}: ${resp.status} ${resp.statusText}`);
+          console.warn(`[fetchTextForUrn] No Message field in response for "${urn}":`, data);
         }
+      } else {
+        console.warn(`[fetchTextForUrn] Non-OK response for ${url}: ${resp.status} ${resp.statusText}`);
       }
     } catch (e) {
       console.error(`[fetchTextForUrn] Exception for URN "${urn}":`, e.message, e);
