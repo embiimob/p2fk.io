@@ -1230,13 +1230,13 @@
           <span class="urn-source-label">${urnSource}<span class="urn-tooltip">${obj.URN || 'No URN'}</span></span>
           ${ownedUnits > 0 ? `<span class="owned-qty">${ownedUnits} Owned</span>` : ''}
           <span class="unit-qty">${totalUnits} Units</span>
-          ${hasCreated ? `<span class="card-created-date">${createdShort}<span class="date-tooltip">${createdFull}</span></span>` : ''}
         </div>
         <h3>${obj.Name || 'Unnamed Object'}</h3>
         ${description ? `<p>${description}</p>` : ''}
         ${collectionURN ? `<p>${createSearchLink(collectionURN, mainnet, isCollectionUnacknowledged, creators[0])}</p>` : ''}
         ${additionalCreatorURN ? `<p>${createSearchLink(additionalCreatorURN, mainnet, isAdditionalUnacknowledged, creators[1])}</p>` : ''}
         ${lowestPrice !== null ? `<div class="listing-price">${lowestPrice} BTC</div>` : ''}
+        ${hasCreated ? `<span class="card-created-date">${createdShort}<span class="date-tooltip">${createdFull}</span></span>` : ''}
       `;
       card.onclick = () => {
         const index = state.filteredObjects.findIndex(o => Object.keys(o.Creators || {})[0] === card.dataset.address);
@@ -1267,7 +1267,6 @@
             <span class="urn-source-label">${urnSource}<span class="urn-tooltip">${obj.URN || 'No URN'}</span></span>
             ${ownedUnits > 0 ? `<span class="owned-qty">${ownedUnits} Owned</span>` : ''}
             <span class="unit-qty">${totalUnits} Units</span>
-            ${hasCreated ? `<span class="card-created-date">${createdShort}<span class="date-tooltip">${createdFull}</span></span>` : ''}
           `;
         });
       }
