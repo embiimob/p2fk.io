@@ -199,7 +199,7 @@
   }
   .object-card {
     background: #1e1e1e;
-    padding: 12px;
+    padding: 12px 12px 28px;
     border-radius: 8px;
     box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
     cursor: pointer;
@@ -236,6 +236,34 @@
     text-overflow: ellipsis;
   }
   .urn-source-label { top: 4px; left: 4px; z-index: 10; }
+  .card-created-date {
+    position: absolute;
+    bottom: 8px;
+    left: 12px;
+    background: rgba(0, 0, 0, 0.7);
+    color: #b0b0b0;
+    padding: 2px 5px;
+    border-radius: 3px;
+    font-size: 0.68em;
+    cursor: default;
+  }
+  .card-created-date .date-tooltip {
+    visibility: hidden;
+    background: #333;
+    color: #e0e0e0;
+    padding: 4px 6px;
+    border-radius: 4px;
+    position: absolute;
+    z-index: 1000;
+    bottom: 120%;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.85em;
+    white-space: nowrap;
+  }
+  .card-created-date:hover .date-tooltip {
+    visibility: visible;
+  }
   .status { font-weight: bold; color: #03dac6; }
   .forged { color: #cf6679; font-style: italic; }
   .loading, .error { text-align: center; padding: 15px; color: #b0b0b0; }
@@ -721,6 +749,7 @@
         <option value="highestPrice">Highest Price</option>
         <option value="lowestPrice">Lowest Price</option>
         <option value="highestActivity">Highest Activity</option>
+        <option value="recentActivity">Recent Activity</option>
       </select>
       <div class="filter-buttons">
         <button id="filterAll" class="active" onclick="filterObjects('all')">All</button>
@@ -810,6 +839,7 @@
         <option value="highestPrice">Highest Price</option>
         <option value="lowestPrice">Lowest Price</option>
         <option value="highestActivity">Highest Activity</option>
+        <option value="recentActivity">Recent Activity</option>
       </select>
       <label class="ub-field-label" for="ubFilter">Filter</label>
       <select id="ubFilter">
@@ -1187,6 +1217,9 @@
       const description = obj.Description ? obj.Description.substring(0, 100) + (obj.Description.length > 100 ? '...' : '') : '';
       const imageUrl = getImageUrl(obj.Image, obj.URN);
       const urnSource = getUrnSource(obj.URN, mainnet);
+      const createdShort = formatDateToLocalShort(obj.CreatedDate);
+      const createdFull = formatDateToLocalFull(obj.CreatedDate);
+      const hasCreated = createdShort && createdShort !== 'N/A' && createdShort !== 'Invalid Date';
       const card = document.createElement('div');
       card.className = 'object-card';
       card.dataset.address = objectAddress;
@@ -1201,6 +1234,7 @@
         ${description ? `<p>${description}</p>` : ''}
         ${collectionURN ? `<p>${createSearchLink(collectionURN, mainnet, isCollectionUnacknowledged, creators[0])}</p>` : ''}
         ${additionalCreatorURN ? `<p>${createSearchLink(additionalCreatorURN, mainnet, isAdditionalUnacknowledged, creators[1])}</p>` : ''}
+        ${hasCreated ? `<span class="card-created-date">${createdShort}<span class="date-tooltip">${createdFull}</span></span>` : ''}
         ${lowestPrice !== null ? `<div class="listing-price">${lowestPrice} BTC</div>` : ''}
       `;
       card.onclick = () => {
@@ -1453,6 +1487,7 @@
       if (sortBy === 'highestPrice') return comparePrice(a, b, 'desc');
       if (sortBy === 'lowestPrice') return comparePrice(a, b, 'asc');
       if (sortBy === 'highestActivity') return (b.ProcessHeight || 0) - (a.ProcessHeight || 0);
+      if (sortBy === 'recentActivity') return new Date(b.ChangeDate) - new Date(a.ChangeDate);
       return 0;
     });
   };
@@ -1871,7 +1906,7 @@
     }
     if (sort) {
       const sortEl = document.getElementById('sortSelect');
-      const validSorts = ['newest', 'oldest', 'highestPrice', 'lowestPrice', 'highestActivity'];
+      const validSorts = ['newest', 'oldest', 'highestPrice', 'lowestPrice', 'highestActivity', 'recentActivity'];
       if (validSorts.includes(sort)) sortEl.value = sort;
     }
     if (urn) {
