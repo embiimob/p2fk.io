@@ -2,12 +2,16 @@ using Microsoft.AspNetCore.Http.Timeouts;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.OpenApi.Models;
 using Swashbuckle.AspNetCore.SwaggerUI;
+using System.Runtime.Versioning;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddSingleton<P2FK.IO.Wrapper>();
+builder.Services.AddMemoryCache();
+if (OperatingSystem.IsWindows())
+    builder.Services.AddSingleton<P2FK.IO.Services.WindowsSearchService>();
 
 // Allow requests to take up to MaxTimeoutSeconds before the server cancels them
 builder.Services.AddRequestTimeouts(options =>
