@@ -212,7 +212,7 @@
 </div>
 
 <!-- LEFT: SPELL TOME -->
-<div id="spellbookPanel" class="side-panel">
+<div id="spellbookPanel" class="side-panel collapsed">
     <div class="ptitle">📖 SPELL TOME</div>
     <div class="psub">Write a rune and cast it to summon entities from the Blockchain Realm. Each word opens a new chamber.</div>
     <input id="runeInput" type="text" placeholder="Inscribe thy rune..." autocomplete="off" spellcheck="false">
@@ -430,11 +430,12 @@
     var scene, camera, renderer, clock;
     var runicRing, runicRing2;
     var torchLights = [], torchFlames = [];
-    var raycaster = new THREE.Raycaster();
-    var mouse = new THREE.Vector2();
+    var raycaster, mouse;   // initialised inside initThree() so CDN failure can't break the IIFE
     var camAngle = 0;
 
     function initThree() {
+        raycaster = new THREE.Raycaster();
+        mouse = new THREE.Vector2();
         scene = new THREE.Scene();
         scene.background = new THREE.Color(0x04030a);
         scene.fog = new THREE.FogExp2(0x06040c, 0.024);
@@ -1243,7 +1244,21 @@
 
     /* ── INIT ── */
     function init() {
-        initThree();
+        /* Attach the welcome button listener FIRST, before any Three.js work,
+           so a WebGL / CDN failure can never prevent it from responding. */
+        document.getElementById('welcomeStartBtn').addEventListener('click', function () {
+            document.getElementById('welcomeScreen').classList.add('hidden');
+            document.getElementById('spellbookPanel').classList.remove('collapsed');
+            document.getElementById('runeInput').focus();
+        });
+
+        try {
+            initThree();
+        } catch (e) {
+            console.error('Three.js init failed:', e);
+            document.querySelector('.w-hint').textContent =
+                '⚠ 3D renderer unavailable — gameplay still works!';
+        }
         updateStatsUI();
         updateAbilityGrid();
 
@@ -1267,13 +1282,6 @@
         /* cast button */
         document.getElementById('castBtn').addEventListener('click', function () {
             castSpell(document.getElementById('runeInput').value.trim(), document.getElementById('mainnetCheck').checked);
-        });
-
-        /* welcome start */
-        document.getElementById('welcomeStartBtn').addEventListener('click', function () {
-            document.getElementById('welcomeScreen').classList.add('hidden');
-            document.getElementById('spellbookPanel').classList.remove('collapsed');
-            document.getElementById('runeInput').focus();
         });
 
         /* death restart */
