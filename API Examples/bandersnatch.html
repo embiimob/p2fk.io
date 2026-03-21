@@ -3,880 +3,523 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>✨ Bandersnatch — Sup!? Explorer</title>
+  <title>✦ Bandersnatch — Artifact Nebula</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; }
-    body {
-      background: #121212;
+    html, body {
+      margin: 0; padding: 0;
+      width: 100%; height: 100%;
+      overflow: hidden;
+      background: #000;
+      font-family: 'Segoe UI', Arial, sans-serif;
       color: #e0e0e0;
-      font-family: Arial, sans-serif;
-      margin: 0;
-      padding: 0;
-      min-height: 100vh;
+      user-select: none;
     }
-    /* ── Top Bar ─────────────────────────────────────────── */
-    .top-bar {
+    canvas { display: block; }
+
+    /* ── Search HUD (top) ──────────────────────────────────── */
+    #searchHud {
       position: fixed;
       top: 0; left: 0; right: 0;
-      background: #121212;
-      border-bottom: 1px solid #2a2a2a;
-      z-index: 1000;
-      padding: 8px 15px;
-    }
-    .top-bar-inner {
+      z-index: 100;
+      padding: 10px 16px;
+      background: linear-gradient(to bottom, rgba(0,0,4,0.92) 70%, transparent);
       display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
       align-items: center;
+      gap: 9px;
+      flex-wrap: wrap;
     }
-    .brand {
-      color: #bb86fc;
-      font-weight: bold;
+    #brand {
       font-size: 1.05em;
+      font-weight: bold;
+      color: #bb86fc;
+      letter-spacing: 0.12em;
+      text-shadow: 0 0 14px rgba(187,134,252,0.55);
       white-space: nowrap;
-      flex: 0 0 auto;
-      letter-spacing: 0.03em;
+      flex-shrink: 0;
     }
     #searchInput {
-      flex: 1 1 200px;
-      min-width: 120px;
-      max-width: 340px;
-      padding: 7px 10px;
-      background: #1e1e1e;
-      border: 1px solid #333;
+      flex: 1 1 170px;
+      min-width: 110px;
+      max-width: 300px;
+      padding: 7px 14px;
+      background: rgba(18,10,35,0.92);
+      border: 1px solid rgba(187,134,252,0.4);
       color: #e0e0e0;
-      border-radius: 5px;
-      font-size: 0.95em;
+      border-radius: 20px;
+      font-size: 0.93em;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
     }
-    #searchInput:focus { outline: 1px solid #bb86fc; border-color: #bb86fc; }
+    #searchInput:focus {
+      border-color: #bb86fc;
+      box-shadow: 0 0 14px rgba(187,134,252,0.35);
+    }
+    #searchInput:disabled { opacity: 0.55; }
     #qtySelect {
-      padding: 7px 6px;
-      background: #1e1e1e;
-      border: 1px solid #333;
+      padding: 7px 8px;
+      background: rgba(18,10,35,0.9);
+      border: 1px solid rgba(187,134,252,0.3);
       color: #e0e0e0;
-      border-radius: 5px;
+      border-radius: 10px;
       cursor: pointer;
-      flex: 0 0 auto;
+      font-size: 0.88em;
     }
     .mainnet-label {
       display: flex;
       align-items: center;
       gap: 5px;
-      flex: 0 0 auto;
-      font-size: 0.88em;
+      font-size: 0.83em;
       cursor: pointer;
       white-space: nowrap;
+      color: #aaa;
     }
     #searchBtn {
-      padding: 7px 18px;
-      background: #6200ea;
+      padding: 7px 20px;
+      background: linear-gradient(135deg, #4a00b0, #bb86fc);
       border: none;
       color: #fff;
-      border-radius: 5px;
+      border-radius: 20px;
       cursor: pointer;
-      font-size: 0.95em;
-      flex: 0 0 auto;
-      min-width: 80px;
-      transition: background 0.2s;
+      font-size: 0.92em;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      white-space: nowrap;
+      transition: all 0.2s;
+      box-shadow: 0 0 14px rgba(98,0,200,0.45);
     }
-    #searchBtn:hover:not(:disabled) { background: #7c4dff; }
-    #searchBtn:disabled { background: #444; opacity: 0.7; cursor: default; }
-    /* ── Breadcrumbs ─────────────────────────────────────── */
-    .breadcrumbs {
+    #searchBtn:hover:not(:disabled) {
+      background: linear-gradient(135deg, #7c4dff, #e040fb);
+      box-shadow: 0 0 22px rgba(187,134,252,0.65);
+      transform: scale(1.04);
+    }
+    #searchBtn:disabled { background: #333; box-shadow: none; cursor: default; transform: none; }
+
+    /* ── Stats row ─────────────────────────────────────────── */
+    #statsBar {
+      position: fixed;
+      top: 54px; left: 14px;
+      z-index: 100;
+      font-size: 0.74em;
+      color: #888;
+      display: none;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .stat-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: rgba(0,0,0,0.58);
+      padding: 3px 9px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.07);
+    }
+
+    /* ── Breadcrumbs (bottom-left) ─────────────────────────── */
+    #breadcrumbBar {
+      position: fixed;
+      bottom: 14px; left: 14px;
+      z-index: 100;
       display: flex;
       flex-wrap: wrap;
       gap: 4px;
       align-items: center;
-      padding: 5px 15px 5px;
-      background: #121212;
-      border-bottom: 1px solid #1e1e1e;
-      font-size: 0.8em;
-      min-height: 30px;
+      max-width: calc(100vw - 28px);
+      pointer-events: auto;
     }
-    .breadcrumb-item {
+    .bc-item {
+      background: rgba(0,0,0,0.65);
+      border: 1px solid rgba(187,134,252,0.3);
       color: #bb86fc;
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-size: 0.76em;
       cursor: pointer;
-      text-decoration: underline;
-      max-width: 160px;
+      transition: all 0.2s;
+      max-width: 130px;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
-    .breadcrumb-item:hover { color: #fff; }
-    .breadcrumb-item.current { color: #e0e0e0; text-decoration: none; cursor: default; }
-    .breadcrumb-sep { color: #555; }
-    /* ── Container ───────────────────────────────────────── */
-    .container {
-      padding: 15px;
-      padding-top: 105px; /* top-bar (~50) + breadcrumbs (~30) + gap */
+    .bc-item:hover { background: rgba(98,0,234,0.45); }
+    .bc-item.current {
+      color: #fff;
+      border-color: rgba(187,134,252,0.75);
+      background: rgba(98,0,234,0.35);
+      cursor: default;
     }
-    /* ── Spinner ─────────────────────────────────────────── */
-    .spinner-wrap {
-      display: flex;
-      justify-content: center;
-      padding: 40px 0;
+    .bc-sep { color: #444; font-size: 0.85em; pointer-events: none; }
+
+    /* ── Detail panel (right) ──────────────────────────────── */
+    #detailPanel {
+      position: fixed;
+      top: 56px;
+      right: -420px;
+      width: 380px;
+      max-width: calc(100vw - 16px);
+      max-height: calc(100vh - 72px);
+      background: rgba(6,2,18,0.96);
+      border: 1px solid rgba(187,134,252,0.28);
+      border-radius: 14px;
+      z-index: 200;
+      overflow-y: auto;
+      transition: right 0.38s cubic-bezier(0.15,0,0.1,1);
+      backdrop-filter: blur(14px);
+      scrollbar-width: thin;
+      scrollbar-color: #6200ea #0a0415;
     }
-    .spinner {
-      width: 40px; height: 40px;
-      border: 4px solid #333;
-      border-top-color: #bb86fc;
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    /* ── Tabs ────────────────────────────────────────────── */
-    .tabs {
-      display: flex;
-      gap: 6px;
-      margin-bottom: 14px;
-      flex-wrap: wrap;
-    }
-    .tab-btn {
-      padding: 7px 14px;
-      background: #1e1e1e;
-      border: 1px solid #333;
-      color: #b0b0b0;
-      border-radius: 6px;
+    #detailPanel.open { right: 10px; }
+    #detailPanel::-webkit-scrollbar { width: 4px; }
+    #detailPanel::-webkit-scrollbar-thumb { background: #6200ea; border-radius: 2px; }
+    #detailInner { padding: 16px 16px 22px; }
+    #detailClose {
+      position: sticky;
+      top: 0;
+      float: right;
+      background: rgba(6,2,18,0.95);
+      border: none;
+      color: #bb86fc;
+      font-size: 1.35em;
       cursor: pointer;
-      font-size: 0.9em;
-      transition: background 0.2s, color 0.2s;
-      display: flex;
-      align-items: center;
-      gap: 6px;
+      line-height: 1;
+      padding: 8px 10px 4px 4px;
+      z-index: 5;
     }
-    .tab-btn:hover { background: #2a2a2a; color: #e0e0e0; }
-    .tab-btn.active { background: #6200ea; border-color: #6200ea; color: #fff; }
-    .tab-count {
-      background: rgba(255,255,255,0.15);
-      border-radius: 10px;
-      padding: 1px 7px;
-      font-size: 0.82em;
+    #detailClose:hover { color: #fff; }
+    .d-type {
+      display: inline-block;
+      font-size: 0.72em;
+      padding: 2px 9px;
+      border-radius: 9px;
+      margin-bottom: 9px;
+      font-weight: bold;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
     }
-    .tab-btn.active .tab-count { background: rgba(255,255,255,0.25); }
-    /* ── Section panel ───────────────────────────────────── */
-    .section-panel { display: none; }
-    .section-panel.active { display: block; }
-    /* ── Cards grid ─────────────────────────────────────── */
-    .cards-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-      gap: 14px;
-      margin-bottom: 14px;
-    }
-    /* ── Result card ─────────────────────────────────────── */
-    .result-card {
-      background: #1e1e1e;
-      border-radius: 8px;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.4);
-      padding: 13px;
-      position: relative;
-      overflow: hidden;
-      transition: transform 0.15s;
-    }
-    .result-card:hover { transform: translateY(-3px); }
-    .result-card .card-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      gap: 6px;
-      margin-bottom: 8px;
-    }
-    .card-title {
-      font-size: 0.92em;
+    .d-title {
+      font-size: 1.04em;
       font-weight: bold;
       color: #bb86fc;
+      margin-bottom: 8px;
       word-break: break-all;
-      flex: 1;
+      text-shadow: 0 0 8px rgba(187,134,252,0.3);
     }
-    .card-meta {
-      font-size: 0.78em;
-      color: #888;
-      margin-bottom: 5px;
+    .d-section { margin-top: 12px; }
+    .d-label {
+      font-size: 0.68em;
+      color: #555;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 3px;
     }
-    .card-text {
-      font-size: 0.82em;
-      color: #c0c0c0;
-      line-height: 1.5;
+    .d-value {
+      font-size: 0.84em;
+      color: #bbb;
       word-break: break-word;
-      margin-bottom: 6px;
+      line-height: 1.55;
     }
-    /* ── Blockchain badge ────────────────────────────────── */
-    .chain-badge {
-      font-size: 0.72em;
-      font-weight: bold;
-      padding: 2px 7px;
-      border-radius: 10px;
-      white-space: nowrap;
-      flex-shrink: 0;
+    .d-img {
+      width: 100%;
+      max-height: 190px;
+      object-fit: contain;
+      border-radius: 8px;
+      background: #0a0520;
+      margin-bottom: 10px;
+      border: 1px solid rgba(255,255,255,0.06);
     }
-    /* ── Address / keyword links ─────────────────────────── */
-    .drill-link {
+    .d-drill {
+      display: inline;
       color: #bb86fc;
       cursor: pointer;
       text-decoration: underline;
-      word-break: break-all;
-    }
-    .drill-link:hover { color: #fff; }
-    /* ── Object thumbnail ────────────────────────────────── */
-    .obj-thumb {
-      width: 100%;
-      height: 140px;
-      object-fit: cover;
-      border-radius: 5px;
-      margin-bottom: 8px;
-      background: #2a2a2a;
-    }
-    .obj-thumb-placeholder {
-      width: 100%;
-      height: 140px;
-      background: #2a2a2a;
-      border-radius: 5px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 2em;
-      margin-bottom: 8px;
-      color: #555;
-    }
-    /* ── Profile avatar ──────────────────────────────────── */
-    .profile-avatar {
-      width: 60px;
-      height: 60px;
-      object-fit: cover;
-      border-radius: 50%;
-      flex-shrink: 0;
-      background: #2a2a2a;
-    }
-    .profile-avatar-placeholder {
-      width: 60px;
-      height: 60px;
-      border-radius: 50%;
-      background: #2a2a2a;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.6em;
-      flex-shrink: 0;
-      color: #555;
-    }
-    .profile-header-row {
-      display: flex;
-      gap: 10px;
-      align-items: flex-start;
-      margin-bottom: 8px;
-    }
-    .profile-info { flex: 1; min-width: 0; }
-    /* ── Expand/collapse detail ──────────────────────────── */
-    .expand-btn {
-      background: none;
-      border: 1px solid #444;
-      color: #bb86fc;
-      border-radius: 4px;
-      padding: 3px 9px;
-      cursor: pointer;
-      font-size: 0.78em;
-      margin-top: 6px;
-      transition: background 0.15s;
-    }
-    .expand-btn:hover { background: #2a2a2a; }
-    .detail-panel {
-      display: none;
-      margin-top: 10px;
-      background: #151515;
-      border-radius: 5px;
-      padding: 10px;
-      font-size: 0.78em;
-      color: #c0c0c0;
-      word-break: break-all;
-      max-height: 300px;
-      overflow-y: auto;
-      transition: max-height 0.3s ease;
-    }
-    .detail-panel.open { display: block; }
-    .detail-panel pre {
-      margin: 0;
-      white-space: pre-wrap;
       font-family: monospace;
-      font-size: 0.9em;
-      color: #a0d0ff;
+      font-size: 0.82em;
+      word-break: break-all;
     }
-    /* ── Load More button ────────────────────────────────── */
-    .load-more-btn {
+    .d-drill:hover { color: #fff; }
+    .chain-pill {
+      display: inline-block;
+      font-size: 0.7em;
+      font-weight: bold;
+      padding: 2px 8px;
+      border-radius: 9px;
+      margin-left: 4px;
+      vertical-align: middle;
+    }
+    .d-msg-box {
+      background: rgba(187,134,252,0.06);
+      border: 1px solid rgba(187,134,252,0.15);
+      border-radius: 8px;
+      padding: 10px;
+      font-size: 0.83em;
+      color: #ccc;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 220px;
+      overflow-y: auto;
+    }
+    .sig-badge {
+      display: inline-block;
+      font-size: 0.7em;
+      background: rgba(3,218,198,0.15);
+      border: 1px solid rgba(3,218,198,0.35);
+      color: #03dac6;
+      padding: 2px 7px;
+      border-radius: 8px;
+      margin-top: 6px;
+    }
+    .d-load-more {
       display: block;
       width: 100%;
-      max-width: 220px;
-      margin: 4px auto 20px;
-      padding: 9px 0;
-      background: #1e1e1e;
-      border: 1px solid #444;
+      margin-top: 14px;
+      padding: 8px 0;
+      background: rgba(98,0,234,0.2);
+      border: 1px solid rgba(187,134,252,0.3);
       color: #bb86fc;
-      border-radius: 6px;
+      border-radius: 8px;
       cursor: pointer;
-      font-size: 0.9em;
+      font-size: 0.85em;
       text-align: center;
       transition: background 0.2s;
     }
-    .load-more-btn:hover { background: #2a2a2a; }
-    .load-more-btn:disabled { opacity: 0.5; cursor: default; }
-    /* ── Empty / error states ────────────────────────────── */
-    .empty-msg {
+    .d-load-more:hover { background: rgba(98,0,234,0.4); }
+    .d-load-more:disabled { opacity: 0.45; cursor: default; }
+
+    /* ── Loading vortex overlay ──────────────────────────────  */
+    #loadingOverlay {
+      position: fixed;
+      inset: 0;
+      z-index: 400;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0,0,5,0.88);
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.35s;
+    }
+    #loadingOverlay.active { opacity: 1; pointer-events: auto; }
+    #loadingRing {
+      width: 64px; height: 64px;
+      border: 3px solid rgba(187,134,252,0.18);
+      border-top-color: #bb86fc;
+      border-right-color: rgba(187,134,252,0.6);
+      border-radius: 50%;
+      animation: spinRing 0.9s linear infinite;
+    }
+    @keyframes spinRing { to { transform: rotate(360deg); } }
+    #loadingText {
+      color: #bb86fc;
+      font-size: 0.95em;
+      margin-top: 18px;
+      text-shadow: 0 0 12px rgba(187,134,252,0.5);
+      letter-spacing: 0.12em;
+      animation: pulse 1.6s ease-in-out infinite;
+    }
+    @keyframes pulse { 0%,100%{opacity:0.6} 50%{opacity:1} }
+
+    /* ── Hover tooltip ──────────────────────────────────────── */
+    #tooltip {
+      position: fixed;
+      pointer-events: none;
+      background: rgba(6,2,22,0.93);
+      border: 1px solid rgba(187,134,252,0.38);
+      color: #e0e0e0;
+      padding: 8px 13px;
+      border-radius: 9px;
+      font-size: 0.8em;
+      z-index: 500;
+      max-width: 220px;
+      display: none;
+      backdrop-filter: blur(10px);
+      line-height: 1.55;
+    }
+
+    /* ── Welcome splash ─────────────────────────────────────── */
+    #welcomeScreen {
+      position: fixed;
+      inset: 0;
+      z-index: 80;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
       text-align: center;
-      padding: 30px 0;
+      transition: opacity 0.6s;
+    }
+    #welcomeScreen.hidden { opacity: 0; }
+    #welcomeTitle {
+      font-size: clamp(2em, 5vw, 3.2em);
+      font-weight: bold;
+      color: #bb86fc;
+      text-shadow: 0 0 40px rgba(187,134,252,0.7), 0 0 80px rgba(98,0,234,0.4);
+      letter-spacing: 0.18em;
+      margin-bottom: 12px;
+    }
+    #welcomeSub {
+      font-size: 0.95em;
       color: #666;
-      font-size: 0.9em;
+      max-width: 420px;
+      line-height: 1.8;
+      padding: 0 20px;
     }
-    .error-msg {
-      background: #2a1515;
-      border: 1px solid #8b0000;
-      color: #ff6b6b;
-      border-radius: 6px;
-      padding: 12px 15px;
-      margin-bottom: 14px;
-      font-size: 0.88em;
+    #welcomeHint {
+      margin-top: 24px;
+      font-size: 0.8em;
+      color: #444;
+      letter-spacing: 0.08em;
+      animation: pulse 2.5s ease-in-out infinite;
     }
-    /* ── Welcome splash ──────────────────────────────────── */
-    .welcome {
+
+    /* ── Empty state ───────────────────────────────────────── */
+    #emptyMsg {
+      position: fixed;
+      left: 50%; top: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 90;
       text-align: center;
-      padding: 60px 20px 30px;
       color: #555;
+      display: none;
+      pointer-events: none;
     }
-    .welcome h2 { color: #bb86fc; font-size: 1.6em; margin-bottom: 10px; }
-    .welcome p { font-size: 0.95em; line-height: 1.7; max-width: 480px; margin: 0 auto; }
-    /* ── Responsive tweaks ───────────────────────────────── */
-    @media (max-width: 500px) {
-      .brand { font-size: 0.9em; }
-      .cards-grid { grid-template-columns: 1fr; }
+    #emptyMsg h3 { color: #7c4dff; font-size: 1.3em; margin-bottom: 8px; }
+
+    /* ── Controls hint ─────────────────────────────────────── */
+    #controlsHint {
+      position: fixed;
+      bottom: 14px; right: 14px;
+      z-index: 100;
+      font-size: 0.7em;
+      color: #333;
+      text-align: right;
+      pointer-events: none;
+      line-height: 1.8;
     }
   </style>
 </head>
 <body>
 
-<!-- ── Fixed Top Bar ───────────────────────────────────────── -->
-<div class="top-bar">
-  <div class="top-bar-inner">
-    <span class="brand">✨ Bandersnatch</span>
-    <input id="searchInput" type="text" placeholder="Search roots, objects, profiles…" autocomplete="off" />
-    <select id="qtySelect" title="Results per endpoint">
-      <option value="5">5</option>
-      <option value="10" selected>10</option>
-      <option value="25">25</option>
-      <option value="50">50</option>
-    </select>
-    <label class="mainnet-label" title="Toggle mainnet / testnet">
-      <input type="checkbox" id="mainnetCheck" checked />
-      Mainnet
-    </label>
-    <button id="searchBtn">Search</button>
-  </div>
+<!-- Three.js + OrbitControls (same CDN as SupGalaxy) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r134/examples/js/controls/OrbitControls.js"></script>
+
+<!-- ── HUD Elements ──────────────────────────────────────────── -->
+<div id="searchHud">
+  <span id="brand">✦ BANDERSNATCH</span>
+  <input id="searchInput" type="text" placeholder="Search artifacts, addresses, names…" autocomplete="off" />
+  <select id="qtySelect">
+    <option value="5">5</option>
+    <option value="10" selected>10</option>
+    <option value="25">25</option>
+    <option value="50">50</option>
+  </select>
+  <label class="mainnet-label">
+    <input type="checkbox" id="mainnetCheck" checked /> Mainnet
+  </label>
+  <button id="searchBtn">⚡ Explore</button>
 </div>
 
-<!-- ── Breadcrumbs ─────────────────────────────────────────── -->
-<div class="breadcrumbs" id="breadcrumbs"></div>
+<div id="statsBar"></div>
+<div id="breadcrumbBar"></div>
 
-<!-- ── Main Content ───────────────────────────────────────── -->
-<div class="container" id="mainContainer">
-  <div class="welcome" id="welcomeMsg">
-    <h2>✨ Bandersnatch</h2>
-    <p>
-      Type anything to explore the Sup!? blockchain — search by keyword, address, name, or phrase.<br><br>
-      Every result is a portal. Click any address or keyword to follow the story deeper.
-    </p>
-  </div>
+<!-- ── Detail panel ──────────────────────────────────────────── -->
+<div id="detailPanel">
+  <button id="detailClose" onclick="closeDetail()">✕</button>
+  <div id="detailInner"></div>
 </div>
 
+<!-- ── Loading overlay ──────────────────────────────────────── -->
+<div id="loadingOverlay">
+  <div id="loadingRing"></div>
+  <div id="loadingText">SCANNING THE CHAIN…</div>
+</div>
+
+<!-- ── Hover tooltip ─────────────────────────────────────────── -->
+<div id="tooltip"></div>
+
+<!-- ── Welcome + empty states ───────────────────────────────── -->
+<div id="welcomeScreen">
+  <div id="welcomeTitle">✦ BANDERSNATCH</div>
+  <div id="welcomeSub">A living cosmos of blockchain artifacts.<br>Every search reveals a new galaxy of roots, objects and identities.</div>
+  <div id="welcomeHint">↑ TYPE A QUERY TO BEGIN ↑</div>
+</div>
+<div id="emptyMsg">
+  <h3>🌌 No Artifacts Found</h3>
+  <p>Try a different search term</p>
+</div>
+
+<div id="controlsHint">
+  drag to orbit · scroll to zoom<br>click artifact to inspect · click address to explore
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     MAIN SCRIPT
+═══════════════════════════════════════════════════════════ -->
 <script>
-/* ─────────────────────────────────────────────────────────────
-   CONSTANTS & STATE
-───────────────────────────────────────────────────────────── */
+'use strict';
+
+/* ═══════════════════════════════════════════════════════════
+   CONSTANTS
+═══════════════════════════════════════════════════════════ */
 const BASE = 'https://p2fk.io';
 const CHAIN_COLORS = {
+  BTC: 0xf7931a, LTC: 0xbfbbbb, DOG: 0xc3a634, MZC: 0x00aaff,
+  'BTC-testnet': 0x4caf50, Unknown: 0x888888
+};
+const CHAIN_HEX = {
   BTC: '#f7931a', LTC: '#bfbbbb', DOG: '#c3a634', MZC: '#00aaff',
-  'BTC-testnet': '#4caf50', Unknown: '#888'
+  'BTC-testnet': '#4caf50', Unknown: '#888888'
 };
+const TYPE_COLORS = { root: 0x9b59b6, object: 0xe67e22, profile: 0x1abc9c };
+const TYPE_EMISSIVE = { root: 0x4a0070, object: 0x6b3800, profile: 0x005540 };
+const TYPE_LABELS = { root: '📜 ROOT', object: '🎨 OBJECT', profile: '👤 PROFILE' };
 
-let history = [];          // { query, mainnet, skip_roots, skip_objects, skip_profiles }
-let currentQuery = '';
-let currentMainnet = true;
-let activeTab = 'roots';
+/* ═══════════════════════════════════════════════════════════
+   STATE
+═══════════════════════════════════════════════════════════ */
+var scene, camera, renderer, controls;
+var starPoints, nebulaMesh;
+var nexusOrb, nexusLabel, nexusGlow;
+var artifactGroup = null;
+var selectionRing = null;
+var connectionLines = null;
+var raycaster = new THREE.Raycaster();
+var mouse = new THREE.Vector2(-9999, -9999);
+var hoveredArtifact = null;
+var selectedArtifact = null;
+var clock = new THREE.Clock();
 
-// Per-section state
-let sections = {
-  roots:    { items: [], skip: 0, loading: false, done: false },
-  objects:  { items: [], skip: 0, loading: false, done: false },
-  profiles: { items: [], skip: 0, loading: false, done: false }
-};
+var cameraTarget = new THREE.Vector3(0, 0, 60);
+var cameraLookTarget = new THREE.Vector3(0, 0, 0);
+var cameraMoving = false;
+var cameraHomePos = new THREE.Vector3(0, 20, 60);
 
-// Simple LRU-ish cache (key → result array)
-const cache = new Map();
-function cacheKey(endpoint, q, mainnet, skip, qty) {
-  return `${endpoint}|${q}|${mainnet}|${skip}|${qty}`;
+var searchHistory = [];
+var currentQuery = '';
+var currentMainnet = true;
+var currentArtifacts = [];        // { mesh, type, data, blockchain, targetPos }
+var resultCache = new Map();
+
+/* ═══════════════════════════════════════════════════════════
+   UTILITY
+═══════════════════════════════════════════════════════════ */
+function esc(s) {
+  if (s == null) return '';
+  return String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
-
-/* ─────────────────────────────────────────────────────────────
-   UTILITY HELPERS
-───────────────────────────────────────────────────────────── */
-const abbreviate = (s) => s && s.length > 14 ? `${s.slice(0, 6)}…${s.slice(-4)}` : (s || '');
-
-const isBitcoinAddress = (s) => {
-  if (!s || typeof s !== 'string') return false;
-  const t = s.trim();
-  return /^[13][1-9A-HJ-NP-Za-km-z]{24,33}$/.test(t) ||
-         /^bc1[ac-hj-np-z02-9]{39,59}$/.test(t) ||
-         /^[mn2][1-9A-HJ-NP-Za-km-z]{24,33}$/.test(t) ||
-         /^tb1[ac-hj-np-z02-9]{39,59}$/.test(t);
-};
-
-function chainBadge(blockchain) {
-  const bc = blockchain || 'Unknown';
-  const color = CHAIN_COLORS[bc] || CHAIN_COLORS.Unknown;
-  return `<span class="chain-badge" style="background:${color};color:${bc==='LTC'||bc==='Unknown'?'#111':'#fff'}">${escHtml(bc)}</span>`;
+function abbrev(s, n) {
+  n = n || 10;
+  if (!s) return '';
+  s = String(s);
+  if (s.length <= n * 2 + 3) return s;
+  return s.slice(0, n) + '…' + s.slice(-4);
 }
-
-function escHtml(str) {
-  if (str == null) return '';
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
-/* Resolve an address from text that could be a keyword (#keyword or keyword) */
-async function resolveAddress(raw, mainnet) {
-  const trimmed = raw.trim();
-  const kw = trimmed.startsWith('#') ? trimmed.slice(1) : trimmed;
-  if (isBitcoinAddress(kw)) return kw;
-  try {
-    const url = `${BASE}/GetPublicAddressByKeyword/${encodeURIComponent(kw)}?mainnet=${mainnet}`;
-    const resp = await fetch(url);
-    if (!resp.ok) return null;
-    const data = await resp.json();
-    return data || null;
-  } catch { return null; }
-}
-
-/* ─────────────────────────────────────────────────────────────
-   FETCH HELPERS (with caching)
-───────────────────────────────────────────────────────────── */
-async function fetchEndpoint(endpoint, q, mainnet, skip, qty) {
-  const key = cacheKey(endpoint, q, mainnet, skip, qty);
-  if (cache.has(key)) return cache.get(key);
-  const url = `${BASE}/${endpoint}?searchString=${encodeURIComponent(q)}&qty=${qty}&skip=${skip}`;
-  const resp = await fetch(url);
-  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-  const data = await resp.json();
-  const arr = Array.isArray(data) ? data : [];
-  cache.set(key, arr);
-  return arr;
-}
-
-/* ─────────────────────────────────────────────────────────────
-   SEARCH ORCHESTRATION
-───────────────────────────────────────────────────────────── */
-async function runSearch(query, mainnet, isNewSearch = true) {
-  const qty = parseInt(document.getElementById('qtySelect').value, 10);
-  query = query.trim();
-  if (!query) return;
-
-  if (isNewSearch) {
-    // Push to history
-    if (!history.length || history[history.length - 1].query !== query) {
-      history.push({ query, mainnet });
-    }
-    currentQuery = query;
-    currentMainnet = mainnet;
-    sections = {
-      roots:    { items: [], skip: 0, loading: false, done: false },
-      objects:  { items: [], skip: 0, loading: false, done: false },
-      profiles: { items: [], skip: 0, loading: false, done: false }
-    };
-    updateUrl(query, mainnet);
-  }
-
-  renderBreadcrumbs();
-  renderShell();
-  showSpinner(true);
-  setSearching(true);
-
-  try {
-    const [roots, objects, profiles] = await Promise.all([
-      fetchEndpoint('GetKnownRootsBySearchString',    query, mainnet, sections.roots.skip,    qty).catch(() => []),
-      fetchEndpoint('GetKnownObjectsBySearchString',  query, mainnet, sections.objects.skip,  qty).catch(() => []),
-      fetchEndpoint('GetKnownProfilesBySearchString', query, mainnet, sections.profiles.skip, qty).catch(() => [])
-    ]);
-
-    sections.roots.items    = roots;
-    sections.objects.items  = objects;
-    sections.profiles.items = profiles;
-    sections.roots.skip     = roots.length;
-    sections.objects.skip   = objects.length;
-    sections.profiles.skip  = profiles.length;
-    sections.roots.done     = roots.length < qty;
-    sections.objects.done   = objects.length < qty;
-    sections.profiles.done  = profiles.length < qty;
-
-    renderResults();
-  } catch (err) {
-    showError(`Search failed: ${err.message}`);
-  } finally {
-    showSpinner(false);
-    setSearching(false);
-  }
-}
-
-async function loadMore(type) {
-  const qty = parseInt(document.getElementById('qtySelect').value, 10);
-  const sec = sections[type];
-  if (sec.loading || sec.done) return;
-  sec.loading = true;
-  const btn = document.getElementById(`loadMore-${type}`);
-  if (btn) { btn.disabled = true; btn.textContent = 'Loading…'; }
-
-  const endpointMap = {
-    roots:    'GetKnownRootsBySearchString',
-    objects:  'GetKnownObjectsBySearchString',
-    profiles: 'GetKnownProfilesBySearchString'
-  };
-
-  try {
-    const more = await fetchEndpoint(endpointMap[type], currentQuery, currentMainnet, sec.skip, qty);
-    sec.items = sec.items.concat(more);
-    sec.skip += more.length;
-    sec.done = more.length < qty;
-    renderSectionCards(type);
-  } catch (err) {
-    if (btn) btn.textContent = 'Retry';
-  } finally {
-    sec.loading = false;
-    if (btn) btn.disabled = false;
-    updateTabCounts();
-  }
-}
-
-/* ─────────────────────────────────────────────────────────────
-   RENDER: SHELL (tabs + panels)
-───────────────────────────────────────────────────────────── */
-function renderShell() {
-  const container = document.getElementById('mainContainer');
-  container.innerHTML = `
-    <div class="tabs" id="tabsRow"></div>
-    <div id="error-area"></div>
-    <div id="spinner-area"></div>
-    <div class="section-panel${activeTab==='roots'?' active':''}" id="panel-roots">
-      <div class="cards-grid" id="grid-roots"></div>
-      <button class="load-more-btn" id="loadMore-roots" onclick="loadMore('roots')">Load More</button>
-    </div>
-    <div class="section-panel${activeTab==='objects'?' active':''}" id="panel-objects">
-      <div class="cards-grid" id="grid-objects"></div>
-      <button class="load-more-btn" id="loadMore-objects" onclick="loadMore('objects')">Load More</button>
-    </div>
-    <div class="section-panel${activeTab==='profiles'?' active':''}" id="panel-profiles">
-      <div class="cards-grid" id="grid-profiles"></div>
-      <button class="load-more-btn" id="loadMore-profiles" onclick="loadMore('profiles')">Load More</button>
-    </div>
-  `;
-  renderTabButtons();
-}
-
-function renderTabButtons() {
-  const row = document.getElementById('tabsRow');
-  if (!row) return;
-  const tabs = [
-    { id: 'roots',    icon: '📜', label: 'Roots' },
-    { id: 'objects',  icon: '🎨', label: 'Objects' },
-    { id: 'profiles', icon: '👤', label: 'Profiles' }
-  ];
-  row.innerHTML = tabs.map(t => {
-    const count = sections[t.id].items.length;
-    return `<button class="tab-btn${activeTab===t.id?' active':''}" onclick="switchTab('${t.id}')">
-      ${t.icon} ${t.label} <span class="tab-count" id="count-${t.id}">${count}</span>
-    </button>`;
-  }).join('');
-}
-
-function updateTabCounts() {
-  ['roots','objects','profiles'].forEach(id => {
-    const el = document.getElementById(`count-${id}`);
-    if (el) el.textContent = sections[id].items.length;
-  });
-}
-
-function switchTab(id) {
-  activeTab = id;
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-  const btn = document.querySelector(`.tab-btn[onclick="switchTab('${id}')"]`);
-  if (btn) btn.classList.add('active');
-  document.querySelectorAll('.section-panel').forEach(p => p.classList.remove('active'));
-  const panel = document.getElementById(`panel-${id}`);
-  if (panel) panel.classList.add('active');
-}
-
-/* ─────────────────────────────────────────────────────────────
-   RENDER: ALL RESULTS
-───────────────────────────────────────────────────────────── */
-function renderResults() {
-  renderSectionCards('roots');
-  renderSectionCards('objects');
-  renderSectionCards('profiles');
-  renderTabButtons();
-}
-
-function renderSectionCards(type) {
-  const grid = document.getElementById(`grid-${type}`);
-  const btn  = document.getElementById(`loadMore-${type}`);
-  if (!grid) return;
-
-  const sec = sections[type];
-  if (sec.items.length === 0) {
-    grid.innerHTML = `<div class="empty-msg" style="grid-column:1/-1">No ${type} found for this search.</div>`;
-  } else {
-    const renderFn = type === 'roots' ? renderRootCard
-                   : type === 'objects' ? renderObjectCard
-                   : renderProfileCard;
-    grid.innerHTML = sec.items.map((item, i) => renderFn(item, i)).join('');
-  }
-
-  if (btn) {
-    btn.style.display = sec.done ? 'none' : 'block';
-    btn.disabled = false;
-    btn.textContent = 'Load More';
-  }
-  updateTabCounts();
-}
-
-/* ─────────────────────────────────────────────────────────────
-   RENDER: ROOT CARD
-───────────────────────────────────────────────────────────── */
-function renderRootCard(item, idx) {
-  const bc  = item.Blockchain || 'Unknown';
-  const r   = item.Root || {};
-  const txid = r.TransactionID || r.TXID || r.txid || '';
-  const ts   = r.Timestamp || r.timestamp || r.BlockTime || r.CreatedAt || '';
-  const addrs = getAddresses(r);
-  const msgPreview = extractMessage(r);
-
-  return `<div class="result-card">
-    <div class="card-header">
-      <span class="card-title">${txid ? abbreviate(txid) : '(no txid)'}</span>
-      ${chainBadge(bc)}
-    </div>
-    ${ts ? `<div class="card-meta">${escHtml(formatTs(ts))}</div>` : ''}
-    ${addrs.length ? `<div class="card-meta">${addrs.map(a =>
-      `<span class="drill-link" onclick="drillDown('${escHtml(a)}')" title="${escHtml(a)}">${escHtml(abbreviate(a))}</span>`
-    ).join(', ')}</div>` : ''}
-    ${msgPreview ? `<div class="card-text">${escHtml(msgPreview.slice(0, 200))}${msgPreview.length > 200 ? '…' : ''}</div>` : ''}
-    <button class="expand-btn" onclick="toggleDetail(this)">Show JSON ▾</button>
-    <div class="detail-panel"><pre>${escHtml(JSON.stringify(r, null, 2))}</pre></div>
-  </div>`;
-}
-
-/* ─────────────────────────────────────────────────────────────
-   RENDER: OBJECT CARD
-───────────────────────────────────────────────────────────── */
-function renderObjectCard(item, idx) {
-  const bc = item.Blockchain || 'Unknown';
-  const o  = item.Object || {};
-  const name     = o.Name || o.ObjectName || o.name || '(unnamed)';
-  const creator  = o.CreatorAddress || o.Creator || o.Address || o.OwnerAddress || '';
-  const urn      = o.URN || o.Urn || o.urn || '';
-  const thumbUrl = urnToThumbUrl(urn);
-
-  return `<div class="result-card">
-    ${thumbUrl
-      ? `<img class="obj-thumb" src="${escHtml(thumbUrl)}" alt="${escHtml(name)}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" /><div class="obj-thumb-placeholder" style="display:none">🎨</div>`
-      : `<div class="obj-thumb-placeholder">🎨</div>`}
-    <div class="card-header">
-      <span class="card-title">${escHtml(name)}</span>
-      ${chainBadge(bc)}
-    </div>
-    ${creator ? `<div class="card-meta">By <span class="drill-link" onclick="drillDown('${escHtml(creator)}')" title="${escHtml(creator)}">${escHtml(abbreviate(creator))}</span></div>` : ''}
-    ${urn ? `<div class="card-meta" style="font-size:0.74em;color:#666">${escHtml(abbreviate(urn))}</div>` : ''}
-    <button class="expand-btn" onclick="toggleDetail(this)">Show Details ▾</button>
-    <div class="detail-panel"><pre>${escHtml(JSON.stringify(o, null, 2))}</pre></div>
-  </div>`;
-}
-
-/* ─────────────────────────────────────────────────────────────
-   RENDER: PROFILE CARD
-───────────────────────────────────────────────────────────── */
-function renderProfileCard(item, idx) {
-  const bc = item.Blockchain || 'Unknown';
-  const p  = item.Profile || {};
-  const displayName = p.DisplayName || p.Name || p.Keyword || p.keyword || '';
-  const keyword     = p.Keyword || p.keyword || '';
-  const address     = p.Address || p.PublicAddress || p.address || '';
-  const bio         = p.Bio || p.Description || p.description || p.About || '';
-  const avatarUrn   = p.ProfileImageURN || p.AvatarURN || p.ImageURN || p.URN || '';
-  const thumbUrl    = urnToThumbUrl(avatarUrn);
-
-  return `<div class="result-card">
-    <div class="profile-header-row">
-      ${thumbUrl
-        ? `<img class="profile-avatar" src="${escHtml(thumbUrl)}" alt="${escHtml(displayName)}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" /><div class="profile-avatar-placeholder" style="display:none">👤</div>`
-        : `<div class="profile-avatar-placeholder">👤</div>`}
-      <div class="profile-info">
-        <div class="card-header" style="margin-bottom:4px">
-          <span class="card-title">${escHtml(displayName || '(no name)')}</span>
-          ${chainBadge(bc)}
-        </div>
-        ${keyword && keyword !== displayName
-          ? `<div class="card-meta"><span class="drill-link" onclick="drillDown('#${escHtml(keyword)}')">#${escHtml(keyword)}</span></div>`
-          : ''}
-        ${address ? `<div class="card-meta"><span class="drill-link" onclick="drillDown('${escHtml(address)}')" title="${escHtml(address)}">${escHtml(abbreviate(address))}</span></div>` : ''}
-      </div>
-    </div>
-    ${bio ? `<div class="card-text">${escHtml(bio.slice(0, 160))}${bio.length > 160 ? '…' : ''}</div>` : ''}
-    <button class="expand-btn" onclick="toggleDetail(this)">Show Details ▾</button>
-    <div class="detail-panel"><pre>${escHtml(JSON.stringify(p, null, 2))}</pre></div>
-  </div>`;
-}
-
-/* ─────────────────────────────────────────────────────────────
-   EXPAND / COLLAPSE
-───────────────────────────────────────────────────────────── */
-function toggleDetail(btn) {
-  const panel = btn.nextElementSibling;
-  const open  = panel.classList.toggle('open');
-  btn.textContent = open ? 'Hide ▴' : (btn.textContent.startsWith('Hide') ? 'Show Details ▾' : btn.textContent.replace('▴', '▾').replace('Hide','Show'));
-  if (open && btn.textContent.startsWith('Hide')) {
-    // infer correct label from sibling
-  }
-}
-
-/* ─────────────────────────────────────────────────────────────
-   DRILL DOWN
-───────────────────────────────────────────────────────────── */
-async function drillDown(raw) {
-  const mainnet = document.getElementById('mainnetCheck').checked;
-  let query = raw.trim();
-
-  // If it looks like a keyword (starts with #), resolve to address first
-  if (query.startsWith('#')) {
-    const kw = query.slice(1);
-    showSpinner(true);
-    const resolved = await resolveAddress(kw, mainnet).catch(() => null);
-    showSpinner(false);
-    // Search using the keyword itself for broader results
-    query = kw;
-  }
-
-  document.getElementById('searchInput').value = query;
-  document.getElementById('mainnetCheck').checked = mainnet;
-  runSearch(query, mainnet, true);
-}
-
-/* ─────────────────────────────────────────────────────────────
-   BREADCRUMBS
-───────────────────────────────────────────────────────────── */
-function renderBreadcrumbs() {
-  const el = document.getElementById('breadcrumbs');
-  if (!history.length) { el.innerHTML = ''; return; }
-  const parts = [];
-  history.forEach((h, i) => {
-    const isCurrent = i === history.length - 1;
-    const label = h.query.length > 24 ? h.query.slice(0, 22) + '…' : h.query;
-    if (i > 0) parts.push(`<span class="breadcrumb-sep">›</span>`);
-    if (isCurrent) {
-      parts.push(`<span class="breadcrumb-item current">${escHtml(label)}</span>`);
-    } else {
-      parts.push(`<span class="breadcrumb-item" onclick="jumpToHistory(${i})">${escHtml(label)}</span>`);
-    }
-  });
-  el.innerHTML = parts.join('');
-}
-
-function jumpToHistory(idx) {
-  const entry = history[idx];
-  if (!entry) return;
-  history = history.slice(0, idx + 1);
-  document.getElementById('searchInput').value = entry.query;
-  document.getElementById('mainnetCheck').checked = entry.mainnet;
-  currentQuery = entry.query;
-  currentMainnet = entry.mainnet;
-  sections = {
-    roots:    { items: [], skip: 0, loading: false, done: false },
-    objects:  { items: [], skip: 0, loading: false, done: false },
-    profiles: { items: [], skip: 0, loading: false, done: false }
-  };
-  renderBreadcrumbs();
-  updateUrl(entry.query, entry.mainnet);
-  runSearch(entry.query, entry.mainnet, false);
-}
-
-/* ─────────────────────────────────────────────────────────────
-   URL STATE
-───────────────────────────────────────────────────────────── */
-function updateUrl(q, mainnet) {
-  const params = new URLSearchParams({ q, mainnet: mainnet ? 'true' : 'false' });
-  history_api_replace(`?${params}`);
-}
-
-function history_api_replace(url) {
-  try { window.history.replaceState(null, '', url); } catch {}
-}
-
-/* ─────────────────────────────────────────────────────────────
-   UI HELPERS
-───────────────────────────────────────────────────────────── */
-function showSpinner(show) {
-  let area = document.getElementById('spinner-area');
-  if (!area) return;
-  area.innerHTML = show ? '<div class="spinner-wrap"><div class="spinner"></div></div>' : '';
-}
-
-function showError(msg) {
-  let area = document.getElementById('error-area');
-  if (!area) {
-    document.getElementById('mainContainer').insertAdjacentHTML('afterbegin',
-      `<div id="error-area" class="error-msg">${escHtml(msg)}</div>`);
-    return;
-  }
-  area.innerHTML = `<div class="error-msg">${escHtml(msg)}</div>`;
-}
-
-function setSearching(busy) {
-  document.getElementById('searchBtn').disabled = busy;
-  document.getElementById('searchInput').disabled = busy;
-}
-
-/* ─────────────────────────────────────────────────────────────
-   HELPER: EXTRACT DATA FROM OBJECTS
-───────────────────────────────────────────────────────────── */
-function getAddresses(obj) {
-  const addrs = new Set();
-  const candidates = [
-    obj.OutputAddresses, obj.Addresses, obj.CreatorAddress, obj.OwnerAddress,
-    obj.Address, obj.SenderAddress, obj.RecipientAddress
-  ];
-  candidates.forEach(v => {
-    if (!v) return;
-    if (Array.isArray(v)) v.forEach(a => a && addrs.add(String(a)));
-    else addrs.add(String(v));
-  });
-  return [...addrs].filter(Boolean).slice(0, 4);
-}
-
-function extractMessage(obj) {
-  const candidates = [
-    obj.Message, obj.PublicMessage, obj.Data, obj.Text, obj.Content,
-    obj.Memo, obj.Note, obj.Comment, obj.Description
-  ];
-  for (const v of candidates) {
-    if (v && typeof v === 'string' && v.trim()) return v.trim();
-  }
-  return '';
-}
-
-function urnToThumbUrl(urn) {
-  if (!urn || typeof urn !== 'string') return null;
-  const u = urn.trim();
-  if (u.startsWith('http://') || u.startsWith('https://')) return u;
-  if (u.startsWith('ipfs://')) return `https://ipfs.io/ipfs/${u.slice(7)}`;
-  const ipfsMatch = u.match(/^(?:ipfs:)?([A-Za-z0-9]{46,59})$/);
-  if (ipfsMatch) return `https://ipfs.io/ipfs/${ipfsMatch[1]}`;
-  return null;
-}
-
 function formatTs(ts) {
   if (!ts) return '';
   try {
@@ -885,46 +528,1032 @@ function formatTs(ts) {
     return d.toLocaleString();
   } catch { return String(ts); }
 }
+function urnToUrl(urn) {
+  if (!urn || typeof urn !== 'string') return null;
+  const u = urn.trim();
+  if (u.startsWith('http://') || u.startsWith('https://')) return u;
+  if (u.startsWith('ipfs://')) return 'https://ipfs.io/ipfs/' + u.slice(7);
+  if (/^[A-Za-z0-9]{46,59}$/.test(u)) return 'https://ipfs.io/ipfs/' + u;
+  return null;
+}
+function cacheKey(ep, q, mn, skip, qty) { return ep + '|' + q + '|' + mn + '|' + skip + '|' + qty; }
 
-/* ─────────────────────────────────────────────────────────────
-   DEBOUNCE
-───────────────────────────────────────────────────────────── */
-let debounceTimer = null;
-function debounce(fn, delay) {
-  return (...args) => {
-    clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => fn(...args), delay);
-  };
+/* ═══════════════════════════════════════════════════════════
+   THREE.JS SCENE INIT
+═══════════════════════════════════════════════════════════ */
+function initScene() {
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x000005);
+  scene.fog = new THREE.FogExp2(0x000008, 0.0055);
+
+  camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
+  camera.position.copy(cameraHomePos);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 0.9;
+  document.body.insertBefore(renderer.domElement, document.body.firstChild);
+
+  controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.07;
+  controls.minDistance = 5;
+  controls.maxDistance = 400;
+  controls.autoRotate = true;
+  controls.autoRotateSpeed = 0.3;
+
+  // Lights
+  scene.add(new THREE.AmbientLight(0x110820, 1.0));
+  var sun = new THREE.DirectionalLight(0xffffff, 0.5);
+  sun.position.set(50, 80, 60);
+  scene.add(sun);
+  // Colored fills
+  var pL1 = new THREE.PointLight(0x6200ea, 2.5, 200); pL1.position.set(-40, 20, 0); scene.add(pL1);
+  var pL2 = new THREE.PointLight(0xe67e22, 2.0, 180); pL2.position.set(40, -10, 30); scene.add(pL2);
+  var pL3 = new THREE.PointLight(0x1abc9c, 1.8, 160); pL3.position.set(0, 30, -40); scene.add(pL3);
+
+  buildStarfield();
+  buildNebula();
+  buildNexus();
+
+  window.addEventListener('resize', onResize);
+  renderer.domElement.addEventListener('mousemove', onMouseMove);
+  renderer.domElement.addEventListener('click', onClick);
+  renderer.domElement.addEventListener('touchstart', onTouchStart, { passive: true });
 }
 
-/* ─────────────────────────────────────────────────────────────
-   INIT
-───────────────────────────────────────────────────────────── */
-document.addEventListener('DOMContentLoaded', () => {
-  const btn   = document.getElementById('searchBtn');
-  const input = document.getElementById('searchInput');
-  const check = document.getElementById('mainnetCheck');
+/* ═══════════════════════════════════════════════════════════
+   STARFIELD
+═══════════════════════════════════════════════════════════ */
+function buildStarfield() {
+  var count = 4500;
+  var pos = new Float32Array(count * 3);
+  var col = new Float32Array(count * 3);
+  var palettes = [
+    [1.0, 0.9, 1.0], [0.7, 0.5, 1.0], [0.5, 0.7, 1.0], [1.0, 0.8, 0.5], [0.9, 1.0, 0.9]
+  ];
+  for (var i = 0; i < count; i++) {
+    var r = 350 + Math.random() * 200;
+    var theta = Math.random() * Math.PI * 2;
+    var phi = Math.acos(2 * Math.random() - 1);
+    pos[i*3]   = r * Math.sin(phi) * Math.cos(theta);
+    pos[i*3+1] = r * Math.sin(phi) * Math.sin(theta);
+    pos[i*3+2] = r * Math.cos(phi);
+    var c = palettes[Math.floor(Math.random() * palettes.length)];
+    col[i*3] = c[0]; col[i*3+1] = c[1]; col[i*3+2] = c[2];
+  }
+  var geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  var mat = new THREE.PointsMaterial({ size: 0.6, vertexColors: true, transparent: true, opacity: 0.85 });
+  starPoints = new THREE.Points(geo, mat);
+  scene.add(starPoints);
+}
 
-  btn.addEventListener('click', () => {
-    const q = input.value.trim();
-    if (q) runSearch(q, check.checked, true);
+/* ═══════════════════════════════════════════════════════════
+   NEBULA PARTICLES (closer, larger, colored)
+═══════════════════════════════════════════════════════════ */
+function buildNebula() {
+  var count = 600;
+  var pos = new Float32Array(count * 3);
+  var col = new Float32Array(count * 3);
+  var nebulaColors = [
+    [0.35, 0.1, 0.6], [0.1, 0.2, 0.5], [0.5, 0.1, 0.3], [0.1, 0.35, 0.5]
+  ];
+  for (var i = 0; i < count; i++) {
+    var r = 60 + Math.random() * 200;
+    var theta = Math.random() * Math.PI * 2;
+    var phi = Math.acos(2 * Math.random() - 1);
+    pos[i*3]   = r * Math.sin(phi) * Math.cos(theta);
+    pos[i*3+1] = r * Math.sin(phi) * Math.sin(theta) * 0.5;
+    pos[i*3+2] = r * Math.cos(phi);
+    var c = nebulaColors[Math.floor(Math.random() * nebulaColors.length)];
+    col[i*3] = c[0]; col[i*3+1] = c[1]; col[i*3+2] = c[2];
+  }
+  var geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  var mat = new THREE.PointsMaterial({ size: 3.5, vertexColors: true, transparent: true, opacity: 0.12 });
+  nebulaMesh = new THREE.Points(geo, mat);
+  scene.add(nebulaMesh);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   NEXUS ORB (center)
+═══════════════════════════════════════════════════════════ */
+function buildNexus() {
+  nexusOrb = new THREE.Mesh(
+    new THREE.SphereGeometry(1.8, 32, 32),
+    new THREE.MeshPhongMaterial({
+      color: 0xbb86fc,
+      emissive: 0x6200ea,
+      emissiveIntensity: 0.8,
+      transparent: true,
+      opacity: 0.0     // start invisible
+    })
+  );
+  scene.add(nexusOrb);
+
+  // Outer glow sphere
+  nexusGlow = new THREE.Mesh(
+    new THREE.SphereGeometry(3.2, 16, 16),
+    new THREE.MeshBasicMaterial({
+      color: 0x6200ea,
+      transparent: true,
+      opacity: 0.0,
+      side: THREE.BackSide
+    })
+  );
+  scene.add(nexusGlow);
+}
+
+function setNexusVisible(visible) {
+  nexusOrb.material.opacity = visible ? 0.9 : 0;
+  nexusGlow.material.opacity = visible ? 0.12 : 0;
+  if (nexusLabel) nexusLabel.material.opacity = visible ? 0.95 : 0;
+}
+
+function updateNexusLabel(text) {
+  if (nexusLabel) scene.remove(nexusLabel);
+  var canvas = document.createElement('canvas');
+  canvas.width = 256; canvas.height = 64;
+  var ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, 256, 64);
+  ctx.fillStyle = 'rgba(187,134,252,0.9)';
+  ctx.font = 'bold 20px Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  var display = text.length > 20 ? text.slice(0, 18) + '…' : text;
+  ctx.fillText(display.toUpperCase(), 128, 32);
+  var tex = new THREE.CanvasTexture(canvas);
+  var mat = new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 0.95 });
+  nexusLabel = new THREE.Sprite(mat);
+  nexusLabel.scale.set(7, 1.75, 1);
+  nexusLabel.position.set(0, 3.2, 0);
+  scene.add(nexusLabel);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   CANVAS TEXTURE LABELS
+═══════════════════════════════════════════════════════════ */
+function makeLabel(lines, bgColor, textColor) {
+  bgColor = bgColor || 'rgba(6,2,18,0.82)';
+  textColor = textColor || '#bb86fc';
+  var maxLen = lines.reduce(function(m, l) { return Math.max(m, l.length); }, 0);
+  var w = Math.max(200, Math.min(512, maxLen * 13 + 24));
+  var h = lines.length * 26 + 16;
+  var canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  var ctx = canvas.getContext('2d');
+  ctx.fillStyle = bgColor;
+  ctx.beginPath();
+  var r = 8;
+  ctx.moveTo(r, 0); ctx.lineTo(w - r, 0);
+  ctx.arcTo(w, 0, w, r, r); ctx.lineTo(w, h - r);
+  ctx.arcTo(w, h, w - r, h, r); ctx.lineTo(r, h);
+  ctx.arcTo(0, h, 0, h - r, r); ctx.lineTo(0, r);
+  ctx.arcTo(0, 0, r, 0, r);
+  ctx.closePath();
+  ctx.fill();
+  lines.forEach(function(line, i) {
+    ctx.fillStyle = i === 0 ? textColor : '#aaa';
+    ctx.font = i === 0 ? 'bold 16px Arial' : '13px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText(line, w / 2, 8 + i * 26);
+  });
+  var tex = new THREE.CanvasTexture(canvas);
+  var mat = new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 0.9, depthTest: false });
+  var sprite = new THREE.Sprite(mat);
+  sprite.scale.set(w * 0.016, h * 0.016, 1);
+  return sprite;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   ARTIFACT CREATION
+═══════════════════════════════════════════════════════════ */
+function makeRootArtifact(item) {
+  var bc = item.Blockchain || 'Unknown';
+  var r = item.Root || {};
+  var msg = r.Message || r.message || '';
+  var txid = r.TransactionID || r.TransactionId || r.TXID || r.txid || '';
+  var hasSig = !!(r.Signature || r.signature);
+  var fromAddr = r.FromAddress || r.fromAddress || r.SenderAddress || '';
+  var preview = msg ? msg.slice(0, 40) : '(no message)';
+
+  var mesh = new THREE.Mesh(
+    new THREE.OctahedronGeometry(1.3, 0),
+    new THREE.MeshPhongMaterial({
+      color: CHAIN_COLORS[bc] || 0x9b59b6,
+      emissive: TYPE_EMISSIVE.root,
+      emissiveIntensity: 0.55,
+      shininess: 80,
+      transparent: true,
+      opacity: 0
+    })
+  );
+
+  // Canvas texture on a billboard plane: message preview
+  var label = makeLabel(
+    [abbrev(txid, 6) || 'ROOT', preview, bc],
+    'rgba(60,0,90,0.82)', '#e0b0ff'
+  );
+  label.position.set(0, 2.5, 0);
+  mesh.add(label);
+
+  // Inner light point
+  var pl = new THREE.PointLight(0x9b59b6, 0.8, 12);
+  mesh.add(pl);
+
+  mesh.userData = {
+    type: 'root', blockchain: bc, data: item,
+    phase: Math.random() * Math.PI * 2,
+    rotSpeed: new THREE.Vector3(
+      (Math.random() - 0.5) * 0.015,
+      0.008 + Math.random() * 0.012,
+      (Math.random() - 0.5) * 0.008
+    )
+  };
+  return mesh;
+}
+
+function makeObjectArtifact(item) {
+  var bc = item.Blockchain || 'Unknown';
+  var o = item.Object || {};
+  var name = o.Name || o.ObjectName || o.name || '(object)';
+  var urn = o.URN || o.Urn || o.urn || '';
+  var imgUrl = urnToUrl(urn);
+  var creator = o.CreatorAddress || o.Creator || o.Address || '';
+
+  var materials = [];
+  for (var f = 0; f < 6; f++) {
+    materials.push(new THREE.MeshPhongMaterial({
+      color: CHAIN_COLORS[bc] || TYPE_COLORS.object,
+      emissive: TYPE_EMISSIVE.object,
+      emissiveIntensity: 0.45,
+      shininess: 60,
+      transparent: true,
+      opacity: 0
+    }));
+  }
+  var mesh = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.8, 1.8), materials);
+
+  // Holographic scan ring
+  var ring = new THREE.Mesh(
+    new THREE.TorusGeometry(1.35, 0.03, 8, 64),
+    new THREE.MeshBasicMaterial({ color: 0xf7931a, transparent: true, opacity: 0.55 })
+  );
+  ring.rotation.x = Math.PI / 2;
+  mesh.add(ring);
+  mesh.userData._ring = ring;
+
+  // Label
+  var label = makeLabel(
+    [name.slice(0, 22), abbrev(urn, 8) || bc, abbrev(creator, 6)],
+    'rgba(70,30,0,0.82)', '#ffb84d'
+  );
+  label.position.set(0, 2.2, 0);
+  mesh.add(label);
+
+  mesh.add(new THREE.PointLight(0xe67e22, 0.8, 12));
+
+  mesh.userData = {
+    type: 'object', blockchain: bc, data: item,
+    phase: Math.random() * Math.PI * 2,
+    rotSpeed: new THREE.Vector3(
+      (Math.random() - 0.5) * 0.008,
+      0.006 + Math.random() * 0.01,
+      (Math.random() - 0.5) * 0.006
+    )
+  };
+
+  // Async texture load
+  if (imgUrl) {
+    var loader = new THREE.TextureLoader();
+    loader.crossOrigin = 'anonymous';
+    loader.load(imgUrl, function(tex) {
+      tex.minFilter = THREE.LinearFilter;
+      materials[4].map = tex;
+      materials[4].needsUpdate = true;
+      materials[4].color.set(0xffffff);
+    }, undefined, function() {});
+  }
+
+  return mesh;
+}
+
+function makeProfileArtifact(item) {
+  var bc = item.Blockchain || 'Unknown';
+  var p = item.Profile || {};
+  var name = p.DisplayName || p.Name || p.URN || p.Keyword || p.keyword || '(profile)';
+  var keyword = p.Keyword || p.keyword || '';
+  var avatarUrn = p.ProfileImageURN || p.AvatarURN || p.ImageURN || p.URN || '';
+  var avatarUrl = urnToUrl(avatarUrn);
+  var address = p.Address || p.PublicAddress || p.address || '';
+
+  var mat = new THREE.MeshPhongMaterial({
+    color: CHAIN_COLORS[bc] || TYPE_COLORS.profile,
+    emissive: TYPE_EMISSIVE.profile,
+    emissiveIntensity: 0.5,
+    shininess: 100,
+    transparent: true,
+    opacity: 0
+  });
+  var mesh = new THREE.Mesh(new THREE.SphereGeometry(1.2, 24, 24), mat);
+
+  // Orbital rings
+  [1.8, 2.3].forEach(function(rad, ri) {
+    var ring = new THREE.Mesh(
+      new THREE.TorusGeometry(rad, 0.025, 8, 64),
+      new THREE.MeshBasicMaterial({
+        color: ri === 0 ? 0x1abc9c : 0x03dac6,
+        transparent: true, opacity: 0.45
+      })
+    );
+    ring.rotation.x = Math.PI / 3 + ri * 0.4;
+    ring.rotation.z = ri * 0.6;
+    mesh.add(ring);
+    if (!mesh.userData._rings) mesh.userData._rings = [];
+    mesh.userData._rings.push(ring);
   });
 
-  input.addEventListener('keydown', (e) => {
+  var label = makeLabel(
+    [name.slice(0, 22), keyword ? '#' + keyword : abbrev(address, 6), bc],
+    'rgba(0,50,45,0.82)', '#4dffd9'
+  );
+  label.position.set(0, 2.4, 0);
+  mesh.add(label);
+
+  mesh.add(new THREE.PointLight(0x1abc9c, 0.85, 12));
+
+  mesh.userData = {
+    type: 'profile', blockchain: bc, data: item,
+    phase: Math.random() * Math.PI * 2,
+    rotSpeed: new THREE.Vector3(
+      (Math.random() - 0.5) * 0.006,
+      0.005 + Math.random() * 0.008,
+      (Math.random() - 0.5) * 0.006
+    )
+  };
+
+  if (avatarUrl) {
+    var loader = new THREE.TextureLoader();
+    loader.crossOrigin = 'anonymous';
+    loader.load(avatarUrl, function(tex) {
+      tex.minFilter = THREE.LinearFilter;
+      mat.map = tex;
+      mat.color.set(0xffffff);
+      mat.needsUpdate = true;
+    }, undefined, function() {});
+  }
+
+  return mesh;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   FIBONACCI SPHERE LAYOUT
+═══════════════════════════════════════════════════════════ */
+function fibonacciSpherePoint(i, total, radius) {
+  var phi = Math.acos(1 - 2 * (i + 0.5) / total);
+  var theta = Math.PI * (1 + Math.sqrt(5)) * i;
+  return new THREE.Vector3(
+    radius * Math.sin(phi) * Math.cos(theta),
+    radius * Math.sin(phi) * Math.sin(theta) * 0.6,
+    radius * Math.cos(phi)
+  );
+}
+
+function layoutArtifacts(artifacts) {
+  var roots    = artifacts.filter(function(a) { return a.userData.type === 'root'; });
+  var objects  = artifacts.filter(function(a) { return a.userData.type === 'object'; });
+  var profiles = artifacts.filter(function(a) { return a.userData.type === 'profile'; });
+
+  // Three distinct radii so types cluster differently
+  var radii = { root: 22, object: 15, profile: 10 };
+
+  [
+    { arr: profiles, r: radii.profile },
+    { arr: objects,  r: radii.object },
+    { arr: roots,    r: radii.root }
+  ].forEach(function(group) {
+    group.arr.forEach(function(mesh, i) {
+      var pos = fibonacciSpherePoint(i, Math.max(group.arr.length, 1), group.r);
+      mesh.userData.targetPos = pos.clone();
+      // Start from random far point (explosion spawn)
+      var burst = new THREE.Vector3(
+        (Math.random() - 0.5) * 150,
+        (Math.random() - 0.5) * 100,
+        (Math.random() - 0.5) * 150
+      );
+      mesh.position.copy(burst);
+    });
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════
+   CONNECTION LINES (nexus → artifacts)
+═══════════════════════════════════════════════════════════ */
+function buildConnectionLines(artifacts) {
+  if (connectionLines) scene.remove(connectionLines);
+  if (!artifacts.length) return;
+  var verts = [];
+  artifacts.forEach(function(m) {
+    verts.push(0, 0, 0);
+    verts.push(m.userData.targetPos.x, m.userData.targetPos.y, m.userData.targetPos.z);
+  });
+  var geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+  connectionLines = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({
+    color: 0x3a0060, transparent: true, opacity: 0.35
+  }));
+  scene.add(connectionLines);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   SELECTION RING
+═══════════════════════════════════════════════════════════ */
+function placeSelectionRing(artifact) {
+  if (!selectionRing) {
+    selectionRing = new THREE.Mesh(
+      new THREE.TorusGeometry(2.4, 0.05, 8, 64),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.75 })
+    );
+    scene.add(selectionRing);
+  }
+  selectionRing.visible = true;
+  var col = TYPE_COLORS[artifact.userData.type] || 0xbb86fc;
+  selectionRing.material.color.set(col);
+  selectionRing.position.copy(artifact.userData.targetPos || artifact.position);
+}
+function hideSelectionRing() {
+  if (selectionRing) selectionRing.visible = false;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   ANIMATION LOOP
+═══════════════════════════════════════════════════════════ */
+function animate() {
+  requestAnimationFrame(animate);
+  var t = clock.getElapsedTime();
+
+  // Stars slow rotation
+  if (starPoints) { starPoints.rotation.y += 0.00006; }
+  if (nebulaMesh) { nebulaMesh.rotation.y -= 0.00003; }
+
+  // Nexus pulse
+  if (nexusOrb && nexusOrb.material.opacity > 0.01) {
+    var scale = 1 + 0.12 * Math.sin(t * 1.8);
+    nexusOrb.scale.set(scale, scale, scale);
+    nexusOrb.material.emissiveIntensity = 0.6 + 0.3 * Math.sin(t * 1.8);
+    nexusGlow.scale.set(scale * 1.1, scale * 1.1, scale * 1.1);
+  }
+
+  // Artifacts: lerp to target, rotate, pulse
+  currentArtifacts.forEach(function(mesh, idx) {
+    var ud = mesh.userData;
+    if (ud.targetPos) {
+      mesh.position.lerp(ud.targetPos, 0.04);
+    }
+    mesh.rotation.x += ud.rotSpeed.x;
+    mesh.rotation.y += ud.rotSpeed.y;
+    mesh.rotation.z += ud.rotSpeed.z;
+
+    // Fade in
+    var mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    mats.forEach(function(m) {
+      if (m.opacity < 0.92) m.opacity = Math.min(0.92, m.opacity + 0.018);
+    });
+
+    // Emissive pulse
+    var intensity = 0.4 + 0.25 * Math.sin(t * 1.2 + ud.phase);
+    mats.forEach(function(m) { if (m.emissiveIntensity !== undefined) m.emissiveIntensity = intensity; });
+
+    // Orbital rings on profiles
+    if (ud._rings) {
+      ud._rings.forEach(function(ring, ri) {
+        ring.rotation.y += 0.008 * (ri % 2 === 0 ? 1 : -1.3);
+        ring.rotation.z += 0.005 * (ri % 2 === 0 ? -1 : 1.1);
+      });
+    }
+
+    // Scan ring on objects
+    if (ud._ring) {
+      ud._ring.rotation.z += 0.012;
+      ud._ring.material.opacity = 0.35 + 0.25 * Math.sin(t * 2 + ud.phase);
+    }
+  });
+
+  // Selection ring billboard-ish wobble
+  if (selectionRing && selectionRing.visible) {
+    selectionRing.rotation.x += 0.012;
+    selectionRing.rotation.y += 0.018;
+  }
+
+  // Smooth camera fly-to
+  if (cameraMoving) {
+    camera.position.lerp(cameraTarget, 0.055);
+    controls.target.lerp(cameraLookTarget, 0.055);
+    if (camera.position.distanceTo(cameraTarget) < 0.5) cameraMoving = false;
+  }
+
+  controls.update();
+
+  // Raycaster hover (throttled via mouse coords)
+  if (currentArtifacts.length) {
+    raycaster.setFromCamera(mouse, camera);
+    var hits = raycaster.intersectObjects(currentArtifacts, true);
+    var hit = hits.length ? hits[0].object : null;
+    // Walk up to top-level artifact
+    var topHit = null;
+    if (hit) {
+      var obj = hit;
+      while (obj.parent && obj.parent !== scene) obj = obj.parent;
+      if (currentArtifacts.includes(obj)) topHit = obj;
+    }
+    if (topHit !== hoveredArtifact) {
+      if (hoveredArtifact && hoveredArtifact !== selectedArtifact) {
+        setArtifactHighlight(hoveredArtifact, false);
+      }
+      hoveredArtifact = topHit;
+      if (hoveredArtifact && hoveredArtifact !== selectedArtifact) {
+        setArtifactHighlight(hoveredArtifact, true);
+      }
+      renderer.domElement.style.cursor = topHit ? 'pointer' : 'default';
+    }
+  }
+
+  renderer.render(scene, camera);
+}
+
+function setArtifactHighlight(mesh, on) {
+  var mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+  mats.forEach(function(m) {
+    if (on) { m.emissiveIntensity = 1.0; }
+    else { m.emissiveIntensity = 0.5; }
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════
+   SHOW ARTIFACTS IN SCENE
+═══════════════════════════════════════════════════════════ */
+function showArtifacts(rootItems, objectItems, profileItems) {
+  // Clear old
+  currentArtifacts.forEach(function(m) { scene.remove(m); });
+  currentArtifacts = [];
+  if (connectionLines) scene.remove(connectionLines);
+  hideSelectionRing();
+  selectedArtifact = null;
+  hoveredArtifact = null;
+
+  rootItems.forEach(function(item) {
+    currentArtifacts.push(makeRootArtifact(item));
+  });
+  objectItems.forEach(function(item) {
+    currentArtifacts.push(makeObjectArtifact(item));
+  });
+  profileItems.forEach(function(item) {
+    currentArtifacts.push(makeProfileArtifact(item));
+  });
+
+  layoutArtifacts(currentArtifacts);
+  buildConnectionLines(currentArtifacts);
+  currentArtifacts.forEach(function(m) { scene.add(m); });
+
+  var total = currentArtifacts.length;
+  updateStats(rootItems.length, objectItems.length, profileItems.length);
+  setNexusVisible(true);
+
+  document.getElementById('welcomeScreen').classList.add('hidden');
+  document.getElementById('emptyMsg').style.display = total === 0 ? 'block' : 'none';
+
+  // Home camera
+  flyHome();
+}
+
+/* ═══════════════════════════════════════════════════════════
+   CAMERA MOVEMENT
+═══════════════════════════════════════════════════════════ */
+function flyHome() {
+  cameraTarget.copy(cameraHomePos);
+  cameraLookTarget.set(0, 0, 0);
+  cameraMoving = true;
+  controls.autoRotate = true;
+}
+
+function flyToArtifact(mesh) {
+  var targetPos = mesh.userData.targetPos || mesh.position;
+  var dir = targetPos.clone().normalize();
+  cameraTarget.copy(targetPos).add(dir.multiplyScalar(8));
+  cameraLookTarget.copy(targetPos);
+  cameraMoving = true;
+  controls.autoRotate = false;
+}
+
+function onResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   MOUSE / TOUCH HANDLERS
+═══════════════════════════════════════════════════════════ */
+function onMouseMove(e) {
+  var rect = renderer.domElement.getBoundingClientRect();
+  mouse.x =  ((e.clientX - rect.left) / rect.width)  * 2 - 1;
+  mouse.y = -((e.clientY - rect.top)  / rect.height) * 2 + 1;
+
+  // Tooltip
+  var tip = document.getElementById('tooltip');
+  if (hoveredArtifact) {
+    var ud = hoveredArtifact.userData;
+    var d = ud.data || {};
+    var inner = ud.type === 'root'    ? buildRootTooltip(d)
+              : ud.type === 'object'  ? buildObjectTooltip(d)
+              : buildProfileTooltip(d);
+    tip.innerHTML = inner;
+    tip.style.display = 'block';
+    tip.style.left = (e.clientX + 14) + 'px';
+    tip.style.top  = Math.min(e.clientY - 10, window.innerHeight - tip.offsetHeight - 10) + 'px';
+  } else {
+    tip.style.display = 'none';
+  }
+}
+
+function onClick(e) {
+  if (!hoveredArtifact) return;
+  selectArtifact(hoveredArtifact);
+}
+
+function onTouchStart(e) {
+  if (!e.touches.length) return;
+  var touch = e.touches[0];
+  var rect = renderer.domElement.getBoundingClientRect();
+  mouse.x =  ((touch.clientX - rect.left) / rect.width)  * 2 - 1;
+  mouse.y = -((touch.clientY - rect.top)  / rect.height) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  var hits = raycaster.intersectObjects(currentArtifacts, true);
+  if (!hits.length) return;
+  var obj = hits[0].object;
+  while (obj.parent && obj.parent !== scene) obj = obj.parent;
+  if (currentArtifacts.includes(obj)) selectArtifact(obj);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   SELECT ARTIFACT → DETAIL PANEL
+═══════════════════════════════════════════════════════════ */
+function selectArtifact(mesh) {
+  if (selectedArtifact && selectedArtifact !== mesh) {
+    setArtifactHighlight(selectedArtifact, false);
+  }
+  selectedArtifact = mesh;
+  setArtifactHighlight(mesh, true);
+  placeSelectionRing(mesh);
+  flyToArtifact(mesh);
+
+  var ud = mesh.userData;
+  var html = ud.type === 'root'    ? buildRootDetail(ud.data)
+           : ud.type === 'object'  ? buildObjectDetail(ud.data)
+           : buildProfileDetail(ud.data);
+
+  document.getElementById('detailInner').innerHTML = html;
+  document.getElementById('detailPanel').classList.add('open');
+}
+
+function closeDetail() {
+  document.getElementById('detailPanel').classList.remove('open');
+  if (selectedArtifact) setArtifactHighlight(selectedArtifact, false);
+  selectedArtifact = null;
+  hideSelectionRing();
+  flyHome();
+}
+
+/* ═══════════════════════════════════════════════════════════
+   TOOLTIPS (hover)
+═══════════════════════════════════════════════════════════ */
+function buildRootTooltip(item) {
+  var bc = item.Blockchain || 'Unknown';
+  var r = item.Root || {};
+  var msg = r.Message || r.message || '';
+  var txid = r.TransactionID || r.TransactionId || r.TXID || '';
+  return '<b style="color:#e0b0ff">📜 ROOT</b>'
+    + '<span style="background:' + CHAIN_HEX[bc] + ';color:#111;padding:1px 6px;border-radius:8px;font-size:0.8em;margin-left:6px">' + esc(bc) + '</span><br>'
+    + (txid ? '<span style="color:#777;font-size:0.8em">TX: ' + esc(abbrev(txid, 8)) + '</span><br>' : '')
+    + (msg ? '<span style="color:#ccc">' + esc(msg.slice(0, 80)) + (msg.length > 80 ? '…' : '') + '</span>' : '');
+}
+function buildObjectTooltip(item) {
+  var bc = item.Blockchain || 'Unknown';
+  var o = item.Object || {};
+  var name = o.Name || o.name || '(object)';
+  return '<b style="color:#ffb84d">🎨 OBJECT</b>'
+    + '<span style="background:' + CHAIN_HEX[bc] + ';color:#111;padding:1px 6px;border-radius:8px;font-size:0.8em;margin-left:6px">' + esc(bc) + '</span><br>'
+    + '<span style="color:#e0e0e0">' + esc(name.slice(0, 60)) + '</span>';
+}
+function buildProfileTooltip(item) {
+  var bc = item.Blockchain || 'Unknown';
+  var p = item.Profile || {};
+  var name = p.DisplayName || p.Name || p.URN || p.Keyword || '(profile)';
+  return '<b style="color:#4dffd9">👤 PROFILE</b>'
+    + '<span style="background:' + CHAIN_HEX[bc] + ';color:#111;padding:1px 6px;border-radius:8px;font-size:0.8em;margin-left:6px">' + esc(bc) + '</span><br>'
+    + '<span style="color:#e0e0e0">' + esc(name.slice(0, 60)) + '</span>';
+}
+
+/* ═══════════════════════════════════════════════════════════
+   DETAIL PANEL BUILDERS
+═══════════════════════════════════════════════════════════ */
+function chainPill(bc) {
+  var col = CHAIN_HEX[bc] || '#888';
+  return '<span class="chain-pill" style="background:' + col + ';color:' + (bc === 'LTC' || bc === 'Unknown' ? '#111' : '#fff') + '">' + esc(bc) + '</span>';
+}
+function drillBtn(val, label) {
+  return '<span class="d-drill" onclick="drillDown(\'' + esc(val).replace(/'/g, '\\\'') + '\')">' + esc(label || val) + '</span>';
+}
+
+function buildRootDetail(item) {
+  var bc = item.Blockchain || 'Unknown';
+  var r = item.Root || {};
+  var msg     = r.Message || r.message || '';
+  var sig     = r.Signature || r.signature || '';
+  var txid    = r.TransactionID || r.TransactionId || r.TXID || r.txid || '';
+  var fromAddr = r.FromAddress || r.fromAddress || r.SenderAddress || '';
+  var toAddr   = r.ToAddress   || r.toAddress   || r.RecipientAddress || '';
+  var blockDate = r.BlockDate || r.blockDate || r.Timestamp || r.timestamp || '';
+  var outputs  = r.OutputAddresses || r.outputAddresses || [];
+  if (!Array.isArray(outputs)) outputs = outputs ? [outputs] : [];
+
+  var html = '<span class="d-type" style="background:rgba(155,89,182,0.3);color:#e0b0ff">📜 ROOT</span>' + chainPill(bc);
+  html += '<div class="d-title">' + esc(abbrev(txid, 12) || 'Transaction Root') + '</div>';
+
+  if (blockDate) {
+    html += '<div class="d-section"><div class="d-label">Timestamp</div><div class="d-value">' + esc(formatTs(blockDate)) + '</div></div>';
+  }
+  if (fromAddr) {
+    html += '<div class="d-section"><div class="d-label">From</div><div class="d-value">' + drillBtn(fromAddr, abbrev(fromAddr, 10)) + '</div></div>';
+  }
+  if (toAddr) {
+    html += '<div class="d-section"><div class="d-label">To</div><div class="d-value">' + drillBtn(toAddr, abbrev(toAddr, 10)) + '</div></div>';
+  }
+  if (outputs.length) {
+    html += '<div class="d-section"><div class="d-label">Output Addresses</div><div class="d-value">'
+      + outputs.map(function(a) { return drillBtn(a, abbrev(a, 8)); }).join('<br>')
+      + '</div></div>';
+  }
+  if (msg) {
+    html += '<div class="d-section"><div class="d-label">Message</div><div class="d-msg-box">' + esc(msg) + '</div></div>';
+  }
+  if (sig) {
+    html += '<div class="d-section"><div class="d-label">Signature</div>'
+      + '<div class="sig-badge">✓ SIGNED</div>'
+      + '<div class="d-value" style="font-size:0.72em;margin-top:4px;word-break:break-all;color:#666">' + esc(sig.slice(0, 80)) + (sig.length > 80 ? '…' : '') + '</div>'
+      + '</div>';
+  }
+  if (txid) {
+    html += '<div class="d-section"><div class="d-label">Transaction ID</div><div class="d-value" style="font-family:monospace;font-size:0.76em">' + esc(txid) + '</div></div>';
+  }
+
+  // Load More (for roots with same fromAddr)
+  if (fromAddr) {
+    html += '<button class="d-load-more" onclick="drillDown(\'' + esc(fromAddr).replace(/'/g, '\\\'') + '\')">🔭 Explore this address</button>';
+  }
+  return html;
+}
+
+function buildObjectDetail(item) {
+  var bc = item.Blockchain || 'Unknown';
+  var o = item.Object || {};
+  var name      = o.Name || o.ObjectName || o.name || '(unnamed object)';
+  var desc      = o.Description || o.description || '';
+  var urn       = o.URN || o.Urn || o.urn || '';
+  var creator   = o.CreatorAddress || o.Creator || o.Address || '';
+  var owner     = o.OwnerAddress || o.Owner || '';
+  var imgUrl    = urnToUrl(urn);
+  var blockDate = o.CreatedAt || o.BlockDate || o.Timestamp || '';
+
+  var html = '<span class="d-type" style="background:rgba(230,126,34,0.3);color:#ffb84d">🎨 OBJECT</span>' + chainPill(bc);
+  if (imgUrl) {
+    html += '<img class="d-img" src="' + esc(imgUrl) + '" alt="' + esc(name) + '" onerror="this.style.display=\'none\'" />';
+  }
+  html += '<div class="d-title">' + esc(name) + '</div>';
+  if (desc) {
+    html += '<div class="d-section"><div class="d-label">Description</div><div class="d-value">' + esc(desc.slice(0, 300)) + '</div></div>';
+  }
+  if (creator) {
+    html += '<div class="d-section"><div class="d-label">Creator</div><div class="d-value">' + drillBtn(creator, abbrev(creator, 10)) + '</div></div>';
+  }
+  if (owner && owner !== creator) {
+    html += '<div class="d-section"><div class="d-label">Owner</div><div class="d-value">' + drillBtn(owner, abbrev(owner, 10)) + '</div></div>';
+  }
+  if (urn) {
+    html += '<div class="d-section"><div class="d-label">URN / IPFS</div><div class="d-value" style="font-size:0.77em;font-family:monospace">' + esc(urn) + '</div></div>';
+  }
+  if (blockDate) {
+    html += '<div class="d-section"><div class="d-label">Created</div><div class="d-value">' + esc(formatTs(blockDate)) + '</div></div>';
+  }
+  if (creator) {
+    html += '<button class="d-load-more" onclick="drillDown(\'' + esc(creator).replace(/'/g, '\\\'') + '\')">🎨 Explore creator</button>';
+  }
+  return html;
+}
+
+function buildProfileDetail(item) {
+  var bc = item.Blockchain || 'Unknown';
+  var p = item.Profile || {};
+  var name      = p.DisplayName || p.Name || '';
+  var urn       = p.URN || p.Keyword || p.keyword || '';
+  var keyword   = p.Keyword || p.keyword || '';
+  var bio       = p.Bio || p.Description || p.About || p.description || '';
+  var address   = p.Address || p.PublicAddress || p.address || '';
+  var avatarUrn = p.ProfileImageURN || p.AvatarURN || p.ImageURN || '';
+  var avatarUrl = urnToUrl(avatarUrn);
+  var location  = p.Location || p.location || '';
+  var website   = p.Website || p.website || p.URL || '';
+  var createdAt = p.CreatedAt || p.created || p.Timestamp || '';
+
+  var html = '<span class="d-type" style="background:rgba(26,188,156,0.3);color:#4dffd9">👤 PROFILE</span>' + chainPill(bc);
+  if (avatarUrl) {
+    html += '<img class="d-img" src="' + esc(avatarUrl) + '" alt="' + esc(name || urn) + '" onerror="this.style.display=\'none\'" style="max-height:120px;border-radius:50%;width:120px;display:block;margin:0 auto 10px" />';
+  }
+  html += '<div class="d-title">' + esc(name || urn || '(profile)') + '</div>';
+  if (keyword && keyword !== name) {
+    html += '<div class="d-section"><div class="d-label">Keyword</div><div class="d-value">' + drillBtn('#' + keyword, '#' + keyword) + '</div></div>';
+  }
+  if (address) {
+    html += '<div class="d-section"><div class="d-label">Address</div><div class="d-value">' + drillBtn(address, abbrev(address, 10)) + '</div></div>';
+  }
+  if (bio) {
+    html += '<div class="d-section"><div class="d-label">Bio</div><div class="d-value">' + esc(bio.slice(0, 280)) + (bio.length > 280 ? '…' : '') + '</div></div>';
+  }
+  if (location) {
+    html += '<div class="d-section"><div class="d-label">Location</div><div class="d-value">' + esc(location) + '</div></div>';
+  }
+  if (website) {
+    html += '<div class="d-section"><div class="d-label">Website</div><div class="d-value"><a href="' + esc(website) + '" target="_blank" rel="noopener" style="color:#bb86fc">' + esc(website.slice(0, 50)) + '</a></div></div>';
+  }
+  if (createdAt) {
+    html += '<div class="d-section"><div class="d-label">Created</div><div class="d-value">' + esc(formatTs(createdAt)) + '</div></div>';
+  }
+  if (address) {
+    html += '<button class="d-load-more" onclick="drillDown(\'' + esc(address).replace(/'/g, '\\\'') + '\')">🌌 Explore objects & messages</button>';
+  }
+  if (keyword) {
+    html += '<button class="d-load-more" onclick="drillDown(\'#' + esc(keyword).replace(/'/g, '\\\'') + '\')">🔗 Search by keyword</button>';
+  }
+  return html;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   API + SEARCH
+═══════════════════════════════════════════════════════════ */
+async function fetchEndpoint(endpoint, q, mainnet, skip, qty) {
+  var key = cacheKey(endpoint, q, mainnet, skip, qty);
+  if (resultCache.has(key)) return resultCache.get(key);
+  var url = BASE + '/' + endpoint + '?searchString=' + encodeURIComponent(q) + '&qty=' + qty + '&skip=' + skip;
+  var resp = await fetch(url);
+  if (!resp.ok) throw new Error('HTTP ' + resp.status);
+  var data = await resp.json();
+  var arr = Array.isArray(data) ? data : [];
+  resultCache.set(key, arr);
+  return arr;
+}
+
+async function runSearch(query, mainnet, isNew) {
+  query = query.trim();
+  if (!query) return;
+  var qty = parseInt(document.getElementById('qtySelect').value, 10);
+
+  if (isNew) {
+    if (!searchHistory.length || searchHistory[searchHistory.length - 1].query !== query) {
+      searchHistory.push({ query: query, mainnet: mainnet });
+    }
+    currentQuery = query;
+    currentMainnet = mainnet;
+  }
+
+  renderBreadcrumbs();
+  setLoading(true);
+
+  try {
+    var results = await Promise.all([
+      fetchEndpoint('GetKnownRootsBySearchString',    query, mainnet, 0, qty).catch(function() { return []; }),
+      fetchEndpoint('GetKnownObjectsBySearchString',  query, mainnet, 0, qty).catch(function() { return []; }),
+      fetchEndpoint('GetKnownProfilesBySearchString', query, mainnet, 0, qty).catch(function() { return []; })
+    ]);
+    updateNexusLabel(query);
+    showArtifacts(results[0], results[1], results[2]);
+    updateUrl(query, mainnet);
+  } catch (err) {
+    console.error('Search failed', err);
+  } finally {
+    setLoading(false);
+  }
+}
+
+async function drillDown(raw) {
+  var mainnet = document.getElementById('mainnetCheck').checked;
+  var q = raw.trim();
+  if (q.startsWith('#')) q = q.slice(1);
+  document.getElementById('searchInput').value = q;
+  // Wormhole flash
+  wormholeFlash();
+  setTimeout(function() { runSearch(q, mainnet, true); }, 300);
+}
+
+function wormholeFlash() {
+  // Scale-down all current artifacts briefly
+  currentArtifacts.forEach(function(m) {
+    m.userData._shrinking = true;
+  });
+  setTimeout(function() {
+    currentArtifacts.forEach(function(m) {
+      m.userData._shrinking = false;
+    });
+  }, 280);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   UI HELPERS
+═══════════════════════════════════════════════════════════ */
+function setLoading(on) {
+  var el = document.getElementById('loadingOverlay');
+  el.classList.toggle('active', on);
+  document.getElementById('searchBtn').disabled = on;
+  document.getElementById('searchInput').disabled = on;
+}
+
+function updateStats(r, o, p) {
+  var bar = document.getElementById('statsBar');
+  bar.style.display = 'flex';
+  bar.innerHTML =
+    '<span class="stat-pill" style="color:#e0b0ff">📜 ' + r + ' roots</span>'
+    + '<span class="stat-pill" style="color:#ffb84d">🎨 ' + o + ' objects</span>'
+    + '<span class="stat-pill" style="color:#4dffd9">👤 ' + p + ' profiles</span>';
+}
+
+function renderBreadcrumbs() {
+  var el = document.getElementById('breadcrumbBar');
+  if (!searchHistory.length) { el.innerHTML = ''; return; }
+  var parts = [];
+  searchHistory.forEach(function(h, i) {
+    if (i > 0) parts.push('<span class="bc-sep">›</span>');
+    var label = h.query.length > 18 ? h.query.slice(0, 16) + '…' : h.query;
+    var isCur = i === searchHistory.length - 1;
+    if (isCur) {
+      parts.push('<span class="bc-item current">' + esc(label) + '</span>');
+    } else {
+      parts.push('<span class="bc-item" onclick="jumpHistory(' + i + ')">' + esc(label) + '</span>');
+    }
+  });
+  el.innerHTML = parts.join('');
+}
+
+function jumpHistory(idx) {
+  var entry = searchHistory[idx];
+  if (!entry) return;
+  searchHistory = searchHistory.slice(0, idx + 1);
+  document.getElementById('searchInput').value = entry.query;
+  document.getElementById('mainnetCheck').checked = entry.mainnet;
+  runSearch(entry.query, entry.mainnet, false);
+}
+
+function updateUrl(q, mainnet) {
+  try {
+    var params = new URLSearchParams({ q: q, mainnet: mainnet ? 'true' : 'false' });
+    window.history.replaceState(null, '', '?' + params.toString());
+  } catch (e) {}
+}
+
+/* ═══════════════════════════════════════════════════════════
+   INIT
+═══════════════════════════════════════════════════════════ */
+document.addEventListener('DOMContentLoaded', function() {
+  initScene();
+  animate();
+
+  var btn   = document.getElementById('searchBtn');
+  var input = document.getElementById('searchInput');
+  var check = document.getElementById('mainnetCheck');
+
+  btn.addEventListener('click', function() {
+    var q = input.value.trim();
+    if (q) runSearch(q, check.checked, true);
+  });
+  input.addEventListener('keydown', function(e) {
     if (e.key === 'Enter') {
-      const q = input.value.trim();
+      var q = input.value.trim();
       if (q) runSearch(q, check.checked, true);
     }
   });
 
-  // Check URL params
-  const params = new URLSearchParams(window.location.search);
-  const qParam = params.get('q');
-  const mainnetParam = params.get('mainnet');
-  if (qParam) {
-    input.value = qParam;
-    if (mainnetParam !== null) check.checked = mainnetParam !== 'false';
-    runSearch(qParam, check.checked, true);
+  // URL params auto-search
+  var params = new URLSearchParams(window.location.search);
+  var qp = params.get('q');
+  var mp = params.get('mainnet');
+  if (qp) {
+    input.value = qp;
+    if (mp !== null) check.checked = mp !== 'false';
+    runSearch(qp, check.checked, true);
   }
 });
 </script>
