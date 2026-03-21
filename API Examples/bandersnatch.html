@@ -3,2645 +3,1342 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
-    <title>⚔ DUNGEON CRAWLER — Blockchain Realm Explorer</title>
+    <title>✦ RUNE CODEX — Blockchain Spellbook</title>
     <style>
         :root {
-            --blood: #cc6600;
-            --blood-dim: #884400;
-            --blood-glow: #ff9922;
-            --panel: rgba(5, 4, 2, 0.93);
-            --panel-light: rgba(13, 10, 4, 0.94);
-            --text: #e8d5a0;
-            --text-dim: #9a8055;
+            --arc: #9955ff; --arc-dim: #5522aa; --arc-glow: #cc88ff;
+            --gold: #cc9922; --gold-dim: #886611; --gold-glow: #ffcc44;
+            --panel: rgba(6,4,12,0.94); --pb: rgba(100,50,200,0.28);
+            --txt: #e0d8f0; --txt-dim: #8877aa;
+            --hp: #44cc44; --mp: #4488ff; --xp: #ffcc44;
+            --dmg: #ff4422; --spell: #aa66ff; --kill: #ffcc00;
+            --miss: #886644; --info: #88aadd; --persuade: #88dd66;
         }
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        html, body {
-            width: 100%; height: 100%;
-            overflow: hidden;
-            background: #000;
-            color: var(--text);
-            font-family: 'Courier New', monospace;
+        *{box-sizing:border-box;margin:0;padding:0;}
+        html,body{width:100%;height:100%;overflow:hidden;background:#000;color:var(--txt);font-family:'Courier New',monospace;}
+        canvas{display:block;position:fixed;inset:0;z-index:0;}
+        /* TOP BAR */
+        #topBar{
+            position:fixed;top:0;left:0;right:0;height:44px;
+            background:linear-gradient(180deg,rgba(4,2,10,.97) 0%,rgba(4,2,10,.6) 100%);
+            border-bottom:1px solid var(--pb);
+            display:flex;align-items:center;gap:10px;padding:0 12px;z-index:100;
         }
-        canvas { display: block; }
-        @keyframes shake {
-            0%,100%{transform:translate(0,0)}
-            15%{transform:translate(-6px,-4px)}
-            30%{transform:translate(6px,3px)}
-            45%{transform:translate(-4px,6px)}
-            60%{transform:translate(4px,-6px)}
-            75%{transform:translate(-6px,4px)}
-            90%{transform:translate(3px,-3px)}
+        #brand{font-size:16px;font-weight:bold;color:var(--arc);letter-spacing:2px;white-space:nowrap;
+            text-shadow:0 0 12px var(--arc),0 0 24px var(--arc-dim);
+            animation:brandPulse 3s ease-in-out infinite;}
+        @keyframes brandPulse{0%,100%{text-shadow:0 0 10px var(--arc),0 0 22px var(--arc-dim);}50%{text-shadow:0 0 22px var(--arc-glow),0 0 44px var(--arc);}}
+        .tsep{flex:1;}.tdiv{width:1px;height:20px;background:var(--pb);}
+        .tstat{font-size:11px;color:var(--txt-dim);white-space:nowrap;}.tstat strong{color:var(--txt);}
+        .hud-btn{padding:6px 12px;background:rgba(35,10,70,.85);border:1px solid var(--arc-dim);border-radius:4px;
+            color:var(--arc-glow);font-family:inherit;font-weight:bold;font-size:12px;cursor:pointer;transition:all .2s;white-space:nowrap;}
+        .hud-btn:hover{background:rgba(70,20,140,.85);border-color:var(--arc);box-shadow:0 0 10px rgba(153,85,255,.4);}
+        .hud-btn:disabled{opacity:.4;cursor:not-allowed;}
+        /* SIDE PANELS */
+        .side-panel{
+            position:fixed;top:44px;width:256px;height:calc(100vh - 44px - 138px);
+            background:var(--panel);border:1px solid var(--pb);padding:12px;
+            z-index:90;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--arc-dim) transparent;
+            transition:transform .3s ease;
         }
-        .shaking { animation: shake 0.45s ease; }
-        @keyframes flicker {
-            0%,100%{opacity:1}
-            50%{opacity:0.85}
-            75%{opacity:0.95}
+        #spellbookPanel{left:0;border-left:none;border-top:none;}
+        #charsheetPanel{right:0;border-right:none;border-top:none;}
+        #spellbookPanel.collapsed{transform:translateX(-256px);}
+        #charsheetPanel.collapsed{transform:translateX(256px);}
+        .ptitle{font-size:13px;font-weight:bold;color:var(--gold);letter-spacing:2px;margin-bottom:4px;text-shadow:0 0 8px var(--gold-dim);}
+        .psub{font-size:10px;color:var(--txt-dim);margin-bottom:10px;line-height:1.5;}
+        .pdiv{width:100%;height:1px;background:var(--pb);margin:10px 0;}
+        /* Rune input */
+        #runeInput{
+            width:100%;padding:9px 12px;background:rgba(0,0,0,.55);
+            border:1px solid var(--arc-dim);border-radius:4px;
+            color:var(--txt);font-family:inherit;font-size:14px;outline:none;letter-spacing:1px;
+            margin-bottom:6px;
         }
-        .flickering { animation: flicker 0.15s infinite; }
-        @keyframes pulse-glow {
-            0%,100%{text-shadow:0 0 8px var(--blood-glow),0 0 20px var(--blood)}
-            50%{text-shadow:0 0 15px var(--blood-glow),0 0 35px var(--blood)}
+        #runeInput:focus{border-color:var(--arc);box-shadow:0 0 12px rgba(153,85,255,.4);}
+        #runeInput::placeholder{color:var(--txt-dim);}
+        #manaBadge{font-size:10px;color:var(--mp);margin-bottom:8px;}
+        .spell-opts{display:flex;gap:8px;align-items:center;margin-bottom:10px;}
+        .chk-lbl{font-size:11px;color:var(--txt-dim);display:flex;align-items:center;gap:5px;cursor:pointer;}
+        .chk-lbl input{accent-color:var(--arc);}
+        .rune-sel{padding:5px 7px;background:rgba(0,0,0,.5);border:1px solid var(--arc-dim);border-radius:4px;
+            color:var(--txt);font-family:inherit;font-size:11px;cursor:pointer;flex:1;}
+        .cast-btn{width:100%;padding:10px;background:linear-gradient(180deg,rgba(70,25,150,.9),rgba(35,10,80,.9));
+            border:1px solid var(--arc-dim);border-radius:4px;color:var(--arc-glow);
+            font-family:inherit;font-weight:bold;font-size:14px;cursor:pointer;transition:all .2s;margin-bottom:0;}
+        .cast-btn:hover{background:linear-gradient(180deg,rgba(110,45,220,.9),rgba(70,25,150,.9));box-shadow:0 0 20px rgba(153,85,255,.5);}
+        .cast-btn:disabled{opacity:.4;cursor:not-allowed;}
+        .spell-entry{padding:5px 8px;margin-bottom:3px;background:rgba(0,0,0,.3);border:1px solid rgba(80,40,130,.3);
+            border-radius:3px;font-size:11px;color:var(--txt-dim);cursor:pointer;transition:all .15s;
+            display:flex;align-items:center;gap:6px;}
+        .spell-entry:hover{border-color:var(--arc-dim);color:var(--txt);}
+        .spell-entry.active{border-color:var(--arc);color:var(--arc-glow);}
+        .se-rune{color:var(--arc);}
+        /* Char sheet */
+        #csName{font-size:15px;font-weight:bold;color:var(--gold);text-shadow:0 0 8px var(--gold-dim);margin-bottom:2px;}
+        #csClass{font-size:11px;color:var(--txt-dim);margin-bottom:10px;}
+        .sb-grp{margin-bottom:8px;}
+        .sb-lbl{font-size:11px;color:var(--txt-dim);display:flex;justify-content:space-between;margin-bottom:3px;}
+        .sb-lbl strong{color:var(--txt);}
+        .sb-track{height:10px;background:rgba(0,0,0,.5);border-radius:3px;overflow:hidden;border:1px solid rgba(60,30,90,.5);}
+        .sb-bar{height:100%;transition:width .4s,background .4s;}
+        .hp-bar{background:linear-gradient(90deg,var(--hp),#88ee88);}
+        .mp-bar{background:linear-gradient(90deg,#2255cc,var(--mp));}
+        .xp-bar{background:linear-gradient(90deg,#aa8800,var(--xp));}
+        .ab-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-bottom:6px;}
+        .ab-cell{background:rgba(0,0,0,.4);border:1px solid rgba(60,30,90,.4);border-radius:4px;padding:6px 4px;text-align:center;}
+        .ab-nm{font-size:9px;color:var(--txt-dim);}.ab-v{font-size:16px;font-weight:bold;color:var(--txt);}.ab-m{font-size:11px;color:var(--arc-glow);}
+        .cs-row{display:flex;justify-content:space-between;font-size:11px;color:var(--txt-dim);margin-bottom:5px;}
+        .cs-row strong{color:var(--gold);}
+        .inv-item{padding:4px 6px;margin-bottom:3px;background:rgba(0,0,0,.3);border:1px solid rgba(80,50,20,.4);border-radius:3px;font-size:10px;color:var(--txt-dim);}
+        .inv-name{color:var(--gold);}
+        /* BOTTOM HUD */
+        #bottomHud{
+            position:fixed;bottom:0;left:0;right:0;
+            background:linear-gradient(0deg,rgba(3,2,8,.97),rgba(3,2,8,.7));
+            border-top:1px solid var(--pb);z-index:90;
         }
-        @keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
-        .fade-in { animation: fadeIn 0.4s ease; }
-        #vignette {
-            position: fixed; inset: 0;
-            pointer-events: none;
-            background: radial-gradient(ellipse at center, transparent 40%, rgba(10,6,2,0.7) 100%);
-            z-index: 5;
-            transition: opacity 0.3s;
+        #combatLog{height:72px;overflow-y:auto;padding:6px 12px;scrollbar-width:thin;scrollbar-color:var(--arc-dim) transparent;}
+        .log-line{font-size:11px;padding:2px 0;border-bottom:1px solid rgba(60,30,90,.2);animation:logIn .3s ease;}
+        .log-line:last-child{border-bottom:none;}
+        @keyframes logIn{from{opacity:0;transform:translateX(-4px);}to{opacity:1;transform:none;}}
+        .lt{color:var(--txt-dim);margin-right:6px;font-size:10px;}
+        .l-damage{color:var(--dmg);}.l-spell{color:var(--spell);}.l-kill{color:var(--kill);}
+        .l-miss{color:var(--miss);}.l-info{color:var(--info);}.l-persuade{color:var(--persuade);}
+        #actionBar{display:flex;gap:8px;padding:8px 12px;border-top:1px solid rgba(60,30,90,.3);}
+        .act-btn{padding:7px 12px;background:rgba(20,10,40,.8);border:1px solid rgba(80,40,130,.4);border-radius:4px;
+            color:var(--txt-dim);font-family:inherit;font-size:11px;font-weight:bold;cursor:pointer;transition:all .15s;}
+        .act-btn:hover{border-color:var(--arc-dim);color:var(--txt);background:rgba(40,20,80,.8);}
+        .act-btn:disabled{opacity:.35;cursor:not-allowed;}
+        /* MODALS */
+        .modal-overlay{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:500;background:rgba(0,0,0,.75);}
+        .modal-overlay.visible{display:flex;}
+        /* DICE */
+        #diceContainer{text-align:center;background:var(--panel);border:1px solid var(--arc);border-radius:12px;
+            padding:24px 36px;box-shadow:0 0 40px rgba(153,85,255,.35);min-width:220px;}
+        #diceLabel{font-size:13px;color:var(--arc-glow);letter-spacing:2px;margin-bottom:14px;}
+        #diceCanvas{display:block;margin:0 auto 14px;}
+        #diceResult{font-size:28px;font-weight:bold;color:var(--gold);text-shadow:0 0 15px var(--gold-dim);}
+        #diceMod{font-size:13px;color:var(--txt-dim);margin-top:6px;min-height:18px;}
+        /* ENTITY MODAL */
+        .modal-box{position:relative;background:var(--panel);border:1px solid var(--pb);border-radius:8px;
+            padding:20px;max-width:460px;width:90%;max-height:80vh;overflow-y:auto;}
+        .mc{position:absolute;top:10px;right:12px;background:none;border:none;color:var(--txt-dim);font-size:18px;cursor:pointer;}
+        .mc:hover{color:var(--arc);}
+        .em-title{font-size:17px;font-weight:bold;color:var(--arc-glow);margin-bottom:6px;padding-right:30px;}
+        .badge{display:inline-block;padding:2px 8px;font-size:10px;font-weight:bold;border-radius:3px;margin-bottom:12px;letter-spacing:1px;}
+        .badge-monster{background:rgba(150,30,0,.4);color:#ff8866;border:1px solid #cc3300;}
+        .badge-npc{background:rgba(0,60,150,.4);color:#88ccff;border:1px solid #2266cc;}
+        .badge-artifact{background:rgba(120,80,0,.4);color:var(--gold-glow);border:1px solid var(--gold-dim);}
+        .badge-portal{background:rgba(80,0,150,.4);color:#cc88ff;border:1px solid #8833cc;}
+        .em-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:14px;}
+        .es-cell{background:rgba(0,0,0,.35);border:1px solid rgba(60,30,90,.4);border-radius:4px;padding:6px;text-align:center;}
+        .es-lbl{font-size:9px;color:var(--txt-dim);}.es-v{font-size:15px;font-weight:bold;color:var(--txt);}
+        .em-data{background:rgba(0,0,0,.35);border:1px solid rgba(60,30,90,.3);border-radius:4px;padding:10px;
+            font-size:11px;color:var(--txt-dim);margin-bottom:14px;max-height:120px;overflow-y:auto;word-break:break-all;white-space:pre-wrap;}
+        .dlbl{font-size:10px;color:var(--arc-dim);margin-bottom:3px;}
+        .dval{color:var(--txt-dim);}.dval.cl{color:#8899dd;cursor:pointer;text-decoration:underline;}
+        .dval.cl:hover{color:#aabbff;}
+        .em-hp-bar-wrap{height:8px;background:rgba(0,0,0,.5);border-radius:3px;overflow:hidden;margin-bottom:14px;border:1px solid rgba(60,30,90,.4);}
+        .em-hp-bar{height:100%;background:linear-gradient(90deg,var(--hp),#88ee88);transition:width .4s,background .4s;}
+        .modal-btns{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;}
+        .mb{padding:8px 16px;border-radius:4px;border:none;font-family:inherit;font-weight:bold;font-size:12px;cursor:pointer;transition:all .15s;}
+        .mb-attack{background:#5a0e0e;color:#ffaa88;border:1px solid #cc3300;}.mb-attack:hover{background:#881414;box-shadow:0 0 10px rgba(200,50,0,.4);}
+        .mb-spell{background:#320d58;color:#cc88ff;border:1px solid #8833cc;}.mb-spell:hover{background:#4e1482;box-shadow:0 0 10px rgba(130,50,220,.4);}
+        .mb-negotiate{background:#0d2850;color:#88ccff;border:1px solid #2266cc;}.mb-negotiate:hover{background:#163c78;box-shadow:0 0 10px rgba(50,100,220,.4);}
+        .mb-inspect{background:#283810;color:#aadd88;border:1px solid #449922;}.mb-inspect:hover{background:#3c5218;box-shadow:0 0 10px rgba(80,180,50,.4);}
+        .mb-portal{background:#1c0838;color:#cc88ff;border:1px solid #7722cc;}.mb-portal:hover{background:#2e0e5c;box-shadow:0 0 10px rgba(130,50,220,.4);}
+        .mb-close{background:rgba(30,20,50,.8);color:var(--txt-dim);border:1px solid rgba(80,40,130,.5);}
+        /* WELCOME */
+        #welcomeScreen{
+            position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+            z-index:400;background:rgba(0,0,0,.92);text-align:center;padding:20px;
         }
-        #damageFlash {
-            position: fixed; inset: 0;
-            pointer-events: none;
-            background: rgba(180,60,0,0.5);
-            opacity: 0;
-            z-index: 6;
-            transition: opacity 0.15s;
-        }
-        #searchHud {
-            position: fixed; top: 0; left: 0; right: 0;
-            background: linear-gradient(180deg, var(--panel) 0%, rgba(8,4,4,0.7) 100%);
-            padding: 10px 16px;
-            display: flex; align-items: center; gap: 12px;
-            z-index: 300;
-            border-bottom: 1px solid rgba(204,34,0,0.3);
-        }
-        #brand {
-            font-size: 18px; font-weight: bold;
-            color: var(--blood);
-            animation: pulse-glow 2s infinite;
-            white-space: nowrap;
-            letter-spacing: 2px;
-        }
-        #searchInput {
-            flex: 1; max-width: 280px;
-            padding: 8px 12px;
-            background: rgba(0,0,0,0.6);
-            border: 1px solid var(--blood-dim);
-            border-radius: 4px;
-            color: var(--text);
-            font-family: inherit;
-            font-size: 14px;
-            outline: none;
-        }
-        #searchInput:focus { border-color: var(--blood); box-shadow: 0 0 8px rgba(204,34,0,0.4); }
-        #searchInput::placeholder { color: var(--text-dim); }
-        #qtySelect {
-            padding: 8px;
-            background: rgba(0,0,0,0.6);
-            border: 1px solid var(--blood-dim);
-            border-radius: 4px;
-            color: var(--text);
-            font-family: inherit;
-            cursor: pointer;
-        }
-        .hud-label {
-            display: flex; align-items: center; gap: 6px;
-            font-size: 12px; color: var(--text-dim);
-            cursor: pointer;
-        }
-        .hud-label input[type="checkbox"] {
-            accent-color: var(--blood);
-        }
-        .hud-btn {
-            padding: 8px 14px;
-            background: linear-gradient(180deg, var(--blood) 0%, var(--blood-dim) 100%);
-            border: none;
-            border-radius: 4px;
-            color: #fff;
-            font-family: inherit;
-            font-weight: bold;
-            cursor: pointer;
-            transition: all 0.2s;
-            white-space: nowrap;
-        }
-        .hud-btn:hover { background: linear-gradient(180deg, var(--blood-glow) 0%, var(--blood) 100%); box-shadow: 0 0 12px var(--blood); }
-        .hud-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-        .hud-btn-secondary {
-            background: rgba(0,0,0,0.5);
-            border: 1px solid var(--blood-dim);
-        }
-        .hud-btn-secondary:hover { background: rgba(50,10,10,0.7); }
-        #statsBar {
-            position: fixed; top: 52px; left: 16px;
-            background: var(--panel);
-            padding: 8px 14px;
-            border-radius: 4px;
-            display: flex; align-items: center; gap: 16px;
-            font-size: 13px;
-            z-index: 99;
-        }
-        .stat-item { display: flex; align-items: center; gap: 6px; }
-        .stat-icon { font-size: 16px; }
-        #hpBarContainer {
-            width: 100px; height: 14px;
-            background: #1a0e00;
-            border-radius: 3px;
-            overflow: hidden;
-            border: 1px solid var(--blood-dim);
-        }
-        #hpBar {
-            height: 100%;
-            background: linear-gradient(90deg, #00aa00, #44cc44);
-            transition: width 0.3s, background 0.3s;
-        }
-        #combatLog {
-            position: fixed; top: 100px; left: 16px;
-            width: 300px; max-height: 240px;
-            overflow-y: auto;
-            background: var(--panel);
-            border-radius: 4px;
-            padding: 8px;
-            font-size: 11px;
-            z-index: 98;
-            scrollbar-width: thin;
-            scrollbar-color: var(--blood-dim) transparent;
-        }
-        .log-entry {
-            padding: 4px 0;
-            border-bottom: 1px solid rgba(120,80,20,0.3);
-            animation: fadeIn 0.3s ease;
-        }
-        .log-entry:last-child { border-bottom: none; }
-        .log-time { color: var(--text-dim); margin-right: 6px; }
-        .log-damage { color: #ff7733; }
-        .log-kill { color: #ffcc00; }
-        .log-persuade { color: #88dd66; }
-        .log-info { color: #88aadd; }
-        #breadcrumbBar {
-            position: fixed; bottom: 16px; left: 16px;
-            display: flex; flex-wrap: wrap; gap: 6px;
-            max-width: 50%;
-            z-index: 98;
-        }
-        .breadcrumb {
-            padding: 4px 10px;
-            background: var(--panel);
-            border: 1px solid var(--blood-dim);
-            border-radius: 12px;
-            font-size: 11px;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-        .breadcrumb:hover { background: rgba(80,50,10,0.8); border-color: var(--blood); }
-        .breadcrumb.active { background: var(--blood-dim); color: #fff; }
-        #controlsHint {
-            position: fixed; bottom: 16px; right: 16px;
-            font-size: 10px;
-            color: var(--text-dim);
-            z-index: 98;
-            text-align: right;
-        }
-        #welcomeScreen {
-            position: fixed; inset: 0;
-            display: flex; flex-direction: column;
-            align-items: center; justify-content: center;
-            z-index: 150;
-            background: rgba(0,0,0,0.88);
-            text-align: center;
-            padding: 20px;
-            pointer-events: none;
-        }
-        #welcomeScreen.hidden { display: none; }
-        .welcome-title {
-            font-size: 48px;
-            color: var(--blood);
-            animation: pulse-glow 2s infinite, flicker 3s infinite;
-            margin-bottom: 20px;
-            letter-spacing: 4px;
-        }
-        .welcome-text {
-            font-size: 14px;
-            color: var(--text-dim);
-            max-width: 440px;
-            line-height: 1.8;
-        }
-        .welcome-hint {
-            margin-top: 30px;
-            font-size: 12px;
-            color: var(--blood-dim);
-            animation: pulse-glow 3s infinite;
-        }
-        #deathScreen {
-            position: fixed; inset: 0;
-            display: none; flex-direction: column;
-            align-items: center; justify-content: center;
-            z-index: 200;
-            background: rgba(0,0,0,0.95);
-            text-align: center;
-            padding: 20px;
-        }
-        #deathScreen.visible { display: flex; }
-        .death-title {
-            font-size: 36px;
-            color: var(--blood);
-            animation: flicker 0.2s infinite;
-            margin-bottom: 20px;
-        }
-        .death-subtitle {
-            font-size: 14px;
-            color: var(--text-dim);
-            margin-bottom: 30px;
-            font-style: italic;
-        }
-        .death-path {
-            font-size: 12px;
-            color: var(--text-dim);
-            margin-bottom: 20px;
-            max-width: 500px;
-        }
-        .death-stats {
-            font-size: 16px;
-            color: var(--text);
-            margin-bottom: 30px;
-        }
-        .modal-overlay {
-            position: fixed; inset: 0;
-            display: none; align-items: center; justify-content: center;
-            z-index: 180;
-            background: rgba(0,0,0,0.85);
-        }
-        .modal-overlay.visible { display: flex; }
-        .modal-box {
-            background: var(--panel-light);
-            border: 1px solid var(--blood-dim);
-            border-radius: 8px;
-            padding: 20px;
-            max-width: 500px;
-            width: 90%;
-            max-height: 80vh;
-            overflow-y: auto;
-        }
-        .modal-title {
-            font-size: 18px;
-            color: var(--blood);
-            margin-bottom: 16px;
-            text-align: center;
-        }
-        .modal-text {
-            font-size: 12px;
-            color: var(--text-dim);
-            line-height: 1.6;
-            margin-bottom: 16px;
-        }
-        .modal-input {
-            width: 100%;
-            padding: 10px;
-            background: rgba(0,0,0,0.5);
-            border: 1px solid var(--blood-dim);
-            border-radius: 4px;
-            color: var(--text);
-            font-family: inherit;
-            font-size: 13px;
-            margin-bottom: 12px;
-        }
-        .modal-input:focus { outline: none; border-color: var(--blood); }
-        .modal-textarea {
-            width: 100%;
-            min-height: 80px;
-            padding: 10px;
-            background: rgba(0,0,0,0.5);
-            border: 1px solid var(--blood-dim);
-            border-radius: 4px;
-            color: var(--text);
-            font-family: inherit;
-            font-size: 13px;
-            resize: vertical;
-            margin-bottom: 12px;
-        }
-        .modal-buttons {
-            display: flex; gap: 10px; justify-content: center;
-            flex-wrap: wrap;
-        }
-        .modal-img {
-            width: 100%;
-            border-radius: 4px;
-            margin-bottom: 12px;
-            border: 1px solid var(--blood-dim);
-        }
-        .modal-stats {
-            font-size: 11px;
-            color: var(--text-dim);
-            margin-bottom: 12px;
-            text-align: center;
-        }
-        #detailPanel {
-            position: fixed; top: 52px; right: 0;
-            width: 320px;
-            max-height: calc(100vh - 70px);
-            background: var(--panel);
-            border-left: 1px solid var(--blood-dim);
-            transform: translateX(100%);
-            transition: transform 0.3s;
-            z-index: 97;
-            overflow-y: auto;
-            padding: 16px;
-        }
-        #detailPanel.open { transform: translateX(0); }
-        .detail-close {
-            position: absolute; top: 8px; right: 8px;
-            background: none; border: none;
-            color: var(--text-dim);
-            font-size: 18px;
-            cursor: pointer;
-        }
-        .detail-close:hover { color: var(--blood); }
-        .detail-title {
-            font-size: 14px;
-            color: var(--blood);
-            margin-bottom: 12px;
-            padding-right: 24px;
-        }
-        .detail-type {
-            font-size: 10px;
-            color: var(--text-dim);
-            text-transform: uppercase;
-            margin-bottom: 8px;
-        }
-        .detail-section {
-            margin-bottom: 14px;
-            padding-bottom: 14px;
-            border-bottom: 1px solid rgba(120,80,20,0.3);
-        }
-        .detail-section:last-child { border-bottom: none; }
-        .detail-label {
-            font-size: 10px;
-            color: var(--text-dim);
-            margin-bottom: 4px;
-        }
-        .detail-value {
-            font-size: 12px;
-            color: var(--text);
-            word-break: break-all;
-        }
-        .detail-value.clickable {
-            color: #88aadd;
-            cursor: pointer;
-            text-decoration: underline;
-        }
-        .detail-value.clickable:hover { color: #aaccff; }
-        .detail-image {
-            width: 100%;
-            max-height: 150px;
-            object-fit: contain;
-            border-radius: 4px;
-            margin-bottom: 12px;
-            background: rgba(0,0,0,0.3);
-        }
-        .detail-message {
-            font-size: 11px;
-            background: rgba(0,0,0,0.3);
-            padding: 10px;
-            border-radius: 4px;
-            max-height: 120px;
-            overflow-y: auto;
-            white-space: pre-wrap;
-            word-break: break-word;
-        }
-        .thread-section {
-            margin-top: 12px;
-        }
-        .thread-title {
-            font-size: 11px;
-            color: var(--blood);
-            margin-bottom: 8px;
-        }
-        .thread-link {
-            display: block;
-            padding: 6px 8px;
-            margin-bottom: 4px;
-            background: rgba(0,0,0,0.3);
-            border-radius: 4px;
-            font-size: 11px;
-            color: #88aadd;
-            cursor: pointer;
-            transition: background 0.2s;
-        }
-        .thread-link:hover { background: rgba(80,50,10,0.5); }
-        #persuadeDialog .modal-box { max-width: 400px; }
-        .monster-name-display {
-            font-size: 16px;
-            color: var(--blood);
-            text-align: center;
-            margin-bottom: 8px;
-        }
+        #welcomeScreen.hidden{display:none;}
+        .w-rune{font-size:72px;line-height:1;color:var(--arc);margin-bottom:10px;
+            text-shadow:0 0 30px var(--arc),0 0 60px var(--arc-dim);animation:runeGlow 2s ease-in-out infinite;}
+        @keyframes runeGlow{0%,100%{text-shadow:0 0 30px var(--arc),0 0 60px var(--arc-dim);}50%{text-shadow:0 0 50px var(--arc-glow),0 0 90px var(--arc);}}
+        .w-title{font-size:42px;font-weight:bold;color:var(--gold);letter-spacing:6px;text-shadow:0 0 20px var(--gold-dim);margin-bottom:4px;}
+        .w-sub{font-size:13px;color:var(--txt-dim);letter-spacing:3px;margin-bottom:24px;}
+        .w-txt{max-width:480px;font-size:13px;color:var(--txt);line-height:1.9;margin-bottom:20px;}
+        .w-hint{font-size:11px;color:var(--arc-dim);margin-bottom:20px;}
+        .w-start{max-width:240px;}
+        /* DEATH */
+        #deathScreen{position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;
+            z-index:450;background:rgba(0,0,0,.96);text-align:center;padding:20px;}
+        #deathScreen.visible{display:flex;}
+        .d-rune{font-size:80px;color:#cc2200;text-shadow:0 0 30px #880000;animation:dFlicker .3s infinite;margin-bottom:14px;}
+        @keyframes dFlicker{0%,100%{opacity:1;}50%{opacity:.7;}}
+        .d-title{font-size:28px;font-weight:bold;color:#cc2200;letter-spacing:3px;margin-bottom:16px;}
+        .d-stats{font-size:14px;color:var(--txt-dim);margin-bottom:30px;line-height:2;}
+        /* FLASH */
+        #damageFlash{position:fixed;inset:0;background:rgba(180,30,0,.45);opacity:0;pointer-events:none;z-index:300;transition:opacity .12s;}
+        #xpFlash{position:fixed;inset:0;background:rgba(180,140,0,.22);opacity:0;pointer-events:none;z-index:300;transition:opacity .2s;}
+        #vignette{position:fixed;inset:0;background:radial-gradient(ellipse at center,transparent 45%,rgba(4,2,8,.7) 100%);pointer-events:none;z-index:1;}
+        /* TOOLTIP */
+        #tooltip{position:fixed;background:var(--panel);border:1px solid var(--arc-dim);border-radius:4px;
+            padding:6px 10px;font-size:11px;color:var(--txt);pointer-events:none;z-index:200;display:none;max-width:200px;}
+        /* SHAKE */
+        @keyframes shake{0%,100%{transform:none;}20%{transform:translate(-5px,-3px);}40%{transform:translate(5px,3px);}60%{transform:translate(-3px,5px);}80%{transform:translate(3px,-5px);}}
+        .shaking{animation:shake .4s ease;}
+        /* SCROLLBAR */
+        ::-webkit-scrollbar{width:4px;}::-webkit-scrollbar-track{background:transparent;}::-webkit-scrollbar-thumb{background:var(--arc-dim);border-radius:2px;}
+        @media(max-width:700px){#spellbookPanel,#charsheetPanel{display:none;}}
     </style>
 </head>
 <body>
-    <div id="vignette"></div>
-    <div id="damageFlash"></div>
 
-    <div id="searchHud">
-        <span id="brand">⚔ DUNGEON CRAWLER</span>
-        <input type="text" id="searchInput" placeholder="Name thy quarry...">
-        <select id="qtySelect">
-            <option value="5">5</option>
-            <option value="10" selected>10</option>
-            <option value="25">25</option>
-            <option value="50">50</option>
+<div id="vignette"></div>
+<div id="damageFlash"></div>
+<div id="xpFlash"></div>
+<div id="tooltip"></div>
+
+<!-- TOP BAR -->
+<div id="topBar">
+    <div id="brand">✦ RUNE CODEX</div>
+    <div class="tsep"></div>
+    <div class="tstat">LVL <strong id="tLvl">1</strong></div>
+    <div class="tdiv"></div>
+    <div class="tstat">⭐ <strong id="tXP">0</strong>/<strong id="tXPMax">300</strong></div>
+    <div class="tdiv"></div>
+    <div class="tstat">💀 <strong id="tKills">0</strong></div>
+    <div class="tdiv"></div>
+    <div class="tstat">✦ <strong id="tScore">0</strong></div>
+    <div class="tdiv"></div>
+    <div class="tstat">🗝 <strong id="tDepth">0</strong></div>
+    <div class="tdiv"></div>
+    <button class="hud-btn" id="spellbookToggle" title="Spell Tome">📖</button>
+    <button class="hud-btn" id="charsheetToggle" title="Character Sheet">⚔</button>
+</div>
+
+<!-- LEFT: SPELL TOME -->
+<div id="spellbookPanel" class="side-panel">
+    <div class="ptitle">📖 SPELL TOME</div>
+    <div class="psub">Write a rune and cast it to summon entities from the Blockchain Realm. Each word opens a new chamber.</div>
+    <input id="runeInput" type="text" placeholder="Inscribe thy rune..." autocomplete="off" spellcheck="false">
+    <div id="manaBadge">✦ Cantrip — free</div>
+    <div class="spell-opts">
+        <label class="chk-lbl"><input type="checkbox" id="mainnetCheck"> Mainnet</label>
+        <select id="qtySelect" class="rune-sel">
+            <option value="6">6 entities</option>
+            <option value="10" selected>10 entities</option>
+            <option value="16">16 entities</option>
         </select>
-        <label class="hud-label">
-            <input type="checkbox" id="mainnetCheck" checked>
-            <span>Mainnet</span>
-        </label>
-        <button class="hud-btn" id="searchBtn">⚔ DESCEND</button>
-        <button class="hud-btn hud-btn-secondary" id="captureBtn">📜 SCROLL</button>
-        <button class="hud-btn hud-btn-secondary" id="saveBtn">💾 SAVE</button>
-        <button class="hud-btn hud-btn-secondary" id="loadBtn">📂 LOAD</button>
     </div>
+    <button class="cast-btn hud-btn" id="castBtn">✦ CAST RUNE</button>
+    <div class="pdiv"></div>
+    <div class="psub">SPELL HISTORY</div>
+    <div id="spellHistList"></div>
+</div>
 
-    <div id="statsBar">
-        <div class="stat-item">
-            <span class="stat-icon">❤</span>
-            <div id="hpBarContainer"><div id="hpBar"></div></div>
-            <span id="hpText">100/100</span>
-        </div>
-        <div class="stat-item">
-            <span class="stat-icon">⚔</span>
-            <span id="killsText">0</span>
-        </div>
-        <div class="stat-item">
-            <span class="stat-icon">💰</span>
-            <span id="scoreText">0</span>
-        </div>
-        <div class="stat-item">
-            <span class="stat-icon">⬇</span>
-            <span id="depthText">0</span>
-        </div>
+<!-- RIGHT: CHARACTER SHEET -->
+<div id="charsheetPanel" class="side-panel">
+    <div class="ptitle">⚔ CHARACTER</div>
+    <div id="csName">ARCANIST</div>
+    <div id="csClass">SORCERER · LEVEL <span id="csLvl">1</span></div>
+    <div class="pdiv"></div>
+    <div class="sb-grp">
+        <div class="sb-lbl">❤ HP <strong id="csHpTxt">22/22</strong></div>
+        <div class="sb-track"><div id="csHpBar" class="sb-bar hp-bar" style="width:100%"></div></div>
     </div>
+    <div class="sb-grp">
+        <div class="sb-lbl">✦ MP <strong id="csMpTxt">18/18</strong></div>
+        <div class="sb-track"><div id="csMpBar" class="sb-bar mp-bar" style="width:100%"></div></div>
+    </div>
+    <div class="sb-grp">
+        <div class="sb-lbl">⭐ XP <strong id="csXpTxt">0/300</strong></div>
+        <div class="sb-track"><div id="csXpBar" class="sb-bar xp-bar" style="width:0%"></div></div>
+    </div>
+    <div class="pdiv"></div>
+    <div class="ab-grid" id="abilityGrid"></div>
+    <div class="pdiv"></div>
+    <div class="cs-row"><span>Spell Attack</span><strong id="csSpAtk">+5</strong></div>
+    <div class="cs-row"><span>Spell Save DC</span><strong id="csSpDC">13</strong></div>
+    <div class="cs-row"><span>Armor Class</span><strong id="csAC">11</strong></div>
+    <div class="cs-row"><span>Proficiency</span><strong id="csProf">+2</strong></div>
+    <div class="pdiv"></div>
+    <div class="psub">INVENTORY (<span id="invCount">0</span>)</div>
+    <div id="inventoryList"></div>
+</div>
 
+<!-- BOTTOM HUD -->
+<div id="bottomHud">
     <div id="combatLog"></div>
-    <div id="breadcrumbBar"></div>
-    <div id="controlsHint">drag·zoom·[click]=attack·[P]=parley·[F]=flee·[X]=save</div>
-
-    <div id="welcomeScreen">
-        <div class="welcome-title">⚔ DUNGEON CRAWLER</div>
-        <div class="welcome-text">
-            A dungeon of blockchain relics awaits.<br><br>
-            Creatures guard every discovery.<br>
-            Name thy quarry to descend. Fall to rise again.<br><br>
-            Defeat guardians to claim treasures.<br>
-            Parley with the right words, or flee at a cost.
-        </div>
-        <div class="welcome-hint">[ name thy quarry above to descend ]</div>
+    <div id="actionBar">
+        <button class="act-btn" id="btnD20">🎲 D20</button>
+        <button class="act-btn" id="btnD6">🎲 D6</button>
+        <button class="act-btn" id="btnRest" title="Short rest: recover 1d6+CON HP, costs 1 turn">🕯 REST</button>
+        <div style="flex:1"></div>
+        <button class="act-btn" id="btnCapture">📜 SCROLL</button>
+        <button class="act-btn" id="btnShare">🔗 SHARE</button>
     </div>
+</div>
 
-    <div id="deathScreen">
-        <div class="death-title">☠ YOU HAVE FALLEN IN THE DUNGEON</div>
-        <div class="death-subtitle">Your quest ends in shadow...</div>
-        <div class="death-path" id="deathPath"></div>
-        <div class="death-stats" id="deathStats"></div>
-        <button class="hud-btn" id="restartBtn">RISE AGAIN</button>
+<!-- DICE MODAL -->
+<div id="diceModal" class="modal-overlay">
+    <div id="diceContainer">
+        <div id="diceLabel">ROLLING D20</div>
+        <canvas id="diceCanvas" width="180" height="180"></canvas>
+        <div id="diceResult">—</div>
+        <div id="diceMod"></div>
     </div>
+</div>
 
-    <div id="shareModal" class="modal-overlay">
-        <div class="modal-box">
-            <div class="modal-title">📜 QUEST CAPTURED</div>
-            <img id="shareImage" class="modal-img" alt="Screenshot">
-            <div class="modal-stats" id="shareStats"></div>
-            <div class="modal-text" id="sharePath"></div>
-            <div class="modal-text">Shareable URL:</div>
-            <input type="text" class="modal-input" id="shareUrl" readonly>
-            <div class="modal-buttons">
-                <button class="hud-btn" id="downloadScreenshot">Download Screenshot</button>
-                <button class="hud-btn hud-btn-secondary" id="copyUrl">Copy URL</button>
-                <button class="hud-btn hud-btn-secondary" id="closeShare">Close</button>
-            </div>
-        </div>
+<!-- ENTITY MODAL -->
+<div id="entityModal" class="modal-overlay">
+    <div class="modal-box">
+        <button class="mc" id="closeEntityModal">✕</button>
+        <div id="emTitle" class="em-title"></div>
+        <div id="emBadge"></div>
+        <div id="emHpWrap" class="em-hp-bar-wrap" style="display:none"><div id="emHpBar" class="em-hp-bar" style="width:100%"></div></div>
+        <div id="emStats" class="em-stats"></div>
+        <div id="emData" class="em-data"></div>
+        <div id="emActions" class="modal-btns"></div>
     </div>
+</div>
 
-    <div id="saveModal" class="modal-overlay">
-        <div class="modal-box">
-            <div class="modal-title">💾 SAVE YOUR QUEST</div>
-            <div class="modal-text">
-                Your quest progress will be saved as a JSON file.<br><br>
-                Attach this file to a Sup!? message to preserve it on the blockchain via IPFS.<br><br>
-                Once posted, you'll receive an IPFS hash to restore your quest.
-            </div>
-            <div class="modal-text">To address for Sup!? message:</div>
-            <input type="text" class="modal-input" id="saveAddress" readonly placeholder="Looking up address...">
-            <div class="modal-buttons">
-                <button class="hud-btn" id="downloadSave">Download Save File</button>
-                <button class="hud-btn hud-btn-secondary" id="closeSave">Close</button>
-            </div>
-        </div>
+<!-- WELCOME -->
+<div id="welcomeScreen">
+    <div class="w-rune">✦</div>
+    <div class="w-title">RUNE CODEX</div>
+    <div class="w-sub">BLOCKCHAIN SPELLBOOK</div>
+    <div class="w-txt">
+        You are an <strong>Arcanist</strong> — a sorcerer who reads the Blockchain as a living spell tome.<br><br>
+        Write <em>runes</em> into the Spell Tome to summon entities from the digital ether.<br>
+        <strong>Fight</strong> monsters. <strong>Collect</strong> artifacts. <strong>Parley</strong> with spirits.<br>
+        <strong>Traverse</strong> portals into deeper chambers.<br><br>
+        Every word you write opens a new room. Share your chamber link to play with friends.<br>
+        How deep can you delve into the infinite dungeon?
     </div>
+    <div class="w-hint">→ Open the Spell Tome (📖) and inscribe your first rune ←</div>
+    <button class="cast-btn hud-btn w-start" id="welcomeStartBtn">✦ OPEN THE TOME</button>
+</div>
 
-    <div id="loadModal" class="modal-overlay">
-        <div class="modal-box">
-            <div class="modal-title">📂 LOAD SAVED QUEST</div>
-            <div class="modal-text">
-                Enter an IPFS hash from a previously saved quest attachment.
-            </div>
-            <input type="text" class="modal-input" id="loadHash" placeholder="IPFS hash (e.g., Qm...)">
-            <div class="modal-buttons">
-                <button class="hud-btn" id="loadFromIpfs">Load from IPFS</button>
-                <button class="hud-btn hud-btn-secondary" id="closeLoad">Close</button>
-            </div>
-        </div>
-    </div>
+<!-- DEATH -->
+<div id="deathScreen">
+    <div class="d-rune">☠</div>
+    <div class="d-title">YOUR FLAME IS EXTINGUISHED</div>
+    <div id="deathStatsTxt" class="d-stats"></div>
+    <button class="cast-btn hud-btn w-start" id="restartBtn">✦ REINCARNATE</button>
+</div>
 
-    <div id="persuadeDialog" class="modal-overlay">
-        <div class="modal-box">
-            <div class="monster-name-display" id="persuadeMonsterName"></div>
-            <div class="modal-text" style="text-align:center;">bars your path...<br><br>What words do you speak?</div>
-            <textarea class="modal-textarea" id="persuadeText" placeholder="Speak your words, adventurer..."></textarea>
-            <div class="modal-buttons">
-                <button class="hud-btn" id="persuadeSpeak">SPEAK</button>
-                <button class="hud-btn hud-btn-secondary" id="persuadeCancel">CANCEL</button>
-            </div>
-        </div>
-    </div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+<script>
+(function () {
+    'use strict';
 
-    <div id="detailPanel">
-        <button class="detail-close" id="closeDetail">&times;</button>
-        <div id="detailContent"></div>
-    </div>
+    var BASE = 'https://p2fk.io';
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r134/examples/js/controls/OrbitControls.js"></script>
-    <script>
-        (function() {
-            'use strict';
+    /* ── UTILS ── */
+    function esc(s) {
+        if (s == null) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    }
+    function strHash(str) {
+        var h = 0x811c9dc5;
+        for (var i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+        return h >>> 0;
+    }
+    function seededRng(seed) {
+        var s = seed >>> 0;
+        return function () { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; };
+    }
+    function roll(n) { return Math.floor(Math.random() * n) + 1; }
+    function statMod(v) { return Math.floor((v - 10) / 2); }
+    function modStr(v) { var m = statMod(v); return (m >= 0 ? '+' : '') + m; }
+    function ts() {
+        var d = new Date();
+        return [d.getHours(), d.getMinutes(), d.getSeconds()].map(function (x) { return String(x).padStart(2, '0'); }).join(':');
+    }
+    function trunc(s, n) { return s && s.length > n ? s.slice(0, n) + '…' : (s || ''); }
+    function calcManaCost(query) { return !query || query.length < 4 ? 0 : Math.min(3, Math.floor(query.length / 8) + 1); }
 
-            var BASE = 'https://p2fk.io';
+    /* ── GAME STATE ── */
+    var P_DEFAULTS = {
+        hp: 22, maxHp: 22, mp: 18, maxMp: 18,
+        str: 8, dex: 12, con: 10, int: 17, wis: 14, cha: 13,
+        prof: 2, level: 1, xp: 0, xpNext: 300,
+        score: 0, kills: 0, depth: 0, alive: true
+    };
+    var P = Object.assign({ inventory: [] }, P_DEFAULTS);
+    var spellHistory = [];
+    var currentEntities = []; // { entity, group }
+    var isCasting = false;
 
-            // Escape HTML for XSS prevention
-            function esc(str) {
-                if (str == null) return '';
-                return String(str)
-                    .replace(/&/g, '&amp;')
-                    .replace(/</g, '&lt;')
-                    .replace(/>/g, '&gt;')
-                    .replace(/"/g, '&quot;')
-                    .replace(/'/g, '&#39;');
+    /* ── D&D TABLES ── */
+    var MONSTERS = [
+        { n: 'SHADOW IMP',     hp: 10, ac: 12, atk: 3,  xp: 30,  c: 0xff4400 },
+        { n: 'STONE GOLEM',    hp: 28, ac: 16, atk: 7,  xp: 80,  c: 0x888877 },
+        { n: 'VOID WRAITH',    hp: 16, ac: 13, atk: 5,  xp: 55,  c: 0x8888ff },
+        { n: 'HELLHOUND',      hp: 22, ac: 14, atk: 8,  xp: 70,  c: 0xcc2200 },
+        { n: 'LICH MAGE',      hp: 14, ac: 11, atk: 9,  xp: 100, c: 0xffcc00 },
+        { n: 'BONE KNIGHT',    hp: 24, ac: 17, atk: 6,  xp: 75,  c: 0xccccaa },
+        { n: 'DEMON SPAWN',    hp: 18, ac: 13, atk: 7,  xp: 65,  c: 0xff3300 },
+        { n: 'ARCANE SPIDER',  hp: 12, ac: 14, atk: 4,  xp: 45,  c: 0xaa44ff },
+        { n: 'SHADOW WARDEN',  hp: 30, ac: 15, atk: 9,  xp: 110, c: 0x444488 },
+        { n: 'VOID COLOSSUS',  hp: 55, ac: 18, atk: 13, xp: 280, c: 0x880022 }
+    ];
+    var NPCS = [
+        { n: 'WANDERING SAGE',  c: 0x44aaff, xp: 40,  role: 'sage' },
+        { n: 'ROGUE MERCHANT',  c: 0x44ff88, xp: 35,  role: 'merchant' },
+        { n: 'LOST PALADIN',    c: 0xffaa00, xp: 50,  role: 'ally' },
+        { n: 'PHANTOM BARD',    c: 0xff88ff, xp: 30,  role: 'bard' },
+        { n: 'CRYPTIC ORACLE',  c: 0xaaffcc, xp: 60,  role: 'oracle' },
+        { n: 'SPECTRAL KNIGHT', c: 0xddddff, xp: 55,  role: 'knight' }
+    ];
+    var PREFIXES = ['ANCIENT', 'FORSAKEN', 'CURSED', 'INFERNAL', 'SHADOWED', 'CORRUPTED', 'ABYSSAL', 'WRETCHED'];
+    var AQ = ['CRUDE', 'COMMON', 'FINE', 'RARE', 'LEGENDARY'];
+    var AT = ['RUNE SHARD', 'SPELL TOME', 'SIGIL STONE', 'CRYSTAL ORB', 'CODEX FRAGMENT', 'ETHEREAL RELIC', 'VOID SHARD', 'ARCANE SIGIL'];
+
+    /* ── ENTITY GENERATION ── */
+    function makeEntity(apiItem, apiType, depth) {
+        var raw = apiItem.address || apiItem.name || apiItem.message || apiItem.hash || JSON.stringify(apiItem).slice(0, 60) || '';
+        var hash = strHash(raw);
+        var rng = seededRng(hash);
+        var kind = apiType === 'profile' ? (rng() < 0.55 ? 'monster' : 'npc')
+                 : apiType === 'object'  ? 'artifact'
+                 : (rng() < 0.7 ? 'portal' : 'artifact');
+        var lvl = Math.max(1, depth + Math.floor(rng() * 3));
+
+        if (kind === 'monster') {
+            var t = MONSTERS[Math.floor(rng() * MONSTERS.length)];
+            var pfx = PREFIXES[Math.floor(rng() * PREFIXES.length)];
+            return { kind: 'monster', name: pfx + ' ' + t.n,
+                hp: t.hp + lvl * 3, maxHp: t.hp + lvl * 3,
+                ac: t.ac + Math.floor(lvl / 2), atk: t.atk + Math.floor(lvl * 0.8),
+                xp: t.xp + lvl * 20, color: t.c, data: apiItem, apiType,
+                defeated: false, id: hash };
+        }
+        if (kind === 'npc') {
+            var nt = NPCS[Math.floor(rng() * NPCS.length)];
+            return { kind: 'npc', name: nt.n, dc: 8 + Math.floor(lvl / 2),
+                xp: nt.xp + lvl * 12, color: nt.c, role: nt.role,
+                data: apiItem, apiType, talked: false, id: hash };
+        }
+        if (kind === 'artifact') {
+            var qi = Math.min(4, Math.floor(rng() * 5 * (1 + depth * 0.12)));
+            return { kind: 'artifact', name: AQ[qi] + ' ' + AT[Math.floor(rng() * AT.length)],
+                dc: 6 + lvl, xp: 60 + lvl * 25, quality: qi,
+                color: [0xffcc44, 0xff8844, 0x88ff88, 0xaa44ff, 0xffffff][Math.floor(rng() * 5)],
+                data: apiItem, apiType, collected: false, id: hash };
+        }
+        return { kind: 'portal', name: 'RUNE PORTAL', color: 0xaa44ff,
+            data: apiItem, apiType, traversed: false, id: hash };
+    }
+
+    /* ── THREE.JS SCENE ── */
+    var scene, camera, renderer, clock;
+    var runicRing, runicRing2;
+    var torchLights = [], torchFlames = [];
+    var raycaster = new THREE.Raycaster();
+    var mouse = new THREE.Vector2();
+    var camAngle = 0;
+
+    function initThree() {
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x04030a);
+        scene.fog = new THREE.FogExp2(0x06040c, 0.024);
+
+        camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 300);
+        camera.position.set(0, 13, 22);
+        camera.lookAt(0, 1.5, 0);
+
+        renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        document.body.insertBefore(renderer.domElement, document.body.firstChild);
+
+        clock = new THREE.Clock();
+        buildChamber();
+        window.addEventListener('resize', onResize);
+        renderer.domElement.addEventListener('click', onCanvasClick);
+        renderer.domElement.addEventListener('mousemove', onCanvasHover);
+        animate();
+    }
+
+    function buildChamber() {
+        /* Floor */
+        var floor = new THREE.Mesh(new THREE.PlaneGeometry(44, 44),
+            new THREE.MeshLambertMaterial({ color: 0x1e1810 }));
+        floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
+
+        /* Ceiling */
+        var ceil = new THREE.Mesh(new THREE.PlaneGeometry(44, 44),
+            new THREE.MeshLambertMaterial({ color: 0x100d08 }));
+        ceil.rotation.x = Math.PI / 2; ceil.position.y = 9.5; scene.add(ceil);
+
+        /* Walls */
+        var wm = new THREE.MeshLambertMaterial({ color: 0x1a1610 });
+        [[-22, 4.75, 0, 1, 9.5, 44], [22, 4.75, 0, 1, 9.5, 44],
+         [0, 4.75, -22, 44, 9.5, 1], [0, 4.75, 22, 44, 9.5, 1]].forEach(function (w) {
+            var m = new THREE.Mesh(new THREE.BoxGeometry(w[3], w[4], w[5]), wm);
+            m.position.set(w[0], w[1], w[2]); m.receiveShadow = true; scene.add(m);
+        });
+
+        /* Floor grid */
+        var gm = new THREE.LineBasicMaterial({ color: 0x201a10, transparent: true, opacity: 0.6 });
+        for (var x = -22; x <= 22; x += 4) {
+            scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3(x, 0.01, -22), new THREE.Vector3(x, 0.01, 22)]), gm));
+        }
+        for (var z = -22; z <= 22; z += 4) {
+            scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3(-22, 0.01, z), new THREE.Vector3(22, 0.01, z)]), gm));
+        }
+
+        /* Runic circle */
+        var rm1 = new THREE.MeshBasicMaterial({ color: 0xcc8800, side: THREE.DoubleSide });
+        runicRing = new THREE.Mesh(new THREE.RingGeometry(5.6, 6.0, 64), rm1);
+        runicRing.rotation.x = -Math.PI / 2; runicRing.position.y = 0.03; scene.add(runicRing);
+
+        var rm2 = new THREE.MeshBasicMaterial({ color: 0x774400, side: THREE.DoubleSide });
+        runicRing2 = new THREE.Mesh(new THREE.RingGeometry(3.3, 3.6, 64), rm2);
+        runicRing2.rotation.x = -Math.PI / 2; runicRing2.position.y = 0.03; scene.add(runicRing2);
+
+        /* Runic spokes */
+        var spoke = new THREE.LineBasicMaterial({ color: 0x552200, transparent: true, opacity: 0.7 });
+        for (var i = 0; i < 8; i++) {
+            var a = (i / 8) * Math.PI * 2;
+            scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3(Math.cos(a) * 1.1, 0.04, Math.sin(a) * 1.1),
+                new THREE.Vector3(Math.cos(a) * 5.5, 0.04, Math.sin(a) * 5.5)]), spoke));
+        }
+
+        /* Centre glyph */
+        scene.add(Object.assign(new THREE.Mesh(new THREE.CircleGeometry(1.0, 32),
+            new THREE.MeshBasicMaterial({ color: 0x440e00, side: THREE.DoubleSide })),
+            { rotation: new THREE.Euler(-Math.PI / 2, 0, 0), position: new THREE.Vector3(0, 0.02, 0) }));
+
+        /* Pillars + torches */
+        var pm = new THREE.MeshLambertMaterial({ color: 0x2a2218 });
+        [[13, 13], [13, -13], [-13, 13], [-13, -13]].forEach(function (pos, i) {
+            var p = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.65, 9.5, 8), pm);
+            p.position.set(pos[0], 4.75, pos[1]); p.castShadow = true; scene.add(p);
+
+            var bk = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.2, 0.6),
+                new THREE.MeshLambertMaterial({ color: 0x443322 }));
+            bk.position.set(pos[0] - 0.5 * Math.sign(pos[0]), 7.4, pos[1] - 0.5 * Math.sign(pos[1])); scene.add(bk);
+
+            var fm = new THREE.MeshBasicMaterial({ color: 0xff9900 });
+            var fl = new THREE.Mesh(new THREE.SphereGeometry(0.25, 8, 8), fm);
+            fl.position.set(pos[0] - 0.5 * Math.sign(pos[0]), 7.75, pos[1] - 0.5 * Math.sign(pos[1]));
+            scene.add(fl); torchFlames.push(fl);
+
+            var tl = new THREE.PointLight(0xff8800, 1.4, 30);
+            tl.position.set(pos[0] - 0.5 * Math.sign(pos[0]), 7.5, pos[1] - 0.5 * Math.sign(pos[1]));
+            scene.add(tl); torchLights.push(tl);
+        });
+
+        /* Lighting */
+        scene.add(new THREE.AmbientLight(0x15102a, 0.9));
+        var fill = new THREE.DirectionalLight(0x1a1030, 0.35);
+        fill.position.set(0, 20, 0); scene.add(fill);
+    }
+
+    /* ── ENTITY MESHES ── */
+    function createEntityMesh(entity, idx, total) {
+        var group = new THREE.Group();
+        var angle = (idx / Math.max(1, total)) * Math.PI * 2 - Math.PI / 2;
+        var radius = 4.5 + (idx % 3) * 1.2;
+        group.position.set(Math.cos(angle) * radius, 0, Math.sin(angle) * radius);
+        group.userData.entity = entity;
+        group.userData.bobOffset = (idx / Math.max(1, total)) * Math.PI * 2;
+
+        var col = entity.color || 0xffffff;
+        var mat = function (c, ei) {
+            return new THREE.MeshLambertMaterial({ color: c, emissive: c, emissiveIntensity: ei || 0.3 });
+        };
+
+        if (entity.kind === 'monster') {
+            var mm = mat(col, 0.35);
+            [-0.22, 0.22].forEach(function (ox) {
+                var leg = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.65, 0.22), mm);
+                leg.position.set(ox, 0.33, 0); group.add(leg);
+            });
+            group.add(Object.assign(new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.9, 0.46), mm), { position: new THREE.Vector3(0, 1.12, 0) }));
+            [-0.52, 0.52].forEach(function (ox) {
+                var arm = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.65, 0.22), mm);
+                arm.position.set(ox, 1.1, 0); group.add(arm);
+            });
+            group.add(Object.assign(new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.54, 0.54), mm), { position: new THREE.Vector3(0, 1.82, 0) }));
+            /* HP bar */
+            var hbm = new THREE.MeshBasicMaterial({ color: 0x44cc44, side: THREE.DoubleSide });
+            var hbar = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.1), hbm);
+            hbar.position.set(0, 2.5, 0);
+            group.add(hbar); group.userData.hpBar = hbar;
+            group.add(new THREE.PointLight(col, 0.5, 3.5));
+
+        } else if (entity.kind === 'npc') {
+            var nm = mat(col, 0.2);
+            group.add(Object.assign(new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.45, 1.4, 10), nm), { position: new THREE.Vector3(0, 0.7, 0) }));
+            group.add(Object.assign(new THREE.Mesh(new THREE.SphereGeometry(0.32, 12, 12), nm), { position: new THREE.Vector3(0, 1.72, 0) }));
+            var staff = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 2.2, 6),
+                new THREE.MeshLambertMaterial({ color: 0x886633 }));
+            staff.position.set(0.5, 1.1, 0); group.add(staff);
+            group.add(Object.assign(new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 10), new THREE.MeshBasicMaterial({ color: col })), { position: new THREE.Vector3(0.5, 2.22, 0) }));
+            group.add(new THREE.PointLight(col, 0.4, 3.5));
+
+        } else if (entity.kind === 'artifact') {
+            group.add(Object.assign(new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.65, 0.35, 10),
+                new THREE.MeshLambertMaterial({ color: 0x332a1e })), { position: new THREE.Vector3(0, 0.18, 0) }));
+            var gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.65), mat(col, 0.65));
+            gem.position.y = 1.22; group.add(gem); group.userData.gem = gem;
+            group.add(Object.assign(new THREE.PointLight(col, entity.quality >= 3 ? 1.0 : 0.55, entity.quality >= 3 ? 7 : 4), { position: new THREE.Vector3(0, 1.22, 0) }));
+
+        } else { /* portal */
+            group.add(Object.assign(new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.65, 0.3, 6),
+                new THREE.MeshLambertMaterial({ color: 0x220a40 })), { position: new THREE.Vector3(0, 0.15, 0) }));
+            var torus = new THREE.Mesh(new THREE.TorusGeometry(1.1, 0.14, 10, 40),
+                new THREE.MeshBasicMaterial({ color: col }));
+            torus.position.y = 1.4; group.add(torus); group.userData.torus = torus;
+            var disk = new THREE.Mesh(new THREE.CircleGeometry(0.9, 32),
+                new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.28, side: THREE.DoubleSide }));
+            disk.position.y = 1.4; group.add(disk); group.userData.disk = disk;
+            group.add(Object.assign(new THREE.PointLight(col, 0.9, 6), { position: new THREE.Vector3(0, 1.4, 0) }));
+        }
+
+        scene.add(group);
+        return group;
+    }
+
+    function syncHpBar(entity) {
+        var rec = currentEntities.find(function (r) { return r.entity.id === entity.id; });
+        if (!rec || !rec.group.userData.hpBar) return;
+        var pct = entity.hp / entity.maxHp;
+        rec.group.userData.hpBar.scale.x = Math.max(0, pct);
+        rec.group.userData.hpBar.material.color.setHex(pct > 0.5 ? 0x44cc44 : pct > 0.25 ? 0xccaa00 : 0xcc2200);
+    }
+
+    function removeEntityMesh(entity) {
+        var i = currentEntities.findIndex(function (r) { return r.entity.id === entity.id; });
+        if (i < 0) return;
+        scene.remove(currentEntities[i].group);
+        currentEntities.splice(i, 1);
+    }
+
+    function clearEntities() {
+        currentEntities.forEach(function (r) { scene.remove(r.group); });
+        currentEntities = [];
+    }
+
+    /* ── ANIMATION LOOP ── */
+    function animate() {
+        requestAnimationFrame(animate);
+        var t = clock.getElapsedTime();
+
+        torchLights.forEach(function (tl, i) {
+            var f = 0.85 + 0.15 * Math.sin(t * 3.7 + i * 1.3) * Math.sin(t * 7.1 + i * 2.1);
+            tl.intensity = 1.4 * f;
+        });
+        torchFlames.forEach(function (fl, i) {
+            fl.scale.setScalar(0.8 + 0.22 * Math.sin(t * 8.5 + i * 2.4));
+        });
+
+        if (runicRing) runicRing.rotation.z = t * 0.07;
+        if (runicRing2) runicRing2.rotation.z = -t * 0.13;
+
+        currentEntities.forEach(function (rec) {
+            var g = rec.group, e = rec.entity;
+            g.position.y = 0.1 * Math.sin(t * 1.4 + g.userData.bobOffset);
+            if (e.kind === 'monster' || e.kind === 'npc') g.rotation.y = 0.18 * Math.sin(t * 0.5 + g.userData.bobOffset);
+            if (e.kind === 'artifact' && g.userData.gem) { g.userData.gem.rotation.y = t * 1.2; g.userData.gem.rotation.x = t * 0.7; }
+            if (e.kind === 'portal') {
+                if (g.userData.torus) g.userData.torus.rotation.z = t * 1.5;
+                if (g.userData.disk) { g.userData.disk.rotation.z = -t * 0.9; g.userData.disk.material.opacity = 0.15 + 0.14 * Math.sin(t * 2 + g.userData.bobOffset); }
             }
+        });
 
-            // Deterministic hashing
-            function strHash(str) {
-                var h = 0x811c9dc5;
-                for (var i = 0; i < str.length; i++) {
-                    h ^= str.charCodeAt(i);
-                    h = Math.imul(h, 0x01000193);
+        /* Gentle camera orbit */
+        camAngle += 0.00028;
+        camera.position.x = Math.sin(camAngle) * 22;
+        camera.position.z = Math.cos(camAngle) * 22;
+        camera.position.y = 13 + Math.sin(t * 0.3) * 0.7;
+        camera.lookAt(0, 1.5, 0);
+
+        renderer.render(scene, camera);
+    }
+
+    /* ── MOUSE ── */
+    function getHit(e) {
+        var rect = renderer.domElement.getBoundingClientRect();
+        mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+        raycaster.setFromCamera(mouse, camera);
+        var meshes = [];
+        currentEntities.forEach(function (r) { r.group.traverse(function (c) { if (c.isMesh) meshes.push(c); }); });
+        var hits = raycaster.intersectObjects(meshes);
+        if (!hits.length) return null;
+        var obj = hits[0].object;
+        while (obj && !obj.userData.entity) obj = obj.parent;
+        return obj && obj.userData.entity ? obj.userData.entity : null;
+    }
+
+    var tt = document.getElementById('tooltip');
+    function onCanvasHover(e) {
+        var en = getHit(e);
+        var done = en && (en.defeated || en.collected || en.traversed);
+        if (en && !done) {
+            var kIcon = en.kind === 'monster' ? '💀' : en.kind === 'npc' ? '👤' : en.kind === 'artifact' ? '✦' : '🌀';
+            tt.innerHTML = kIcon + ' <strong>' + esc(en.name) + '</strong><br>' +
+                (en.kind === 'monster' ? 'HP ' + en.hp + '/' + en.maxHp + ' · AC ' + en.ac : en.kind === 'artifact' ? 'DC ' + en.dc : en.kind === 'npc' ? en.role.toUpperCase() : 'PORTAL');
+            tt.style.display = 'block';
+            tt.style.left = (e.clientX + 14) + 'px';
+            tt.style.top = (e.clientY - 10) + 'px';
+            renderer.domElement.style.cursor = 'pointer';
+        } else {
+            tt.style.display = 'none';
+            renderer.domElement.style.cursor = 'default';
+        }
+    }
+
+    function onCanvasClick(e) {
+        var en = getHit(e);
+        if (!en || en.defeated || en.collected || en.traversed) return;
+        openEntityModal(en);
+    }
+
+    /* ── DICE ── */
+    var diceResolve = null;
+    var diceInterval = null;
+
+    function rollDice(sides, label) {
+        return new Promise(function (resolve) {
+            diceResolve = resolve;
+            document.getElementById('diceLabel').textContent = label || ('ROLLING D' + sides);
+            document.getElementById('diceResult').textContent = '—';
+            document.getElementById('diceMod').textContent = '';
+            document.getElementById('diceModal').classList.add('visible');
+
+            var frames = 0, maxFrames = 28;
+            var final = roll(sides);
+            if (diceInterval) clearInterval(diceInterval);
+            diceInterval = setInterval(function () {
+                var show = frames < maxFrames ? (Math.floor(Math.random() * sides) + 1) : final;
+                drawDiceFace(show, sides);
+                frames++;
+                if (frames > maxFrames + 6) {
+                    clearInterval(diceInterval); diceInterval = null;
+                    document.getElementById('diceResult').textContent = final;
+                    setTimeout(function () {
+                        document.getElementById('diceModal').classList.remove('visible');
+                        if (diceResolve) { diceResolve(final); diceResolve = null; }
+                    }, 700);
                 }
-                return h >>> 0;
-            }
-
-            function seededRng(seed) {
-                var s = seed >>> 0;
-                return function() {
-                    s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
-                    return s / 4294967296;
-                };
-            }
-
-            // Monster type definitions
-            var MTYPES = [
-                { name:'IMP',        baseHp:60,  atk:8,  spd:0.06, aggro:18, range:4.5, clr:0xff4400, emv:0x661100, weakness:['light','silver','holy','bless'] },
-                { name:'STONE TROLL',baseHp:130, atk:22, spd:0.02, aggro:12, range:5.5, clr:0x556655, emv:0x223322, weakness:['break','shatter','earth','hammer'] },
-                { name:'WRAITH',     baseHp:45,  atk:13, spd:0.05, aggro:20, range:6.0, clr:0x8899ff, emv:0x001166, weakness:['anchor','bind','banish','name'] },
-                { name:'HELLSPAWN', baseHp:85,  atk:18, spd:0.07, aggro:16, range:5.0, clr:0x220000, emv:0xcc1100, weakness:['light','holy','purge','banish'] },
-                { name:'ARCHMAGE',  baseHp:35,  atk:0,  spd:0.01, aggro:0,  range:0,   clr:0xffcc00, emv:0x664400, weakness:['*'] },
-                { name:'DEMON LORD',baseHp:220, atk:28, spd:0.03, aggro:28, range:7.0, clr:0x880000, emv:0x440000, weakness:['destroy','banish','holy','rune'] }
-            ];
-            var MPREFIXES = ['INFERNAL','CURSED','ANCIENT','FORSAKEN','DARK','ROTTEN','UNDEAD','WRETCHED','HELLBORN','FALLEN','TWISTED','ACCURSED'];
-
-            // Tunable combat constants
-            var ATTACK_COOLDOWN_MS = 700;
-            var MIN_PERSUADE_TEXT_LENGTH = 25;
-            var PERSUADE_FALLBACK_CHANCE = 0.45;
-            var SCREENSHOT_QUALITY = 0.88;
-            var SAVE_KEYWORD = 'DungeonCrawlerSave';
-
-            // Game state
-            var game = {
-                hp: 100,
-                maxHp: 100,
-                score: 0,
-                kills: 0,
-                depth: 0,
-                alive: true
-            };
-
-            var searchHistory = [];
-            var monsterDefs = new Map();
-            var monsterKills = new Map();
-            var monsterPersuaded = new Map();
-
-            // Three.js globals
-            var scene, camera, renderer, controls, clock;
-            var nexus, starField, nebula;
-            var currentArtifacts = [];
-            var monsterMeshes = [];
-            var connectionLines = [];
-            var selectionRing = null;
-            var selectedArtifact = null;
-            var targetMonster = null;
-
-            var raycaster = new THREE.Raycaster();
-            var mouse = new THREE.Vector2();
-
-            var cameraTarget = null;
-            var cameraLerping = false;
-
-            var attackCooldown = 0;
-            var lastAttackTime = 0;
-
-            // Audio context
-            var _ac = null;
-            function ac() {
-                if (!_ac) {
-                    try {
-                        _ac = new (window.AudioContext || window.webkitAudioContext)();
-                    } catch (e) {
-                        console.warn('Web Audio not available');
-                    }
-                }
-                return _ac;
-            }
-
-            function playNoise(dur, freq, type, vol) {
-                var ctx = ac();
-                if (!ctx) return;
-                try {
-                    var osc = ctx.createOscillator();
-                    var gain = ctx.createGain();
-                    osc.type = type || 'square';
-                    osc.frequency.value = freq || 100;
-                    gain.gain.value = vol || 0.3;
-                    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
-                    osc.connect(gain);
-                    gain.connect(ctx.destination);
-                    osc.start();
-                    osc.stop(ctx.currentTime + dur);
-                } catch (e) {}
-            }
-
-            function playHit() {
-                playNoise(0.12, 120, 'square', 0.35);
-            }
-
-            function playMonsterHit() {
-                playNoise(0.08, 60, 'sawtooth', 0.25);
-            }
-
-            function playExplosion() {
-                var ctx = ac();
-                if (!ctx) return;
-                try {
-                    var bufferSize = ctx.sampleRate * 0.3;
-                    var buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-                    var data = buffer.getChannelData(0);
-                    for (var i = 0; i < bufferSize; i++) {
-                        data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
-                    }
-                    var source = ctx.createBufferSource();
-                    var gain = ctx.createGain();
-                    source.buffer = buffer;
-                    gain.gain.value = 0.4;
-                    source.connect(gain);
-                    gain.connect(ctx.destination);
-                    source.start();
-                } catch (e) {}
-            }
-
-            function playDeathSound() {
-                var ctx = ac();
-                if (!ctx) return;
-                try {
-                    var osc = ctx.createOscillator();
-                    var gain = ctx.createGain();
-                    osc.type = 'sine';
-                    osc.frequency.setValueAtTime(80, ctx.currentTime);
-                    osc.frequency.exponentialRampToValueAtTime(30, ctx.currentTime + 2.5);
-                    gain.gain.setValueAtTime(0.5, ctx.currentTime);
-                    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 2.5);
-                    osc.connect(gain);
-                    gain.connect(ctx.destination);
-                    osc.start();
-                    osc.stop(ctx.currentTime + 2.5);
-                } catch (e) {}
-            }
-
-            function playPersuadeSuccess() {
-                var ctx = ac();
-                if (!ctx) return;
-                try {
-                    [440, 550, 660].forEach(function(f, i) {
-                        setTimeout(function() {
-                            var osc = ctx.createOscillator();
-                            var gain = ctx.createGain();
-                            osc.type = 'triangle';
-                            osc.frequency.value = f;
-                            gain.gain.value = 0.25;
-                            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
-                            osc.connect(gain);
-                            gain.connect(ctx.destination);
-                            osc.start();
-                            osc.stop(ctx.currentTime + 0.3);
-                        }, i * 100);
-                    });
-                } catch (e) {}
-            }
-
-            function playPersuadeFail() {
-                var ctx = ac();
-                if (!ctx) return;
-                try {
-                    [300, 200, 100].forEach(function(f, i) {
-                        setTimeout(function() {
-                            var osc = ctx.createOscillator();
-                            var gain = ctx.createGain();
-                            osc.type = 'sawtooth';
-                            osc.frequency.value = f;
-                            gain.gain.value = 0.3;
-                            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
-                            osc.connect(gain);
-                            gain.connect(ctx.destination);
-                            osc.start();
-                            osc.stop(ctx.currentTime + 0.15);
-                        }, i * 80);
-                    });
-                } catch (e) {}
-            }
-
-            function playMonsterGrowl() {
-                var ctx = ac();
-                if (!ctx) return;
-                try {
-                    var osc = ctx.createOscillator();
-                    var lfo = ctx.createOscillator();
-                    var lfoGain = ctx.createGain();
-                    var gain = ctx.createGain();
-                    osc.type = 'sawtooth';
-                    osc.frequency.value = 40;
-                    lfo.type = 'sine';
-                    lfo.frequency.value = 5;
-                    lfoGain.gain.value = 15;
-                    gain.gain.value = 0.2;
-                    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
-                    lfo.connect(lfoGain);
-                    lfoGain.connect(osc.frequency);
-                    osc.connect(gain);
-                    gain.connect(ctx.destination);
-                    lfo.start();
-                    osc.start();
-                    osc.stop(ctx.currentTime + 0.5);
-                    lfo.stop(ctx.currentTime + 0.5);
-                } catch (e) {}
-            }
-
-            var hbTimer = null;
-            var hbBPM = 60;
-
-            function startHeartbeat() {
-                if (hbTimer) clearTimeout(hbTimer);
-                function beat() {
-                    if (!game.alive) return;
-                    playNoise(0.08, 50, 'sine', 0.15);
-                    setTimeout(function() {
-                        if (game.alive) playNoise(0.06, 45, 'sine', 0.12);
-                    }, 120);
-                    hbTimer = setTimeout(beat, 60000 / hbBPM);
-                }
-                beat();
-            }
-
-            function stopHeartbeat() {
-                if (hbTimer) {
-                    clearTimeout(hbTimer);
-                    hbTimer = null;
-                }
-            }
-
-            function updateHeartbeatBPM() {
-                hbBPM = 58 + Math.round((1 - game.hp / game.maxHp) * 90);
-            }
-
-            // DOM elements
-            var els = {};
-            function initElements() {
-                els.searchInput = document.getElementById('searchInput');
-                els.qtySelect = document.getElementById('qtySelect');
-                els.mainnetCheck = document.getElementById('mainnetCheck');
-                els.searchBtn = document.getElementById('searchBtn');
-                els.captureBtn = document.getElementById('captureBtn');
-                els.saveBtn = document.getElementById('saveBtn');
-                els.loadBtn = document.getElementById('loadBtn');
-                els.hpBar = document.getElementById('hpBar');
-                els.hpText = document.getElementById('hpText');
-                els.killsText = document.getElementById('killsText');
-                els.scoreText = document.getElementById('scoreText');
-                els.depthText = document.getElementById('depthText');
-                els.combatLog = document.getElementById('combatLog');
-                els.breadcrumbBar = document.getElementById('breadcrumbBar');
-                els.welcomeScreen = document.getElementById('welcomeScreen');
-                els.deathScreen = document.getElementById('deathScreen');
-                els.deathPath = document.getElementById('deathPath');
-                els.deathStats = document.getElementById('deathStats');
-                els.restartBtn = document.getElementById('restartBtn');
-                els.shareModal = document.getElementById('shareModal');
-                els.shareImage = document.getElementById('shareImage');
-                els.shareStats = document.getElementById('shareStats');
-                els.sharePath = document.getElementById('sharePath');
-                els.shareUrl = document.getElementById('shareUrl');
-                els.downloadScreenshot = document.getElementById('downloadScreenshot');
-                els.copyUrl = document.getElementById('copyUrl');
-                els.closeShare = document.getElementById('closeShare');
-                els.saveModal = document.getElementById('saveModal');
-                els.saveAddress = document.getElementById('saveAddress');
-                els.downloadSave = document.getElementById('downloadSave');
-                els.closeSave = document.getElementById('closeSave');
-                els.loadModal = document.getElementById('loadModal');
-                els.loadHash = document.getElementById('loadHash');
-                els.loadFromIpfs = document.getElementById('loadFromIpfs');
-                els.closeLoad = document.getElementById('closeLoad');
-                els.persuadeDialog = document.getElementById('persuadeDialog');
-                els.persuadeMonsterName = document.getElementById('persuadeMonsterName');
-                els.persuadeText = document.getElementById('persuadeText');
-                els.persuadeSpeak = document.getElementById('persuadeSpeak');
-                els.persuadeCancel = document.getElementById('persuadeCancel');
-                els.detailPanel = document.getElementById('detailPanel');
-                els.detailContent = document.getElementById('detailContent');
-                els.closeDetail = document.getElementById('closeDetail');
-                els.vignette = document.getElementById('vignette');
-                els.damageFlash = document.getElementById('damageFlash');
-            }
-
-            // UI update functions
-            function updateStatsUI() {
-                var pct = Math.max(0, game.hp / game.maxHp * 100);
-                els.hpBar.style.width = pct + '%';
-                if (pct > 60) {
-                    els.hpBar.style.background = 'linear-gradient(90deg, #00aa00, #44cc44)';
-                } else if (pct > 30) {
-                    els.hpBar.style.background = 'linear-gradient(90deg, #ccaa00, #ffcc44)';
-                } else {
-                    els.hpBar.style.background = 'linear-gradient(90deg, #cc2200, #ff4422)';
-                }
-                els.hpText.textContent = Math.max(0, game.hp) + '/' + game.maxHp;
-                els.killsText.textContent = game.kills;
-                els.scoreText.textContent = game.score;
-                els.depthText.textContent = game.depth;
-
-                // Vignette intensity based on HP
-                var vignetteOpacity = 0.3 + (1 - game.hp / game.maxHp) * 0.5;
-                els.vignette.style.background = 'radial-gradient(ellipse at center, transparent ' + (50 - (1 - game.hp / game.maxHp) * 30) + '%, rgba(10,6,2,' + vignetteOpacity + ') 100%)';
-            }
-
-            function addCombatLog(msg, type) {
-                var now = new Date();
-                var timeStr = now.getHours().toString().padStart(2, '0') + ':' +
-                              now.getMinutes().toString().padStart(2, '0') + ':' +
-                              now.getSeconds().toString().padStart(2, '0');
-                var entry = document.createElement('div');
-                entry.className = 'log-entry fade-in';
-                entry.innerHTML = '<span class="log-time">' + timeStr + '</span><span class="log-' + (type || 'info') + '">' + esc(msg) + '</span>';
-                els.combatLog.appendChild(entry);
-
-                // Keep only last 8 entries
-                while (els.combatLog.children.length > 8) {
-                    els.combatLog.removeChild(els.combatLog.firstChild);
-                }
-                els.combatLog.scrollTop = els.combatLog.scrollHeight;
-            }
-
-            function updateBreadcrumbs() {
-                els.breadcrumbBar.innerHTML = '';
-                searchHistory.forEach(function(item, idx) {
-                    var pill = document.createElement('div');
-                    pill.className = 'breadcrumb' + (idx === searchHistory.length - 1 ? ' active' : '');
-                    pill.textContent = item.query;
-                    pill.onclick = function() {
-                        replayToIndex(idx);
-                    };
-                    els.breadcrumbBar.appendChild(pill);
-                });
-            }
-
-            function showDamageFlash() {
-                els.damageFlash.style.opacity = '1';
-                setTimeout(function() {
-                    els.damageFlash.style.opacity = '0';
-                }, 150);
-            }
-
-            function triggerScreenShake() {
-                renderer.domElement.classList.add('shaking');
-                setTimeout(function() {
-                    renderer.domElement.classList.remove('shaking');
-                }, 450);
-            }
-
-            // Initialize Three.js scene
-            function initThree() {
-                scene = new THREE.Scene();
-                scene.background = new THREE.Color(0x030201);
-                scene.fog = new THREE.FogExp2(0x0a0804, 0.018);
-
-                camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
-                camera.position.set(0, 15, 40);
-
-                renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
-                renderer.setSize(window.innerWidth, window.innerHeight);
-                renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-                document.body.insertBefore(renderer.domElement, document.body.firstChild);
-
-                controls = new THREE.OrbitControls(camera, renderer.domElement);
-                controls.enableDamping = true;
-                controls.dampingFactor = 0.05;
-                controls.autoRotate = true;
-                controls.autoRotateSpeed = 0.3;
-                controls.minDistance = 10;
-                controls.maxDistance = 100;
-
-                clock = new THREE.Clock();
-
-                // Lighting — dungeon torchlight
-                var ambientLight = new THREE.AmbientLight(0x1a0e04, 0.6);
-                scene.add(ambientLight);
-
-                var light1 = new THREE.PointLight(0xcc5500, 1.5, 60);
-                light1.position.set(20, 15, 20);
-                scene.add(light1);
-
-                var light2 = new THREE.PointLight(0x442200, 1.2, 50);
-                light2.position.set(-25, 10, -15);
-                scene.add(light2);
-
-                var light3 = new THREE.PointLight(0x221100, 0.8, 40);
-                light3.position.set(0, -20, 25);
-                scene.add(light3);
-
-                // Create starfield
-                createStarfield();
-
-                // Create nebula
-                createNebula();
-
-                // Create central nexus
-                createNexus();
-
-                // Create selection ring
-                createSelectionRing();
-
-                // Window resize handler
-                window.addEventListener('resize', onWindowResize);
-
-                // Mouse handlers
-                renderer.domElement.addEventListener('mousemove', onMouseMove);
-                renderer.domElement.addEventListener('click', onMouseClick);
-            }
-
-            function createStarfield() {
-                var geometry = new THREE.BufferGeometry();
-                var positions = [];
-                var colors = [];
-                var starColors = [
-                    [0.9, 0.5, 0.1],  // torchlight orange
-                    [0.7, 0.55, 0.25], // pale amber
-                    [0.9, 0.88, 0.75]  // bone white
-                ];
-
-                for (var i = 0; i < 3500; i++) {
-                    var x = (Math.random() - 0.5) * 400;
-                    var y = (Math.random() - 0.5) * 400;
-                    var z = (Math.random() - 0.5) * 400;
-                    positions.push(x, y, z);
-
-                    var col = starColors[Math.floor(Math.random() * starColors.length)];
-                    colors.push(col[0], col[1], col[2]);
-                }
-
-                geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-                geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-
-                var material = new THREE.PointsMaterial({
-                    size: 0.8,
-                    vertexColors: true,
-                    transparent: true,
-                    opacity: 0.8
-                });
-
-                starField = new THREE.Points(geometry, material);
-                scene.add(starField);
-            }
-
-            function createNebula() {
-                var geometry = new THREE.BufferGeometry();
-                var positions = [];
-                var colors = [];
-
-                for (var i = 0; i < 400; i++) {
-                    var theta = Math.random() * Math.PI * 2;
-                    var phi = Math.acos(Math.random() * 2 - 1);
-                    var r = 50 + Math.random() * 100;
-                    var x = r * Math.sin(phi) * Math.cos(theta);
-                    var y = r * Math.sin(phi) * Math.sin(theta);
-                    var z = r * Math.cos(phi);
-                    positions.push(x, y, z);
-
-                    // Stone dust / torch smoke colors
-                    var intensity = 0.3 + Math.random() * 0.3;
-                    colors.push(intensity * 0.8, intensity * 0.5, intensity * 0.15);
-                }
-
-                geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-                geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-
-                var material = new THREE.PointsMaterial({
-                    size: 3,
-                    vertexColors: true,
-                    transparent: true,
-                    opacity: 0.4
-                });
-
-                nebula = new THREE.Points(geometry, material);
-                scene.add(nebula);
-            }
-
-            function createNexus() {
-                var group = new THREE.Group();
-
-                // Core orb — dungeon portal
-                var coreGeo = new THREE.SphereGeometry(2, 32, 32);
-                var coreMat = new THREE.MeshBasicMaterial({
-                    color: 0x553300,
-                    transparent: true,
-                    opacity: 0.8
-                });
-                var core = new THREE.Mesh(coreGeo, coreMat);
-                group.add(core);
-
-                // Outer wireframe — runic cage
-                var wireGeo = new THREE.IcosahedronGeometry(3, 1);
-                var wireMat = new THREE.MeshBasicMaterial({
-                    color: 0xcc7700,
-                    wireframe: true,
-                    transparent: true,
-                    opacity: 0.6
-                });
-                var wire = new THREE.Mesh(wireGeo, wireMat);
-                group.add(wire);
-
-                // Inner glow light — torchlight
-                var light = new THREE.PointLight(0xff8800, 2, 25);
-                group.add(light);
-
-                nexus = group;
-                nexus.userData.core = core;
-                nexus.userData.wire = wire;
-                scene.add(nexus);
-            }
-
-            function createSelectionRing() {
-                var geo = new THREE.TorusGeometry(2.5, 0.08, 8, 32);
-                var mat = new THREE.MeshBasicMaterial({
-                    color: 0xff8800,
-                    transparent: true,
-                    opacity: 0
-                });
-                selectionRing = new THREE.Mesh(geo, mat);
-                selectionRing.rotation.x = Math.PI / 2;
-                scene.add(selectionRing);
-            }
-
-            function onWindowResize() {
-                camera.aspect = window.innerWidth / window.innerHeight;
-                camera.updateProjectionMatrix();
-                renderer.setSize(window.innerWidth, window.innerHeight);
-            }
-
-            function onMouseMove(event) {
-                mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-                mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-            }
-
-            function onMouseClick(event) {
-                if (!game.alive) return;
-
-                raycaster.setFromCamera(mouse, camera);
-
-                // Check monsters first
-                var monsterHits = raycaster.intersectObjects(monsterMeshes.map(function(m) { return m.group; }), true);
-                if (monsterHits.length > 0) {
-                    var hitObj = monsterHits[0].object;
-                    while (hitObj.parent && !hitObj.userData.isMonster) {
-                        hitObj = hitObj.parent;
-                    }
-                    if (hitObj.userData.isMonster) {
-                        attackMonster(hitObj);
-                        return;
-                    }
-                }
-
-                // Check artifacts
-                var artifactMeshes = currentArtifacts.map(function(a) { return a.mesh; });
-                var artifactHits = raycaster.intersectObjects(artifactMeshes, true);
-                if (artifactHits.length > 0) {
-                    var mesh = artifactHits[0].object;
-                    while (mesh.parent && !mesh.userData.artifactData) {
-                        mesh = mesh.parent;
-                    }
-                    if (mesh.userData.artifactData) {
-                        selectArtifact(mesh);
-                    }
-                }
-            }
-
-            // Monster generation
-            function generateMonstersForQuery(query, depth) {
-                if (monsterDefs.has(query)) {
-                    return monsterDefs.get(query);
-                }
-
-                var hash = strHash(query);
-                var rng = seededRng(hash);
-                var count = Math.floor(rng() * 3) + 2 + Math.min(depth, 3);
-                var monsters = [];
-
-                // Check for Demon Lord at depth >= 3
-                var hasDemonLord = depth >= 3 && rng() < 0.3;
-
-                for (var i = 0; i < count; i++) {
-                    var typeIdx;
-                    if (hasDemonLord && i === count - 1) {
-                        typeIdx = 5; // Demon Lord
-                    } else {
-                        typeIdx = Math.floor(rng() * 5); // Types 0-4
-                    }
-
-                    var mtype = MTYPES[typeIdx];
-                    var prefix = MPREFIXES[Math.floor(rng() * MPREFIXES.length)];
-                    var hp = Math.floor(mtype.baseHp + rng() * 50);
-
-                    // Fibonacci sphere position
-                    var phi = Math.acos(1 - 2 * (i + 0.5) / count);
-                    var theta = Math.PI * (1 + Math.sqrt(5)) * (i + 0.5);
-                    var r = 8 + rng() * 10;
-                    var x = r * Math.sin(phi) * Math.cos(theta);
-                    var y = (rng() - 0.5) * 6;
-                    var z = r * Math.sin(phi) * Math.sin(theta);
-
-                    monsters.push({
-                        idx: i,
-                        typeIdx: typeIdx,
-                        name: prefix + ' ' + mtype.name,
-                        hp: hp,
-                        maxHp: hp,
-                        atk: mtype.atk,
-                        spd: mtype.spd,
-                        aggro: mtype.aggro,
-                        range: mtype.range,
-                        weakness: mtype.weakness,
-                        color: mtype.clr,
-                        emissive: mtype.emv,
-                        position: { x: x, y: y, z: z },
-                        enraged: false,
-                        enrageEnd: 0,
-                        lastAttack: 0,
-                        patrolTarget: null,
-                        teleportCooldown: 0
-                    });
-                }
-
-                monsterDefs.set(query, monsters);
-                return monsters;
-            }
-
-            // Monster mesh creation
-            function createMonsterMesh(def, query) {
-                var group = new THREE.Group();
-                group.userData.isMonster = true;
-                group.userData.def = def;
-                group.userData.query = query;
-
-                var typeIdx = def.typeIdx;
-
-                if (typeIdx === 0) {
-                    // IMP — floating demon with tendrils
-                    var coreMat = new THREE.MeshPhongMaterial({
-                        color: def.color,
-                        emissive: def.emissive,
-                        transparent: true,
-                        opacity: 0.85
-                    });
-                    var core = new THREE.Mesh(new THREE.SphereGeometry(0.9, 8, 8), coreMat);
-                    group.add(core);
-
-                    for (var t = 0; t < 6; t++) {
-                        var tendril = new THREE.Mesh(
-                            new THREE.ConeGeometry(0.07, 1.4, 3),
-                            new THREE.MeshPhongMaterial({ color: def.color, emissive: def.emissive })
-                        );
-                        var angle = (t / 6) * Math.PI * 2;
-                        tendril.position.set(Math.cos(angle) * 0.8, 0, Math.sin(angle) * 0.8);
-                        tendril.rotation.z = Math.PI / 2 + (Math.random() - 0.5) * 0.5;
-                        tendril.rotation.y = angle;
-                        group.add(tendril);
-                    }
-
-                    var light = new THREE.PointLight(0xff4400, 1.2, 10);
-                    group.add(light);
-                    group.userData.bobOffset = Math.random() * Math.PI * 2;
-
-                } else if (typeIdx === 1) {
-                    // STONE TROLL — stacked rocky blocks
-                    var stoneMat = new THREE.MeshPhongMaterial({
-                        color: def.color,
-                        emissive: 0x111a11,
-                        flatShading: true
-                    });
-
-                    var legs = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.0, 1.0), stoneMat);
-                    legs.position.y = 0;
-                    group.add(legs);
-
-                    var torso = new THREE.Mesh(new THREE.BoxGeometry(1.3, 1.1, 1.0), stoneMat);
-                    torso.position.y = 1.15;
-                    group.add(torso);
-
-                    var head = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.9), stoneMat);
-                    head.position.y = 2.3;
-                    group.add(head);
-
-                    var eyeMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-                    var eye1 = new THREE.Mesh(new THREE.SphereGeometry(0.12, 6, 6), eyeMat);
-                    eye1.position.set(-0.2, 2.4, 0.4);
-                    group.add(eye1);
-                    var eye2 = new THREE.Mesh(new THREE.SphereGeometry(0.12, 6, 6), eyeMat);
-                    eye2.position.set(0.2, 2.4, 0.4);
-                    group.add(eye2);
-
-                    var light = new THREE.PointLight(0xff0000, 1.5, 8);
-                    light.position.y = 2.3;
-                    group.add(light);
-
-                } else if (typeIdx === 2) {
-                    // WRAITH — ghostly wireframe, teleporting undead
-                    var outerMat = new THREE.MeshBasicMaterial({
-                        color: def.color,
-                        wireframe: true,
-                        transparent: true,
-                        opacity: 0.4
-                    });
-                    var outer = new THREE.Mesh(new THREE.IcosahedronGeometry(1.3, 1), outerMat);
-                    group.add(outer);
-
-                    var innerMat = new THREE.MeshPhongMaterial({
-                        color: def.color,
-                        emissive: def.emissive
-                    });
-                    var inner = new THREE.Mesh(new THREE.IcosahedronGeometry(0.7, 0), innerMat);
-                    group.add(inner);
-
-                    var light = new THREE.PointLight(0x4466ff, 1.0, 12);
-                    group.add(light);
-                    group.userData.teleportTimer = 3000 + Math.random() * 2000;
-
-                } else if (typeIdx === 3) {
-                    // HELLSPAWN — black sphere with spikes
-                    var shadowMat = new THREE.MeshPhongMaterial({
-                        color: 0x110000,
-                        emissive: def.emissive
-                    });
-                    var core = new THREE.Mesh(new THREE.SphereGeometry(1.1, 6, 6), shadowMat);
-                    group.add(core);
-
-                    for (var s = 0; s < 8; s++) {
-                        var spike = new THREE.Mesh(
-                            new THREE.ConeGeometry(0.09, 1.3, 3),
-                            new THREE.MeshPhongMaterial({ color: 0x220000, emissive: 0x330000 })
-                        );
-                        var theta = (s / 8) * Math.PI * 2;
-                        var phi = Math.PI * 0.3 + (s % 2) * Math.PI * 0.4;
-                        spike.position.set(
-                            Math.sin(phi) * Math.cos(theta) * 1.2,
-                            Math.cos(phi) * 1.2,
-                            Math.sin(phi) * Math.sin(theta) * 1.2
-                        );
-                        spike.lookAt(spike.position.clone().multiplyScalar(2));
-                        group.add(spike);
-                    }
-
-                    var light = new THREE.PointLight(0xff2200, 0.8, 10);
-                    group.add(light);
-
-                } else if (typeIdx === 4) {
-                    // ARCHMAGE — magical torus knot, non-aggressive
-                    var oracleMat = new THREE.MeshPhongMaterial({
-                        color: def.color,
-                        emissive: def.emissive,
-                        shininess: 100
-                    });
-                    var knot = new THREE.Mesh(new THREE.TorusKnotGeometry(0.8, 0.18, 80, 8), oracleMat);
-                    group.add(knot);
-
-                    var light = new THREE.PointLight(0xffcc00, 1.2, 15);
-                    group.add(light);
-
-                    // Floating hint sprites
-                    var hints = def.weakness.slice(0, 3);
-                    hints.forEach(function(hint, hi) {
-                        var sprite = createTextSprite(hint, 0xffcc00, 0.4);
-                        sprite.position.set(
-                            Math.cos(hi * Math.PI * 2 / 3) * 1.8,
-                            0.8 + hi * 0.3,
-                            Math.sin(hi * Math.PI * 2 / 3) * 1.8
-                        );
-                        group.add(sprite);
-                    });
-
-                } else if (typeIdx === 5) {
-                    // DEMON LORD — serpentine boss
-                    var sizes = [1.4, 1.2, 1.0, 0.9, 0.8, 0.6, 0.5];
-                    var levMat = new THREE.MeshPhongMaterial({
-                        color: def.color,
-                        emissive: def.emissive
-                    });
-
-                    sizes.forEach(function(size, si) {
-                        var seg = new THREE.Mesh(new THREE.SphereGeometry(size, 8, 8), levMat);
-                        var offset = si * 1.8;
-                        seg.position.set(
-                            Math.sin(si * 0.5) * 2,
-                            Math.cos(si * 0.4) * 0.5,
-                            -offset
-                        );
-                        group.add(seg);
-
-                        // Add horns to head
-                        if (si === 0) {
-                            for (var h = 0; h < 4; h++) {
-                                var horn = new THREE.Mesh(
-                                    new THREE.ConeGeometry(0.15, 0.8, 4),
-                                    new THREE.MeshPhongMaterial({ color: 0x440000 })
-                                );
-                                var hAngle = (h / 4) * Math.PI * 2;
-                                horn.position.set(Math.cos(hAngle) * 0.8, 1.2, Math.sin(hAngle) * 0.8);
-                                horn.rotation.x = -0.3;
-                                horn.rotation.z = Math.cos(hAngle) * 0.3;
-                                group.add(horn);
-                            }
-                        }
-                    });
-
-                    var light = new THREE.PointLight(0xff0000, 2.0, 20);
-                    group.add(light);
-                    group.userData.circleAngle = Math.random() * Math.PI * 2;
-                }
-
-                // Add HP label sprite
-                var label = createMonsterLabel(def);
-                label.position.y = typeIdx === 1 ? 3.5 : typeIdx === 5 ? 2.5 : 2;
-                group.add(label);
-                group.userData.label = label;
-
-                group.position.set(def.position.x, def.position.y, def.position.z);
-
-                return group;
-            }
-
-            function createTextSprite(text, color, scale) {
-                var canvas = document.createElement('canvas');
-                canvas.width = 256;
-                canvas.height = 64;
-                var ctx = canvas.getContext('2d');
-                ctx.font = 'bold 32px monospace';
-                ctx.fillStyle = '#' + color.toString(16).padStart(6, '0');
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                ctx.fillText(text, 128, 32);
-
-                var texture = new THREE.CanvasTexture(canvas);
-                var material = new THREE.SpriteMaterial({ map: texture, transparent: true });
-                var sprite = new THREE.Sprite(material);
-                sprite.scale.set(scale * 4, scale, 1);
-                return sprite;
-            }
-
-            function createMonsterLabel(def) {
-                var canvas = document.createElement('canvas');
-                canvas.width = 256;
-                canvas.height = 64;
-                updateMonsterLabelCanvas(canvas, def);
-
-                var texture = new THREE.CanvasTexture(canvas);
-                var material = new THREE.SpriteMaterial({ map: texture, transparent: true });
-                var sprite = new THREE.Sprite(material);
-                sprite.scale.set(4, 1, 1);
-                sprite.userData.canvas = canvas;
-                sprite.userData.texture = texture;
-                return sprite;
-            }
-
-            function updateMonsterLabelCanvas(canvas, def) {
-                var ctx = canvas.getContext('2d');
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-                // Background
-                ctx.fillStyle = 'rgba(0,0,0,0.6)';
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-                // Name
-                ctx.font = 'bold 18px monospace';
-                ctx.fillStyle = '#cc6600';
-                ctx.textAlign = 'center';
-                ctx.fillText(def.name, 128, 22);
-
-                // HP bar background
-                ctx.fillStyle = '#1a0e00';
-                ctx.fillRect(28, 36, 200, 16);
-
-                // HP bar
-                var hpPct = Math.max(0, def.hp / def.maxHp);
-                var hpColor = hpPct > 0.6 ? '#00aa00' : hpPct > 0.3 ? '#ccaa00' : '#cc2200';
-                ctx.fillStyle = hpColor;
-                ctx.fillRect(28, 36, 200 * hpPct, 16);
-
-                // HP text
-                ctx.font = '12px monospace';
-                ctx.fillStyle = '#fff';
-                ctx.fillText(Math.max(0, def.hp) + '/' + def.maxHp, 128, 48);
-            }
-
-            function updateMonsterLabel(monsterMesh) {
-                var label = monsterMesh.userData.label;
-                var def = monsterMesh.userData.def;
-                if (label && label.userData.canvas) {
-                    updateMonsterLabelCanvas(label.userData.canvas, def);
-                    label.userData.texture.needsUpdate = true;
-                }
-            }
-
-            // Artifact creation
-            function createArtifactMesh(data, type, index, total, hasGuardian) {
-                var group = new THREE.Group();
-                var radius, material;
-
-                if (type === 'root') {
-                    radius = 22;
-                    material = new THREE.MeshPhongMaterial({
-                        color: 0x6622aa,
-                        emissive: 0x220066,
-                        transparent: true,
-                        opacity: 0
-                    });
-                    var geo = new THREE.OctahedronGeometry(1.3, 0);
-                    var mesh = new THREE.Mesh(geo, material);
-                    group.add(mesh);
-                } else if (type === 'object') {
-                    radius = 16;
-                    material = new THREE.MeshPhongMaterial({
-                        color: 0xaa8800,
-                        emissive: 0x443300,
-                        transparent: true,
-                        opacity: 0
-                    });
-                    var geo = new THREE.BoxGeometry(1.8, 1.8, 1.8);
-                    var mesh = new THREE.Mesh(geo, material);
-                    group.add(mesh);
-                } else {
-                    // profile
-                    radius = 10;
-                    material = new THREE.MeshPhongMaterial({
-                        color: 0x2266aa,
-                        emissive: 0x112244,
-                        transparent: true,
-                        opacity: 0
-                    });
-                    var sphere = new THREE.Mesh(new THREE.SphereGeometry(1.2, 16, 16), material);
-                    group.add(sphere);
-
-                    // Orbital rings
-                    var ringMat = new THREE.MeshBasicMaterial({
-                        color: 0x4488cc,
-                        transparent: true,
-                        opacity: 0.5
-                    });
-                    var ring1 = new THREE.Mesh(new THREE.TorusGeometry(1.8, 0.04, 8, 32), ringMat);
-                    ring1.rotation.x = Math.PI / 2;
-                    group.add(ring1);
-                    var ring2 = new THREE.Mesh(new THREE.TorusGeometry(1.8, 0.04, 8, 32), ringMat.clone());
-                    ring2.rotation.y = Math.PI / 2;
-                    group.add(ring2);
-                }
-
-                // Calculate position using Fibonacci sphere
-                var phi = Math.acos(1 - 2 * (index + 0.5) / Math.max(total, 1));
-                var theta = Math.PI * (1 + Math.sqrt(5)) * (index + 0.5);
-                var targetX = radius * Math.sin(phi) * Math.cos(theta);
-                var targetY = (Math.random() - 0.5) * 8;
-                var targetZ = radius * Math.sin(phi) * Math.sin(theta);
-
-                group.position.set(0, 0, 0);
-                group.userData.targetPos = new THREE.Vector3(targetX, targetY, targetZ);
-                group.userData.artifactData = data;
-                group.userData.artifactType = type;
-                group.userData.material = material;
-                group.userData.locked = hasGuardian;
-                group.userData.guardianIdx = hasGuardian ? index % 10 : -1;
-
-                // Lock ring for guarded artifacts
-                if (hasGuardian) {
-                    var lockRing = new THREE.Mesh(
-                        new THREE.TorusGeometry(2.0, 0.04, 6, 32),
-                        new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.8 })
-                    );
-                    lockRing.rotation.x = Math.PI / 2;
-                    lockRing.userData.isLockRing = true;
-                    group.add(lockRing);
-                    group.userData.lockRing = lockRing;
-                }
-
-                return group;
-            }
-
-            // Combat system
-            function attackMonster(monsterMesh) {
-                if (!game.alive) return;
-
-                var now = Date.now();
-                if (now - lastAttackTime < ATTACK_COOLDOWN_MS) return;
-                lastAttackTime = now;
-
-                var def = monsterMesh.userData.def;
-                var damage = 12 + Math.floor(Math.random() * 10);
-
-                // Flash monster white
-                monsterMesh.traverse(function(child) {
-                    if (child.material && child.material.emissive) {
-                        var origEmissive = child.material.emissive.getHex();
-                        child.material.emissive.setHex(0xffffff);
-                        setTimeout(function() {
-                            if (child.material) child.material.emissive.setHex(origEmissive);
-                        }, 100);
-                    }
-                });
-
-                playHit();
-                def.hp -= damage;
-                updateMonsterLabel(monsterMesh);
-
-                addCombatLog('You deal ' + damage + ' damage to ' + def.name, 'damage');
-
-                if (def.hp <= 0) {
-                    killMonster(monsterMesh);
-                } else {
-                    // Counter attack after delay
-                    setTimeout(function() {
-                        if (game.alive && def.hp > 0) {
-                            damagePlayer(def.atk, def.name);
-                        }
-                    }, 350);
-                }
-            }
-
-            function killMonster(monsterMesh) {
-                var def = monsterMesh.userData.def;
-                var query = monsterMesh.userData.query;
-
-                // Particle explosion
-                createExplosion(monsterMesh.position.clone(), def.color);
-                playExplosion();
-
-                // Remove from scene
-                scene.remove(monsterMesh);
-                var idx = monsterMeshes.indexOf(monsterMesh);
-                if (idx !== -1) monsterMeshes.splice(idx, 1);
-
-                // Mark as killed
-                if (!monsterKills.has(query)) {
-                    monsterKills.set(query, new Set());
-                }
-                monsterKills.get(query).add(def.idx);
-
-                game.kills++;
-                game.score += 50 * (1 + game.depth);
-
-                addCombatLog('You slew ' + def.name + '!', 'kill');
-                updateStatsUI();
-
-                // Check if artifact should unlock
-                checkArtifactUnlock(query);
-            }
-
-            function createExplosion(position, color) {
-                var particles = [];
-                for (var i = 0; i < 20; i++) {
-                    var geo = new THREE.SphereGeometry(0.15, 4, 4);
-                    var mat = new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 1 });
-                    var particle = new THREE.Mesh(geo, mat);
-                    particle.position.copy(position);
-                    particle.userData.velocity = new THREE.Vector3(
-                        (Math.random() - 0.5) * 2,
-                        (Math.random() - 0.5) * 2,
-                        (Math.random() - 0.5) * 2
-                    );
-                    scene.add(particle);
-                    particles.push(particle);
-                }
-
-                var startTime = Date.now();
-                function animateExplosion() {
-                    var elapsed = (Date.now() - startTime) / 1000;
-                    if (elapsed > 1) {
-                        particles.forEach(function(p) { scene.remove(p); });
-                        return;
-                    }
-                    particles.forEach(function(p) {
-                        p.position.add(p.userData.velocity.clone().multiplyScalar(0.05));
-                        p.scale.setScalar(1 - elapsed);
-                        p.material.opacity = 1 - elapsed;
-                    });
-                    requestAnimationFrame(animateExplosion);
-                }
-                animateExplosion();
-            }
-
-            function persuadeMonster(monsterMesh, text) {
-                if (!game.alive) return;
-
-                var def = monsterMesh.userData.def;
-                var query = monsterMesh.userData.query;
-                var success = false;
-
-                // Oracle always succeeds
-                if (def.typeIdx === 4) {
-                    success = true;
-                } else {
-                    // Check for weakness words
-                    var lowerText = text.toLowerCase();
-                    success = def.weakness.some(function(w) {
-                        return lowerText.indexOf(w) !== -1;
-                    });
-
-                    // Or fallback chance with long thoughtful text
-                    if (!success && text.length > MIN_PERSUADE_TEXT_LENGTH && Math.random() < PERSUADE_FALLBACK_CHANCE) {
-                        success = true;
-                    }
-                }
-
-                if (success) {
-                    // Flash gold
-                    monsterMesh.traverse(function(child) {
-                        if (child.material && child.material.emissive) {
-                            child.material.emissive.setHex(0xffcc00);
-                        }
-                    });
-
-                    playPersuadeSuccess();
-
-                    // Remove from scene
-                    setTimeout(function() {
-                        scene.remove(monsterMesh);
-                        var idx = monsterMeshes.indexOf(monsterMesh);
-                        if (idx !== -1) monsterMeshes.splice(idx, 1);
-                    }, 500);
-
-                    // Mark as persuaded
-                    if (!monsterPersuaded.has(query)) {
-                        monsterPersuaded.set(query, new Set());
-                    }
-                    monsterPersuaded.get(query).add(def.idx);
-
-                    game.score += 30;
-                    addCombatLog('You convinced ' + def.name + ' to withdraw!', 'persuade');
-                    updateStatsUI();
-
-                    checkArtifactUnlock(query);
-                } else {
-                    playPersuadeFail();
-
-                    // Enrage monster
-                    def.enraged = true;
-                    def.enrageEnd = Date.now() + 5000;
-                    def.atk = Math.floor(def.atk * 1.5);
-
-                    damagePlayer(def.atk * 2, def.name + ' (enraged)');
-                    addCombatLog(def.name + ' is enraged by your words!', 'damage');
-                }
-            }
-
-            function fleeFromMonster(monsterMesh) {
-                if (!game.alive) return;
-
-                var def = monsterMesh.userData.def;
-
-                damagePlayer(8, 'fleeing');
-                addCombatLog('You flee from ' + def.name + ', taking damage!', 'damage');
-
-                // Move camera away
-                var dir = new THREE.Vector3()
-                    .subVectors(camera.position, monsterMesh.position)
-                    .normalize();
-                cameraTarget = camera.position.clone().add(dir.multiplyScalar(15));
-                cameraLerping = true;
-
-                // Enrage monster
-                def.enraged = true;
-                def.enrageEnd = Date.now() + 8000;
-                def.spd *= 2;
-            }
-
-            function damagePlayer(amount, source) {
-                if (!game.alive) return;
-
-                game.hp -= amount;
-                if (game.hp < 0) game.hp = 0;
-
-                addCombatLog('You take ' + amount + ' damage' + (source ? ' from ' + source : ''), 'damage');
-                updateStatsUI();
-                showDamageFlash();
-                triggerScreenShake();
-                playMonsterHit();
-                updateHeartbeatBPM();
-
-                if (game.hp <= 0) {
-                    triggerDeath();
-                }
-            }
-
-            function checkArtifactUnlock(query) {
-                var defs = monsterDefs.get(query);
-                if (!defs) return;
-
-                var kills = monsterKills.get(query) || new Set();
-                var persuaded = monsterPersuaded.get(query) || new Set();
-                var allCleared = defs.every(function(d) {
-                    return kills.has(d.idx) || persuaded.has(d.idx);
-                });
-
-                if (allCleared) {
-                    // Unlock all artifacts for this query
-                    currentArtifacts.forEach(function(artifact) {
-                        if (artifact.query === query && artifact.mesh.userData.locked) {
-                            artifact.mesh.userData.locked = false;
-                            if (artifact.mesh.userData.lockRing) {
-                                artifact.mesh.userData.lockRing.material.color.setHex(0x00ff00);
-                                setTimeout(function() {
-                                    artifact.mesh.remove(artifact.mesh.userData.lockRing);
-                                }, 1000);
-                            }
-                            addCombatLog('Treasure unlocked!', 'info');
-                        }
-                    });
-                }
-            }
-
-            function triggerDeath() {
-                game.alive = false;
-                stopHeartbeat();
-                playDeathSound();
-
-                showDamageFlash();
-                setTimeout(function() {
-                    var pathStr = searchHistory.map(function(h) { return '"' + h.query + '"'; }).join(' → ');
-                    els.deathPath.textContent = pathStr || 'No path taken';
-                    els.deathStats.innerHTML = 'Score: ' + game.score + ' &nbsp;&nbsp; Kills: ' + game.kills + ' &nbsp;&nbsp; Depth: ' + game.depth;
-                    els.deathScreen.classList.add('visible');
-                }, 800);
-            }
-
-            function fullReset() {
-                // Clear state
-                searchHistory = [];
-                monsterKills = new Map();
-                monsterPersuaded = new Map();
-
-                // Reset game state
-                game.hp = 100;
-                game.maxHp = 100;
-                game.score = 0;
-                game.kills = 0;
-                game.depth = 0;
-                game.alive = true;
-
-                // Clear scene
-                currentArtifacts.forEach(function(a) { scene.remove(a.mesh); });
-                currentArtifacts = [];
-                monsterMeshes.forEach(function(m) { scene.remove(m.group); });
-                monsterMeshes = [];
-                connectionLines.forEach(function(l) { scene.remove(l); });
-                connectionLines = [];
-
-                // Reset UI
-                els.combatLog.innerHTML = '';
-                els.searchInput.value = '';
-                els.welcomeScreen.classList.remove('hidden');
-                els.deathScreen.classList.remove('visible');
-                closeDetailPanel();
-                updateStatsUI();
-                updateBreadcrumbs();
-
-                // Reset camera
-                camera.position.set(0, 15, 40);
-                controls.target.set(0, 0, 0);
-
-                // Restart heartbeat
-                startHeartbeat();
-                updateHeartbeatBPM();
-            }
-
-            // Search and API
-            async function runSearch(query, mainnet, isReplay) {
-                if (!query || query.trim() === '') return;
-                query = query.trim();
-
-                els.searchBtn.disabled = true;
-                els.welcomeScreen.classList.add('hidden');
-
-                try {
-                    var qty = parseInt(els.qtySelect.value) || 10;
-                    var mainnetParam = mainnet ? 'true' : 'false';
-
-                    var results = await Promise.all([
-                        fetch(BASE + '/GetKnownRootsBySearchString?searchString=' + encodeURIComponent(query) + '&qty=' + qty + '&skip=0').then(function(r) { return r.json(); }).catch(function() { return []; }),
-                        fetch(BASE + '/GetKnownObjectsBySearchString?searchString=' + encodeURIComponent(query) + '&qty=' + qty + '&skip=0').then(function(r) { return r.json(); }).catch(function() { return []; }),
-                        fetch(BASE + '/GetKnownProfilesBySearchString?searchString=' + encodeURIComponent(query) + '&qty=' + qty + '&skip=0').then(function(r) { return r.json(); }).catch(function() { return []; })
-                    ]);
-                    var rootsRes = results[0];
-                    var objectsRes = results[1];
-                    var profilesRes = results[2];
-
-                    // Clear current artifacts
-                    currentArtifacts.forEach(function(a) { scene.remove(a.mesh); });
-                    currentArtifacts = [];
-                    monsterMeshes.forEach(function(m) { scene.remove(m.group); });
-                    monsterMeshes = [];
-                    connectionLines.forEach(function(l) { scene.remove(l); });
-                    connectionLines = [];
-
-                    // Generate monster definitions for this query
-                    var monsterDefsList = generateMonstersForQuery(query, game.depth);
-                    var killedSet = monsterKills.get(query) || new Set();
-                    var persuadedSet = monsterPersuaded.get(query) || new Set();
-
-                    // Determine which artifacts get guardians (70%)
-                    var totalArtifacts = rootsRes.length + objectsRes.length + profilesRes.length;
-                    var guardianCount = Math.floor(totalArtifacts * 0.7);
-
-                    // Create artifacts
-                    var artifactIndex = 0;
-
-                    profilesRes.forEach(function(item, i) {
-                        var hasGuardian = artifactIndex < guardianCount;
-                        var mesh = createArtifactMesh(item, 'profile', i, profilesRes.length, hasGuardian);
-                        scene.add(mesh);
-                        currentArtifacts.push({ mesh: mesh, type: 'profile', data: item, query: query });
-                        createConnectionLine(mesh);
-                        artifactIndex++;
-                    });
-
-                    objectsRes.forEach(function(item, i) {
-                        var hasGuardian = artifactIndex < guardianCount;
-                        var mesh = createArtifactMesh(item, 'object', i, objectsRes.length, hasGuardian);
-                        scene.add(mesh);
-                        currentArtifacts.push({ mesh: mesh, type: 'object', data: item, query: query });
-                        createConnectionLine(mesh);
-                        artifactIndex++;
-                    });
-
-                    rootsRes.forEach(function(item, i) {
-                        var hasGuardian = artifactIndex < guardianCount;
-                        var mesh = createArtifactMesh(item, 'root', i, rootsRes.length, hasGuardian);
-                        scene.add(mesh);
-                        currentArtifacts.push({ mesh: mesh, type: 'root', data: item, query: query });
-                        createConnectionLine(mesh);
-                        artifactIndex++;
-                    });
-
-                    // Create monsters (only those not killed/persuaded)
-                    monsterDefsList.forEach(function(def) {
-                        if (!killedSet.has(def.idx) && !persuadedSet.has(def.idx)) {
-                            var monsterMesh = createMonsterMesh(def, query);
-                            scene.add(monsterMesh);
-                            monsterMeshes.push({ group: monsterMesh, def: def, query: query });
-                        }
-                    });
-
-                    // Check if all monsters already cleared
-                    checkArtifactUnlock(query);
-
-                    // Update history
-                    if (!isReplay) {
-                        searchHistory.push({ query: query, mainnet: mainnet });
-                        game.depth++;
-                    }
-
-                    updateBreadcrumbs();
-                    updateStatsUI();
-                    updateUrl();
-
-                    addCombatLog('Explored: "' + query + '" — Found ' + totalArtifacts + ' relics, ' + (monsterDefsList.length - killedSet.size - persuadedSet.size) + ' guardians', 'info');
-
-                } catch (err) {
-                    console.error('Search error:', err);
-                    addCombatLog('Search failed: ' + err.message, 'damage');
-                }
-
-                els.searchBtn.disabled = false;
-            }
-
-            function createConnectionLine(artifactMesh) {
-                var material = new THREE.LineBasicMaterial({
-                    color: 0x332200,
-                    transparent: true,
-                    opacity: 0.3
-                });
-                var geometry = new THREE.BufferGeometry().setFromPoints([
-                    new THREE.Vector3(0, 0, 0),
-                    artifactMesh.userData.targetPos.clone()
-                ]);
-                var line = new THREE.Line(geometry, material);
-                scene.add(line);
-                connectionLines.push(line);
-                artifactMesh.userData.connectionLine = line;
-            }
-
-            function drillDown(raw) {
-                if (!raw) return;
-                var query = raw.trim();
-
-                // Try to extract meaningful identifier
-                if (query.length > 30) {
-                    query = query.substring(0, 30);
-                }
-
-                els.searchInput.value = query;
-                runSearch(query, els.mainnetCheck.checked, false);
-            }
-
-            function selectArtifact(mesh) {
-                selectedArtifact = mesh;
-                selectionRing.position.copy(mesh.position);
-                selectionRing.material.opacity = 0.8;
-
-                // Show detail panel
-                showDetailPanel(mesh.userData.artifactData, mesh.userData.artifactType);
-
-                // Fly camera toward artifact
-                var dir = new THREE.Vector3().subVectors(mesh.position, camera.position).normalize();
-                cameraTarget = mesh.position.clone().sub(dir.multiplyScalar(8));
-                cameraLerping = true;
-            }
-
-            function showDetailPanel(data, type) {
-                var content = '';
-
-                if (type === 'root') {
-                    var root = data.Root || data;
-                    content += '<div class="detail-type">ANCIENT SCROLL</div>';
-                    content += '<div class="detail-title">' + esc(root.TransactionId || 'Unknown').substring(0, 20) + '...</div>';
-
-                    content += '<div class="detail-section">';
-                    content += '<div class="detail-label">Message</div>';
-                    content += '<div class="detail-message">' + esc(root.Message || 'No message') + '</div>';
-                    content += '</div>';
-
-                    if (root.Signature) {
-                        content += '<div class="detail-section">';
-                        content += '<div class="detail-label">Signature</div>';
-                        content += '<div class="detail-value">' + esc(root.Signature).substring(0, 40) + '...</div>';
-                        content += '</div>';
-                    }
-
-                    if (root.TransactionId) {
-                        content += '<div class="detail-section">';
-                        content += '<div class="detail-label">Transaction ID</div>';
-                        content += '<div class="detail-value clickable" onclick="window.bdsDrillDown(\'' + esc(root.TransactionId) + '\')">' + esc(root.TransactionId) + '</div>';
-                        content += '</div>';
-                    }
-
-                    if (root.Sender) {
-                        content += '<div class="detail-section">';
-                        content += '<div class="detail-label">From</div>';
-                        content += '<div class="detail-value clickable" onclick="window.bdsDrillDown(\'' + esc(root.Sender) + '\')">' + esc(root.Sender) + '</div>';
-                        content += '</div>';
-                    }
-
-                    // Thread links
-                    content += '<div class="thread-section">';
-                    content += '<div class="thread-title">⚔ DELVE DEEPER</div>';
-                    if (root.Sender) {
-                        content += '<div class="thread-link" onclick="window.bdsDrillDown(\'' + esc(root.Sender) + '\')">→ Sender</div>';
-                    }
-                    if (root.TransactionId) {
-                        content += '<div class="thread-link" onclick="window.bdsDrillDown(\'' + esc(root.TransactionId.substring(0, 12)) + '\')">→ Sigil prefix</div>';
-                    }
-                    content += '</div>';
-
-                } else if (type === 'object') {
-                    var obj = data.Object || data;
-                    content += '<div class="detail-type">RELIC</div>';
-                    content += '<div class="detail-title">' + esc(obj.Name || 'Unknown Object') + '</div>';
-
-                    if (obj.Image) {
-                        content += '<img class="detail-image" src="https://ipfs.io/ipfs/' + esc(obj.Image) + '" alt="Object" onerror="this.style.display=\'none\'">';
-                    }
-
-                    if (obj.Description) {
-                        content += '<div class="detail-section">';
-                        content += '<div class="detail-label">Description</div>';
-                        content += '<div class="detail-value">' + esc(obj.Description) + '</div>';
-                        content += '</div>';
-                    }
-
-                    if (obj.URN) {
-                        content += '<div class="detail-section">';
-                        content += '<div class="detail-label">URN</div>';
-                        content += '<div class="detail-value">' + esc(obj.URN) + '</div>';
-                        content += '</div>';
-                    }
-
-                    if (obj.Creator) {
-                        content += '<div class="detail-section">';
-                        content += '<div class="detail-label">Creator</div>';
-                        content += '<div class="detail-value clickable" onclick="window.bdsDrillDown(\'' + esc(obj.Creator) + '\')">' + esc(obj.Creator) + '</div>';
-                        content += '</div>';
-                    }
-
-                    content += '<div class="thread-section">';
-                    content += '<div class="thread-title">⚔ DELVE DEEPER</div>';
-                    if (obj.Creator) {
-                        content += '<div class="thread-link" onclick="window.bdsDrillDown(\'' + esc(obj.Creator) + '\')">→ Creator</div>';
-                    }
-                    if (obj.Name) {
-                        content += '<div class="thread-link" onclick="window.bdsDrillDown(\'' + esc(obj.Name) + '\')">→ Seek by name</div>';
-                    }
-                    content += '</div>';
-
-                } else if (type === 'profile') {
-                    var prof = data.Profile || data;
-                    content += '<div class="detail-type">ADVENTURER</div>';
-                    content += '<div class="detail-title">' + esc(prof.Name || prof.Keyword || 'Unknown Profile') + '</div>';
-
-                    if (prof.Image) {
-                        content += '<img class="detail-image" src="https://ipfs.io/ipfs/' + esc(prof.Image) + '" alt="Avatar" onerror="this.style.display=\'none\'">';
-                    }
-
-                    if (prof.Keyword) {
-                        content += '<div class="detail-section">';
-                        content += '<div class="detail-label">Keyword</div>';
-                        content += '<div class="detail-value">' + esc(prof.Keyword) + '</div>';
-                        content += '</div>';
-                    }
-
-                    if (prof.Bio) {
-                        content += '<div class="detail-section">';
-                        content += '<div class="detail-label">Bio</div>';
-                        content += '<div class="detail-value">' + esc(prof.Bio) + '</div>';
-                        content += '</div>';
-                    }
-
-                    if (prof.Address) {
-                        content += '<div class="detail-section">';
-                        content += '<div class="detail-label">Address</div>';
-                        content += '<div class="detail-value clickable" onclick="window.bdsDrillDown(\'' + esc(prof.Address) + '\')">' + esc(prof.Address) + '</div>';
-                        content += '</div>';
-                    }
-
-                    content += '<div class="thread-section">';
-                    content += '<div class="thread-title">⚔ DELVE DEEPER</div>';
-                    if (prof.Address) {
-                        content += '<div class="thread-link" onclick="window.bdsDrillDown(\'' + esc(prof.Address) + '\')">→ Adventurer address</div>';
-                    }
-                    if (prof.Keyword) {
-                        content += '<div class="thread-link" onclick="window.bdsDrillDown(\'' + esc(prof.Keyword) + '\')">→ Seek keyword</div>';
-                    }
-                    if (prof.Name) {
-                        content += '<div class="thread-link" onclick="window.bdsDrillDown(\'' + esc(prof.Name) + '\')">→ Seek name</div>';
-                    }
-                    content += '</div>';
-                }
-
-                els.detailContent.innerHTML = content;
-                els.detailPanel.classList.add('open');
-            }
-
-            function closeDetailPanel() {
-                els.detailPanel.classList.remove('open');
-                selectedArtifact = null;
-                selectionRing.material.opacity = 0;
-            }
-
-            // URL state
-            function updateUrl() {
-                var path = searchHistory.map(function(h) { return h.query; }).join('|');
-                var mainnet = els.mainnetCheck.checked;
-                var url = window.location.pathname;
-                if (path) {
-                    url += '?path=' + encodeURIComponent(path) + '&mainnet=' + mainnet;
-                }
-                window.history.replaceState(null, '', url);
-            }
-
-            async function loadFromUrl() {
-                var params = new URLSearchParams(window.location.search);
-                var path = params.get('path');
-                var mainnet = params.get('mainnet') !== 'false';
-
-                els.mainnetCheck.checked = mainnet;
-
-                if (path) {
-                    var queries = path.split('|');
-                    for (var i = 0; i < queries.length; i++) {
-                        await runSearch(queries[i], mainnet, false);
-                        await new Promise(function(r) { setTimeout(r, 500); });
-                    }
-                }
-            }
-
-            async function replayToIndex(idx) {
-                var queries = searchHistory.slice(0, idx + 1).map(function(h) { return { query: h.query, mainnet: h.mainnet }; });
-
-                // Reset but keep monsterKills/monsterPersuaded
-                searchHistory = [];
-                game.depth = 0;
-
-                currentArtifacts.forEach(function(a) { scene.remove(a.mesh); });
-                currentArtifacts = [];
-                monsterMeshes.forEach(function(m) { scene.remove(m.group); });
-                monsterMeshes = [];
-                connectionLines.forEach(function(l) { scene.remove(l); });
-                connectionLines = [];
-
-                for (var i = 0; i < queries.length; i++) {
-                    await runSearch(queries[i].query, queries[i].mainnet, false);
-                    await new Promise(function(r) { setTimeout(r, 400); });
-                }
-            }
-
-            // Screenshot / Share
-            function captureRun() {
-                renderer.render(scene, camera);
-                var dataUrl = renderer.domElement.toDataURL('image/jpeg', SCREENSHOT_QUALITY);
-
-                // Create offscreen canvas with stats overlay
-                var canvas = document.createElement('canvas');
-                canvas.width = window.innerWidth;
-                canvas.height = window.innerHeight;
-                var ctx = canvas.getContext('2d');
-
-                var img = new Image();
-                img.onload = function() {
-                    ctx.drawImage(img, 0, 0);
-
-                    // Semi-transparent bar at bottom
-                    ctx.fillStyle = 'rgba(0,0,0,0.7)';
-                    ctx.fillRect(0, canvas.height - 110, canvas.width, 110);
-
-                    // Stats text
-                    ctx.font = 'bold 18px monospace';
-                    ctx.fillStyle = '#cc6600';
-                    ctx.fillText('⚔ DUNGEON CRAWLER — QUEST RUN', 20, canvas.height - 80);
-
-                    ctx.font = '14px monospace';
-                    ctx.fillStyle = '#ddc8c8';
-                    var pathStr = 'PATH: ' + searchHistory.map(function(h) { return '"' + h.query + '"'; }).join(' → ');
-                    ctx.fillText(pathStr.substring(0, 80) + (pathStr.length > 80 ? '...' : ''), 20, canvas.height - 55);
-
-                    ctx.fillText('SCORE: ' + game.score + '  KILLS: ' + game.kills + '  DEPTH: ' + game.depth + '  HP: ' + game.hp + '/' + game.maxHp, 20, canvas.height - 30);
-
-                    var finalUrl = canvas.toDataURL('image/jpeg', 0.88);
-                    els.shareImage.src = finalUrl;
-                    els.shareStats.textContent = 'Score: ' + game.score + ' | Kills: ' + game.kills + ' | Depth: ' + game.depth;
-                    els.sharePath.textContent = 'Path: ' + searchHistory.map(function(h) { return h.query; }).join(' → ');
-
-                    var shareUrl = window.location.origin + window.location.pathname;
-                    if (searchHistory.length > 0) {
-                        shareUrl += '?path=' + encodeURIComponent(searchHistory.map(function(h) { return h.query; }).join('|')) + '&mainnet=' + els.mainnetCheck.checked;
-                    }
-                    els.shareUrl.value = shareUrl;
-
-                    els.shareModal.classList.add('visible');
-                };
-                img.src = dataUrl;
-            }
-
-            function downloadScreenshot() {
-                var a = document.createElement('a');
-                a.href = els.shareImage.src;
-                a.download = 'dungeon_screenshot_' + Date.now() + '.jpg';
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-            }
-
-            function copyShareUrl() {
-                var url = els.shareUrl.value;
-                if (navigator.clipboard && navigator.clipboard.writeText) {
-                    navigator.clipboard.writeText(url).then(function() {
-                        addCombatLog('URL copied to clipboard!', 'info');
-                    }).catch(function() {
-                        // Fallback for older browsers
-                        els.shareUrl.select();
-                        document.execCommand('copy');
-                        addCombatLog('URL copied to clipboard!', 'info');
-                    });
-                } else {
-                    // Fallback for older browsers
-                    els.shareUrl.select();
-                    document.execCommand('copy');
-                    addCombatLog('URL copied to clipboard!', 'info');
-                }
-            }
-
-            // Save / Load
-            function saveGame() {
-                var saveData = {
-                    version: '1',
-                    game: 'dungeon-crawler',
-                    savedAt: new Date().toISOString(),
-                    stats: {
-                        hp: game.hp,
-                        maxHp: game.maxHp,
-                        score: game.score,
-                        kills: game.kills,
-                        depth: game.depth
-                    },
-                    searchPath: searchHistory.map(function(h) { return { query: h.query, mainnet: h.mainnet }; }),
-                    killedMonsters: Object.fromEntries([...monsterKills].map(function(kv) { return [kv[0], [...kv[1]]]; })),
-                    persuadedMonsters: Object.fromEntries([...monsterPersuaded].map(function(kv) { return [kv[0], [...kv[1]]]; })),
-                    mainnet: els.mainnetCheck.checked
-                };
-
-                var blob = new Blob([JSON.stringify(saveData, null, 2)], { type: 'application/json' });
-                var url = URL.createObjectURL(blob);
-                var a = document.createElement('a');
-                a.href = url;
-                a.download = 'dungeon_save_' + Date.now() + '.json';
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-                URL.revokeObjectURL(url);
-
-                addCombatLog('Save file downloaded!', 'info');
-            }
-
-            async function loadSaveAddress() {
-                try {
-                    var resp = await fetch(BASE + '/GetPublicAddressByKeyword/' + SAVE_KEYWORD + '?mainnet=true');
-                    var address = await resp.text();
-                    els.saveAddress.value = address || SAVE_KEYWORD;
-                } catch (e) {
-                    els.saveAddress.value = SAVE_KEYWORD;
-                }
-            }
-
-            async function loadFromIPFS(hash) {
-                hash = hash.trim();
-                if (!hash) {
-                    addCombatLog('Please enter an IPFS hash', 'damage');
-                    return;
-                }
-
-                try {
-                    var resp = await fetch('https://ipfs.io/ipfs/' + hash);
-                    var data = await resp.json();
-
-                    if (data.game !== 'dungeon-crawler') {
-                        throw new Error('Not a Dungeon Crawler save');
-                    }
-
-                    // Restore state
-                    game.hp = data.stats.hp;
-                    game.maxHp = data.stats.maxHp || 100;
-                    game.score = data.stats.score;
-                    game.kills = data.stats.kills;
-                    game.depth = 0; // Will be incremented by replay
-
-                    // Restore kill/persuade state
-                    monsterKills = new Map(Object.entries(data.killedMonsters || {}).map(function(kv) { return [kv[0], new Set(kv[1])]; }));
-                    monsterPersuaded = new Map(Object.entries(data.persuadedMonsters || {}).map(function(kv) { return [kv[0], new Set(kv[1])]; }));
-
-                    // Clear current state
-                    searchHistory = [];
-                    currentArtifacts.forEach(function(a) { scene.remove(a.mesh); });
-                    currentArtifacts = [];
-                    monsterMeshes.forEach(function(m) { scene.remove(m.group); });
-                    monsterMeshes = [];
-                    connectionLines.forEach(function(l) { scene.remove(l); });
-                    connectionLines = [];
-
-                    els.mainnetCheck.checked = data.mainnet !== false;
-                    els.welcomeScreen.classList.add('hidden');
-                    els.loadModal.classList.remove('visible');
-
-                    // Replay search path
-                    for (var i = 0; i < data.searchPath.length; i++) {
-                        var entry = data.searchPath[i];
-                        await runSearch(entry.query, entry.mainnet, false);
-                        await new Promise(function(r) { setTimeout(r, 400); });
-                    }
-
-                    // Restore HP after replay (since it might have been damaged)
-                    game.hp = data.stats.hp;
-                    updateStatsUI();
-
-                    addCombatLog('Quest loaded from IPFS!', 'info');
-                } catch (e) {
-                    console.error('Load error:', e);
-                    addCombatLog('Failed to load: ' + e.message, 'damage');
-                }
-            }
-
-            // Persuade dialog
-            var persuadeTarget = null;
-
-            function openPersuadeDialog(monsterMesh) {
-                persuadeTarget = monsterMesh;
-                els.persuadeMonsterName.textContent = monsterMesh.userData.def.name;
-                els.persuadeText.value = '';
-                els.persuadeDialog.classList.add('visible');
-                els.persuadeText.focus();
-            }
-
-            function closePersuadeDialog() {
-                els.persuadeDialog.classList.remove('visible');
-                persuadeTarget = null;
-            }
-
-            function submitPersuade() {
-                if (persuadeTarget && els.persuadeText.value) {
-                    persuadeMonster(persuadeTarget, els.persuadeText.value);
-                }
-                closePersuadeDialog();
-            }
-
-            // Find nearest monster to camera
-            function findNearestMonster() {
-                var nearest = null;
-                var nearestDist = Infinity;
-
-                monsterMeshes.forEach(function(m) {
-                    var dist = m.group.position.distanceTo(camera.position);
-                    if (dist < nearestDist) {
-                        nearestDist = dist;
-                        nearest = m.group;
-                    }
-                });
-
-                return nearestDist < 15 ? nearest : null;
-            }
-
-            // Keyboard controls
-            function initKeyboardControls() {
-                document.addEventListener('keydown', function(e) {
-                    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-
-                    if (e.key === 'p' || e.key === 'P') {
-                        var nearest = findNearestMonster();
-                        if (nearest) {
-                            openPersuadeDialog(nearest);
-                        } else {
-                            addCombatLog('No creature nearby to parley', 'info');
-                        }
-                    } else if (e.key === 'f' || e.key === 'F') {
-                        var nearest = findNearestMonster();
-                        if (nearest) {
-                            fleeFromMonster(nearest);
-                        }
-                    } else if (e.key === 'x' || e.key === 'X') {
-                        els.saveModal.classList.add('visible');
-                        loadSaveAddress();
-                    } else if (e.key === 'Escape') {
-                        closeDetailPanel();
-                        els.shareModal.classList.remove('visible');
-                        els.saveModal.classList.remove('visible');
-                        els.loadModal.classList.remove('visible');
-                        closePersuadeDialog();
-                    }
-                });
-            }
-
-            // Monster AI
-            function updateMonsterAI(delta) {
-                if (!game.alive) return;
-
-                var now = Date.now();
-
-                monsterMeshes.forEach(function(m) {
-                    var group = m.group;
-                    var def = m.def;
-
-                    // Check enrage timeout
-                    if (def.enraged && now > def.enrageEnd) {
-                        def.enraged = false;
-                        def.spd = MTYPES[def.typeIdx].spd;
-                        def.atk = MTYPES[def.typeIdx].atk;
-                    }
-
-                    var dist = group.position.distanceTo(camera.position);
-
-                    // Attack if in range
-                    if (dist < def.range && def.atk > 0) {
-                        if (now - def.lastAttack > 2000) {
-                            def.lastAttack = now;
-                            damagePlayer(def.atk, def.name);
-                            playMonsterGrowl();
-                        }
-                    }
-
-                    // Movement AI
-                    var speed = def.spd * (def.enraged ? 1.5 : 1);
-
-                    if (dist < def.aggro && def.aggro > 0) {
-                        // Move toward camera
-                        var dir = new THREE.Vector3().subVectors(camera.position, group.position).normalize();
-                        group.position.addScaledVector(dir, speed * delta * 60);
-                    } else if (def.typeIdx !== 4) {
-                        // Patrol
-                        if (!def.patrolTarget || group.position.distanceTo(def.patrolTarget) < 1) {
-                            def.patrolTarget = new THREE.Vector3(
-                                def.position.x + (Math.random() - 0.5) * 10,
-                                def.position.y + (Math.random() - 0.5) * 4,
-                                def.position.z + (Math.random() - 0.5) * 10
-                            );
-                        }
-                        var dir = new THREE.Vector3().subVectors(def.patrolTarget, group.position).normalize();
-                        group.position.addScaledVector(dir, speed * 0.5 * delta * 60);
-                    }
-
-                    // Type-specific animations
-                    if (def.typeIdx === 0) {
-                        // IMP bob
-                        group.position.y = def.position.y + Math.sin(now * 0.002 + (group.userData.bobOffset || 0)) * 0.5;
-                    } else if (def.typeIdx === 2) {
-                        // WRAITH teleport
-                        group.userData.teleportTimer -= delta * 1000;
-                        if (group.userData.teleportTimer <= 0) {
-                            group.position.set(
-                                def.position.x + (Math.random() - 0.5) * 8,
-                                def.position.y + (Math.random() - 0.5) * 4,
-                                def.position.z + (Math.random() - 0.5) * 8
-                            );
-                            group.userData.teleportTimer = 3000 + Math.random() * 2000;
-                        }
-                    } else if (def.typeIdx === 5) {
-                        // DEMON LORD circle
-                        group.userData.circleAngle = (group.userData.circleAngle || 0) + delta * 0.3;
-                        var r = 15;
-                        group.position.x = Math.cos(group.userData.circleAngle) * r;
-                        group.position.z = Math.sin(group.userData.circleAngle) * r;
-                    }
-
-                    // Rotate all monsters slightly
-                    group.rotation.y += delta * 0.5;
-                });
-            }
-
-            // Animation loop
-            function animate() {
-                requestAnimationFrame(animate);
-
-                var delta = clock.getDelta();
-
-                // Rotate starfield and nebula
-                if (starField) starField.rotation.y += delta * 0.01;
-                if (nebula) nebula.rotation.y -= delta * 0.005;
-
-                // Pulse nexus
-                if (nexus) {
-                    var pulse = Math.sin(Date.now() * 0.003) * 0.1 + 1;
-                    nexus.userData.wire.scale.setScalar(pulse);
-                    nexus.userData.core.material.opacity = 0.6 + Math.sin(Date.now() * 0.005) * 0.2;
-                }
-
-                // Lerp artifacts to position
-                currentArtifacts.forEach(function(artifact) {
-                    var mesh = artifact.mesh;
-                    mesh.position.lerp(mesh.userData.targetPos, delta * 2);
-                    mesh.rotation.y += delta * 0.3;
-                    mesh.rotation.x += delta * 0.1;
-
-                    // Fade in material
-                    if (mesh.userData.material.opacity < 1) {
-                        mesh.userData.material.opacity = Math.min(1, mesh.userData.material.opacity + delta * 0.5);
-                    }
-
-                    // Pulse lock ring
-                    if (mesh.userData.lockRing && mesh.userData.locked) {
-                        var ringPulse = Math.sin(Date.now() * 0.005) * 0.3 + 0.7;
-                        mesh.userData.lockRing.material.opacity = ringPulse;
-                    }
-                });
-
-                // Pulse selection ring
-                if (selectionRing && selectionRing.material.opacity > 0) {
-                    selectionRing.rotation.z += delta * 2;
-                    selectionRing.scale.setScalar(1 + Math.sin(Date.now() * 0.005) * 0.1);
-                    if (selectedArtifact) {
-                        selectionRing.position.copy(selectedArtifact.position);
-                    }
-                }
-
-                // Monster AI
-                updateMonsterAI(delta);
-
-                // Camera lerp
-                if (cameraLerping && cameraTarget) {
-                    camera.position.lerp(cameraTarget, delta * 3);
-                    if (camera.position.distanceTo(cameraTarget) < 0.5) {
-                        cameraLerping = false;
-                    }
-                }
-
-                controls.update();
-                renderer.render(scene, camera);
-            }
-
-            // Event listeners
-            function initEventListeners() {
-                els.searchBtn.addEventListener('click', function() {
-                    runSearch(els.searchInput.value, els.mainnetCheck.checked, false);
-                });
-
-                els.searchInput.addEventListener('keypress', function(e) {
-                    if (e.key === 'Enter') {
-                        runSearch(els.searchInput.value, els.mainnetCheck.checked, false);
-                    }
-                });
-
-                els.captureBtn.addEventListener('click', captureRun);
-
-                els.saveBtn.addEventListener('click', function() {
-                    els.saveModal.classList.add('visible');
-                    loadSaveAddress();
-                });
-
-                els.loadBtn.addEventListener('click', function() {
-                    els.loadModal.classList.add('visible');
-                });
-
-                els.restartBtn.addEventListener('click', fullReset);
-
-                // Share modal
-                els.downloadScreenshot.addEventListener('click', downloadScreenshot);
-                els.copyUrl.addEventListener('click', copyShareUrl);
-                els.closeShare.addEventListener('click', function() {
-                    els.shareModal.classList.remove('visible');
-                });
-
-                // Save modal
-                els.downloadSave.addEventListener('click', saveGame);
-                els.closeSave.addEventListener('click', function() {
-                    els.saveModal.classList.remove('visible');
-                });
-
-                // Load modal
-                els.loadFromIpfs.addEventListener('click', function() {
-                    loadFromIPFS(els.loadHash.value);
-                });
-                els.closeLoad.addEventListener('click', function() {
-                    els.loadModal.classList.remove('visible');
-                });
-
-                // Persuade dialog
-                els.persuadeSpeak.addEventListener('click', submitPersuade);
-                els.persuadeCancel.addEventListener('click', closePersuadeDialog);
-                els.persuadeText.addEventListener('keypress', function(e) {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        submitPersuade();
-                    }
-                });
-
-                // Detail panel
-                els.closeDetail.addEventListener('click', closeDetailPanel);
-
-                // Global drill down function
-                window.bdsDrillDown = drillDown;
-            }
-
-            // Initialize
-            function init() {
-                initElements();
-                initThree();
-                initEventListeners();
-                initKeyboardControls();
-
-                updateStatsUI();
-                startHeartbeat();
-
-                // Load from URL if path exists
-                loadFromUrl();
-
-                // Start animation
-                animate();
-
-                addCombatLog('The dungeon awakens. Name thy quarry...', 'info');
-            }
-
-            // Start when DOM ready
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', init);
+            }, 55);
+        });
+    }
+
+    function drawDiceFace(val, sides) {
+        var cv = document.getElementById('diceCanvas');
+        var ctx = cv.getContext('2d');
+        var W = cv.width, H = cv.height, cx = W / 2, cy = H / 2, r = W / 2 - 12;
+        ctx.clearRect(0, 0, W, H);
+        var n = sides <= 4 ? 3 : sides <= 6 ? 4 : sides <= 8 ? 8 : sides <= 10 ? 5 : sides <= 12 ? 6 : 20;
+        n = Math.min(n, 8);
+        ctx.beginPath();
+        for (var i = 0; i < n; i++) {
+            var a = (i / n) * Math.PI * 2 - Math.PI / 2;
+            if (i === 0) ctx.moveTo(cx + r * Math.cos(a), cy + r * Math.sin(a));
+            else ctx.lineTo(cx + r * Math.cos(a), cy + r * Math.sin(a));
+        }
+        ctx.closePath();
+        ctx.fillStyle = '#1a1028'; ctx.fill();
+        ctx.strokeStyle = '#9955ff'; ctx.lineWidth = 3; ctx.stroke();
+        ctx.fillStyle = '#ffcc44';
+        ctx.font = 'bold ' + Math.floor(W / 2.8) + 'px Courier New';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(val, cx, cy - 8);
+        ctx.fillStyle = '#5522aa'; ctx.font = '13px Courier New';
+        ctx.fillText('d' + sides, cx, cy + W / 4);
+    }
+
+    /* ── COMBAT ── */
+    function doAttack(entity) {
+        closeEntityModal();
+        if (!P.alive) return;
+        rollDice(20, 'ATTACK ROLL').then(function (r20) {
+            var total = r20 + P.prof + statMod(P.str);
+            if (total >= entity.ac) {
+                var dmg = roll(8) + Math.max(0, statMod(P.str));
+                entity.hp -= dmg;
+                addLog('⚔ HIT! ' + r20 + '+' + (P.prof + statMod(P.str)) + '=' + total + ' vs AC' + entity.ac + ' → ' + dmg + ' dmg!', 'damage');
+                syncHpBar(entity);
+                updateEntityModal(entity);
+                if (entity.hp <= 0) { defeatMonster(entity); return; }
+                setTimeout(function () { monsterAttack(entity); }, 900);
             } else {
-                init();
+                addLog('⚔ MISS! ' + total + ' vs AC' + entity.ac, 'miss');
+                playHit(false);
+                setTimeout(function () { monsterAttack(entity); }, 900);
             }
-        })();
-    </script>
+        });
+    }
+
+    function doSpell(entity) {
+        closeEntityModal();
+        if (!P.alive) return;
+        if (P.mp <= 0) { addLog('❌ No mana! Rest to recover MP.', 'info'); return; }
+        P.mp--;
+        rollDice(20, 'SPELL ATTACK').then(function (r20) {
+            var total = r20 + P.prof + statMod(P.int);
+            if (total >= entity.ac) {
+                var dmg = roll(6) + roll(6) + Math.max(0, statMod(P.int));
+                entity.hp -= dmg;
+                addLog('✦ SPELL! ' + total + ' vs AC' + entity.ac + ' → ' + dmg + ' arcane dmg!', 'spell');
+                playHit(true);
+                syncHpBar(entity);
+                updateEntityModal(entity);
+                if (entity.hp <= 0) { defeatMonster(entity); return; }
+                setTimeout(function () { monsterAttack(entity); }, 900);
+            } else {
+                addLog('✦ Spell fizzled. ' + total + ' vs AC' + entity.ac, 'miss');
+                setTimeout(function () { monsterAttack(entity); }, 900);
+            }
+            updateStatsUI();
+        });
+    }
+
+    function doNegotiate(entity) {
+        closeEntityModal();
+        if (!P.alive) return;
+        rollDice(20, 'CHARISMA CHECK').then(function (r20) {
+            var total = r20 + P.prof + statMod(P.cha);
+            var dc = entity.dc || 12;
+            if (total >= dc) {
+                addLog('💬 Parley! ' + total + ' vs DC' + dc + ' — ' + entity.name + ' yields!', 'persuade');
+                gainXP(entity.xp);
+                entity.defeated = true; entity.talked = true;
+                removeEntityMesh(entity);
+                playSuccess();
+            } else {
+                addLog('💬 Failed! ' + total + ' vs DC' + dc + ' — ' + entity.name + ' hostile!', 'miss');
+                if (entity.kind === 'monster') setTimeout(function () { monsterAttack(entity); }, 600);
+            }
+        });
+    }
+
+    function doInspect(entity) {
+        closeEntityModal();
+        if (!P.alive) return;
+        rollDice(20, 'ARCANA CHECK').then(function (r20) {
+            var total = r20 + P.prof + statMod(P.wis);
+            var dc = entity.dc || 12;
+            var success = total >= dc;
+            addLog((success ? '🔍 Insight! ' : '🔍 Partial insight. ') + total + ' vs DC' + dc, success ? 'info' : 'miss');
+            if (success) { gainXP(Math.floor(entity.xp * 0.4)); }
+            openEntityModal(entity, success);
+        });
+    }
+
+    function doCollect(entity) {
+        closeEntityModal();
+        if (!P.alive) return;
+        rollDice(20, 'ARCANA CHECK').then(function (r20) {
+            var total = r20 + P.prof + statMod(P.int);
+            if (total >= entity.dc) {
+                entity.collected = true;
+                P.inventory.push({ name: entity.name, quality: entity.quality });
+                gainXP(entity.xp);
+                addLog('✦ Collected: ' + entity.name + '! +' + entity.xp + ' XP', 'kill');
+                removeEntityMesh(entity);
+                playSuccess();
+                updateInventoryUI();
+            } else {
+                addLog('✦ Resist! ' + total + ' vs DC' + entity.dc + ' — Artifact repels your touch.', 'miss');
+            }
+        });
+    }
+
+    function doTraverse(entity) {
+        closeEntityModal();
+        if (!P.alive) return;
+        if (P.mp <= 0) { addLog('❌ Need mana to traverse portals.', 'info'); return; }
+        P.mp--;
+        var addr = entity.data.address || entity.data.hash || entity.data.name || '';
+        if (!addr) { addLog('⚠ Portal has no anchor address.', 'info'); updateStatsUI(); return; }
+        var query = addr.slice(0, 30);
+        entity.traversed = true;
+        removeEntityMesh(entity);
+        addLog('🌀 Traversing portal: "' + trunc(query, 20) + '"', 'spell');
+        updateStatsUI();
+        document.getElementById('runeInput').value = query;
+        castSpell(query, document.getElementById('mainnetCheck').checked);
+    }
+
+    function monsterAttack(entity) {
+        if (!P.alive) return;
+        if (entity.defeated || entity.hp <= 0) return;
+        var ac = 10 + statMod(P.dex);
+        var r20 = roll(20);
+        var total = r20 + entity.atk;
+        if (total >= ac) {
+            var dmg = roll(6) + Math.max(0, Math.floor(entity.atk / 3));
+            P.hp = Math.max(0, P.hp - dmg);
+            addLog('💀 ' + entity.name + ' hits you for ' + dmg + ' damage!', 'damage');
+            flashDamage();
+            screenShake();
+            if (P.hp <= 0) { triggerDeath(); return; }
+        } else {
+            addLog('🛡 ' + entity.name + ' misses you! (' + total + ' vs AC' + ac + ')', 'info');
+        }
+        updateStatsUI();
+    }
+
+    function defeatMonster(entity) {
+        entity.defeated = true;
+        P.kills++;
+        addLog('💀 ' + entity.name + ' defeated! +' + entity.xp + ' XP', 'kill');
+        gainXP(entity.xp);
+        removeEntityMesh(entity);
+        playBoom();
+        closeEntityModal();
+    }
+
+    function gainXP(amount) {
+        P.xp += amount; P.score += amount;
+        while (P.xp >= P.xpNext) { P.xp -= P.xpNext; levelUp(); }
+        flashXP();
+        updateStatsUI();
+    }
+
+    function levelUp() {
+        P.level++;
+        var hpg = roll(6) + statMod(P.con);
+        P.maxHp += hpg; P.hp = Math.min(P.maxHp, P.hp + hpg);
+        P.maxMp += 2; P.mp = Math.min(P.maxMp, P.mp + 2);
+        P.xpNext = Math.floor(P.xpNext * 1.5);
+        if (P.level % 4 === 0) P.prof++;
+        addLog('⭐ LEVEL UP! Now level ' + P.level + '! +' + hpg + ' HP, +2 MP', 'kill');
+    }
+
+    function triggerDeath() {
+        P.alive = false; P.hp = 0;
+        document.getElementById('deathStatsTxt').innerHTML =
+            'Reached depth <strong>' + P.depth + '</strong><br>' +
+            'Monsters slain: <strong>' + P.kills + '</strong><br>' +
+            'Score: <strong>' + P.score + '</strong><br>' +
+            'Level achieved: <strong>' + P.level + '</strong>';
+        document.getElementById('deathScreen').classList.add('visible');
+        playDeath();
+    }
+
+    function restart() {
+        Object.assign(P, P_DEFAULTS);
+        P.inventory = [];
+        spellHistory = [];
+        clearEntities();
+        document.getElementById('deathScreen').classList.remove('visible');
+        document.getElementById('spellHistList').innerHTML = '';
+        document.getElementById('combatLog').innerHTML = '';
+        document.getElementById('inventoryList').innerHTML = '';
+        updateStatsUI();
+        addLog('✦ You have been reincarnated. The tome awaits.', 'info');
+    }
+
+    /* ── API / CAST RUNE ── */
+    async function castSpell(query, mainnet) {
+        if (!query || !query.trim()) return;
+        query = query.trim();
+        if (!P.alive) { addLog('❌ You must reincarnate first.', 'info'); return; }
+        if (isCasting) return;
+
+        var manaCost = calcManaCost(query);
+        if (P.mp < manaCost) {
+            addLog('❌ Need ' + manaCost + ' MP to cast this rune. Rest to recover.', 'info'); return;
+        }
+
+        isCasting = true;
+        document.getElementById('castBtn').disabled = true;
+        document.getElementById('welcomeScreen').classList.add('hidden');
+        P.mp -= manaCost;
+
+        addLog('✦ Casting: "' + query + '"' + (manaCost > 0 ? ' (' + manaCost + ' MP)' : ' [cantrip]'), 'spell');
+        clearEntities();
+
+        try {
+            var qty = parseInt(document.getElementById('qtySelect').value) || 10;
+            var results = await Promise.all([
+                fetch(BASE + '/GetKnownRootsBySearchString?searchString=' + encodeURIComponent(query) + '&qty=' + qty + '&skip=0').then(function (r) { return r.json(); }).catch(function () { return []; }),
+                fetch(BASE + '/GetKnownObjectsBySearchString?searchString=' + encodeURIComponent(query) + '&qty=' + qty + '&skip=0').then(function (r) { return r.json(); }).catch(function () { return []; }),
+                fetch(BASE + '/GetKnownProfilesBySearchString?searchString=' + encodeURIComponent(query) + '&qty=' + qty + '&skip=0').then(function (r) { return r.json(); }).catch(function () { return []; })
+            ]);
+
+            var allItems = results[0].map(function (x) { return { item: x, type: 'root' }; })
+                .concat(results[1].map(function (x) { return { item: x, type: 'object' }; }))
+                .concat(results[2].map(function (x) { return { item: x, type: 'profile' }; }));
+
+            if (allItems.length === 0) {
+                addLog('✦ The rune fades… nothing stirs in the void for "' + query + '"', 'info');
+            } else {
+                allItems.forEach(function (entry, i) {
+                    var entity = makeEntity(entry.item, entry.type, P.depth);
+                    var group = createEntityMesh(entity, i, allItems.length);
+                    currentEntities.push({ entity: entity, group: group });
+                });
+                P.depth++;
+                var mCount = allItems.filter(function (x) { return x.type === 'profile'; }).length;
+                var aCount = allItems.filter(function (x) { return x.type === 'object'; }).length;
+                var pCount = allItems.filter(function (x) { return x.type === 'root'; }).length;
+                addLog('✦ Chamber opened! ' + mCount + ' creatures · ' + aCount + ' artifacts · ' + pCount + ' portals', 'info');
+            }
+
+            /* Update spell history */
+            var isRepeat = spellHistory.some(function (s) { return s.query === query; });
+            if (!isRepeat) spellHistory.push({ query: query, mainnet: mainnet });
+            updateSpellHistoryUI();
+            updateUrl(query);
+
+        } catch (err) {
+            addLog('❌ Rune failed: ' + (err.message || 'network error'), 'info');
+        }
+
+        isCasting = false;
+        document.getElementById('castBtn').disabled = false;
+        updateStatsUI();
+    }
+
+    /* ── ENTITY MODAL ── */
+    var activeEntity = null;
+
+    function openEntityModal(entity, fullReveal) {
+        activeEntity = entity;
+        updateEntityModal(entity, fullReveal);
+        document.getElementById('entityModal').classList.add('visible');
+    }
+
+    function updateEntityModal(entity, fullReveal) {
+        if (!activeEntity || activeEntity.id !== entity.id) return;
+        document.getElementById('emTitle').textContent = entity.name;
+
+        var badge = document.getElementById('emBadge');
+        badge.className = 'badge badge-' + entity.kind;
+        badge.textContent = entity.kind.toUpperCase();
+
+        var hpWrap = document.getElementById('emHpWrap');
+        if (entity.kind === 'monster') {
+            hpWrap.style.display = '';
+            var pct = Math.max(0, entity.hp / entity.maxHp * 100);
+            var hbar = document.getElementById('emHpBar');
+            hbar.style.width = pct + '%';
+            hbar.style.background = pct > 50 ? 'linear-gradient(90deg,#44cc44,#88ee88)' : pct > 25 ? 'linear-gradient(90deg,#ccaa00,#ffcc44)' : 'linear-gradient(90deg,#cc2200,#ff4422)';
+        } else { hpWrap.style.display = 'none'; }
+
+        var statsGrid = document.getElementById('emStats');
+        statsGrid.innerHTML = '';
+        var stats = [];
+        if (entity.kind === 'monster') stats = [['HP', entity.hp + '/' + entity.maxHp], ['AC', entity.ac], ['ATK', '+' + entity.atk], ['XP', entity.xp], ['LEVEL', Math.max(1, Math.floor(entity.atk / 2))]];
+        else if (entity.kind === 'npc')      stats = [['ROLE', entity.role.toUpperCase()], ['DC', entity.dc], ['XP', entity.xp]];
+        else if (entity.kind === 'artifact') stats = [['QUALITY', AQ[entity.quality || 0]], ['DC', entity.dc], ['XP', entity.xp]];
+        else                                 stats = [['TYPE', 'PORTAL'], ['DEPTH', P.depth], ['MP', '1 cost']];
+        stats.forEach(function (s) {
+            statsGrid.innerHTML += '<div class="es-cell"><div class="es-lbl">' + esc(s[0]) + '</div><div class="es-v">' + esc(String(s[1])) + '</div></div>';
+        });
+
+        /* Data block */
+        var d = entity.data; var dataHtml = '';
+        var fields = [['Address', d.address], ['Name', d.name], ['Hash', d.hash],
+            ['Message', d.message ? trunc(d.message, 200) : null],
+            ['Type', d.type || d.contentType], ['Block', d.blockNumber || d.block]];
+        fields.forEach(function (f) {
+            if (!f[1]) return;
+            var isAddr = f[0] === 'Address' || f[0] === 'Hash';
+            dataHtml += '<div class="dlbl">' + esc(f[0].toUpperCase()) + '</div>';
+            dataHtml += '<div class="dval' + (isAddr ? ' cl drill-addr' : '') + '"' +
+                (isAddr ? ' data-addr="' + esc(f[1]) + '"' : '') + '>' + esc(f[1]) + '</div>';
+        });
+        if (!dataHtml) dataHtml = '<div class="dval">' + esc(JSON.stringify(d).slice(0, 160)) + '</div>';
+        document.getElementById('emData').innerHTML = dataHtml;
+
+        /* Action buttons — use data-action for safe event delegation */
+        var acts = document.getElementById('emActions');
+        acts.innerHTML = '';
+        if (entity.defeated || entity.collected || entity.traversed) {
+            acts.innerHTML = '<button class="mb mb-close" data-action="close">Close</button>';
+            return;
+        }
+        if (entity.kind === 'monster') {
+            acts.innerHTML += '<button class="mb mb-attack" data-action="attack">⚔ ATTACK</button>';
+            acts.innerHTML += '<button class="mb mb-spell" data-action="spell">✦ CAST SPELL</button>';
+            acts.innerHTML += '<button class="mb mb-negotiate" data-action="negotiate">💬 PARLEY</button>';
+        } else if (entity.kind === 'npc') {
+            acts.innerHTML += '<button class="mb mb-negotiate" data-action="negotiate">💬 SPEAK</button>';
+            acts.innerHTML += '<button class="mb mb-inspect" data-action="inspect">🔍 INSPECT</button>';
+        } else if (entity.kind === 'artifact') {
+            acts.innerHTML += '<button class="mb mb-inspect" data-action="collect">✦ COLLECT</button>';
+            acts.innerHTML += '<button class="mb mb-spell" data-action="inspect">🔍 IDENTIFY</button>';
+        } else {
+            acts.innerHTML += '<button class="mb mb-portal" data-action="traverse">🌀 TRAVERSE PORTAL</button>';
+            acts.innerHTML += '<button class="mb mb-inspect" data-action="inspect">🔍 STUDY</button>';
+        }
+        acts.innerHTML += '<button class="mb mb-close" data-action="close">✕ Close</button>';
+    }
+
+    function closeEntityModal() {
+        document.getElementById('entityModal').classList.remove('visible');
+        activeEntity = null;
+    }
+
+    /* Event delegation for entity modal action buttons */
+    document.getElementById('emActions').addEventListener('click', function (e) {
+        var btn = e.target.closest('button[data-action]');
+        if (!btn) return;
+        var action = btn.getAttribute('data-action');
+        if (action === 'close') { closeEntityModal(); return; }
+        if (!activeEntity) return;
+        if (action === 'attack')    doAttack(activeEntity);
+        else if (action === 'spell')     doSpell(activeEntity);
+        else if (action === 'negotiate') doNegotiate(activeEntity);
+        else if (action === 'inspect')   doInspect(activeEntity);
+        else if (action === 'collect')   doCollect(activeEntity);
+        else if (action === 'traverse')  doTraverse(activeEntity);
+    });
+
+    /* Event delegation for drill-down addresses in entity data panel */
+    document.getElementById('emData').addEventListener('click', function (e) {
+        var el = e.target.closest('.drill-addr');
+        if (!el) return;
+        var addr = el.getAttribute('data-addr');
+        if (!addr) return;
+        closeEntityModal();
+        var q = addr.slice(0, 40);
+        document.getElementById('runeInput').value = q;
+        castSpell(q, document.getElementById('mainnetCheck').checked);
+    });
+
+    /* ── AUDIO ── */
+    var _ac = null;
+    function getAC() {
+        if (!_ac) try { _ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
+        return _ac;
+    }
+    function beep(freq, dur, type, vol) {
+        var ctx = getAC(); if (!ctx) return;
+        try {
+            var o = ctx.createOscillator(), g = ctx.createGain();
+            o.type = type || 'square'; o.frequency.value = freq;
+            g.gain.value = vol || 0.3; g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+            o.connect(g); g.connect(ctx.destination); o.start(); o.stop(ctx.currentTime + dur);
+        } catch (e) {}
+    }
+    function playHit(magic) { magic ? beep(440, 0.12, 'triangle', 0.28) : beep(120, 0.1, 'square', 0.3); }
+    function playSuccess() { [440, 550, 660].forEach(function (f, i) { setTimeout(function () { beep(f, 0.25, 'triangle', 0.22); }, i * 100); }); }
+    function playBoom() {
+        var ctx = getAC(); if (!ctx) return;
+        try {
+            var buf = ctx.createBuffer(1, ctx.sampleRate * 0.3, ctx.sampleRate);
+            var d = buf.getChannelData(0);
+            for (var i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+            var src = ctx.createBufferSource(), g = ctx.createGain();
+            g.gain.value = 0.4; src.buffer = buf; src.connect(g); g.connect(ctx.destination); src.start();
+        } catch (e) {}
+    }
+    function playDeath() { beep(80, 2.5, 'sine', 0.45); }
+
+    /* ── VISUAL FEEDBACK ── */
+    function flashDamage() {
+        var el = document.getElementById('damageFlash');
+        el.style.opacity = '1'; setTimeout(function () { el.style.opacity = '0'; }, 140);
+    }
+    function flashXP() {
+        var el = document.getElementById('xpFlash');
+        el.style.opacity = '1'; setTimeout(function () { el.style.opacity = '0'; }, 280);
+    }
+    function screenShake() {
+        var el = renderer.domElement;
+        el.classList.add('shaking'); setTimeout(function () { el.classList.remove('shaking'); }, 420);
+    }
+
+    /* ── UI ── */
+    function updateStatsUI() {
+        /* top bar */
+        document.getElementById('tLvl').textContent    = P.level;
+        document.getElementById('tXP').textContent     = P.xp;
+        document.getElementById('tXPMax').textContent  = P.xpNext;
+        document.getElementById('tKills').textContent  = P.kills;
+        document.getElementById('tScore').textContent  = P.score;
+        document.getElementById('tDepth').textContent  = P.depth;
+        /* char sheet */
+        document.getElementById('csLvl').textContent   = P.level;
+        var hp = Math.max(0, P.hp), hpPct = hp / P.maxHp * 100;
+        document.getElementById('csHpTxt').textContent = hp + '/' + P.maxHp;
+        var hb = document.getElementById('csHpBar');
+        hb.style.width = hpPct + '%';
+        hb.style.background = hpPct > 60 ? 'linear-gradient(90deg,#44cc44,#88ee88)' : hpPct > 30 ? 'linear-gradient(90deg,#ccaa00,#ffcc44)' : 'linear-gradient(90deg,#cc2200,#ff4422)';
+        var mp = Math.max(0, P.mp), mpPct = mp / P.maxMp * 100;
+        document.getElementById('csMpTxt').textContent = mp + '/' + P.maxMp;
+        document.getElementById('csMpBar').style.width = mpPct + '%';
+        var xpPct = P.xp / P.xpNext * 100;
+        document.getElementById('csXpTxt').textContent = P.xp + '/' + P.xpNext;
+        document.getElementById('csXpBar').style.width = xpPct + '%';
+        document.getElementById('csSpAtk').textContent = '+' + (P.prof + statMod(P.int));
+        document.getElementById('csSpDC').textContent  = 8 + P.prof + statMod(P.int);
+        document.getElementById('csAC').textContent    = 10 + statMod(P.dex);
+        document.getElementById('csProf').textContent  = '+' + P.prof;
+        updateAbilityGrid();
+        /* mana badge */
+        var q = document.getElementById('runeInput').value;
+        var mc = calcManaCost(q);
+        document.getElementById('manaBadge').textContent = mc === 0 ? '✦ Cantrip — free' : '✦ Costs ' + mc + ' MP (you have ' + P.mp + ')';
+        document.getElementById('manaBadge').style.color = P.mp < mc ? '#ff4422' : 'var(--mp)';
+    }
+
+    function updateAbilityGrid() {
+        var scores = [['STR', P.str], ['DEX', P.dex], ['CON', P.con], ['INT', P.int], ['WIS', P.wis], ['CHA', P.cha]];
+        document.getElementById('abilityGrid').innerHTML = scores.map(function (ab) {
+            return '<div class="ab-cell"><div class="ab-nm">' + ab[0] + '</div><div class="ab-v">' + ab[1] + '</div><div class="ab-m">' + modStr(ab[1]) + '</div></div>';
+        }).join('');
+    }
+
+    function updateInventoryUI() {
+        document.getElementById('invCount').textContent = P.inventory.length;
+        document.getElementById('inventoryList').innerHTML = P.inventory.map(function (it) {
+            return '<div class="inv-item"><span class="inv-name">' + esc(it.name) + '</span></div>';
+        }).join('');
+    }
+
+    function addLog(msg, type) {
+        var log = document.getElementById('combatLog');
+        var line = document.createElement('div');
+        line.className = 'log-line';
+        line.innerHTML = '<span class="lt">' + ts() + '</span><span class="l-' + (type || 'info') + '">' + esc(msg) + '</span>';
+        log.appendChild(line);
+        while (log.children.length > 10) log.removeChild(log.firstChild);
+        log.scrollTop = log.scrollHeight;
+    }
+
+    function updateSpellHistoryUI() {
+        var hist = document.getElementById('spellHistList');
+        hist.innerHTML = spellHistory.slice().reverse().map(function (s, i) {
+            var isLatest = i === 0;
+            return '<div class="spell-entry' + (isLatest ? ' active' : '') + '" data-query="' + esc(s.query) + '" data-mainnet="' + (s.mainnet ? '1' : '0') + '">' +
+                '<span class="se-rune">✦</span>' + esc(s.query) + '</div>';
+        }).join('');
+    }
+
+    /* Event delegation for spell history entries */
+    document.getElementById('spellHistList').addEventListener('click', function (e) {
+        var entry = e.target.closest('.spell-entry[data-query]');
+        if (!entry) return;
+        var q = entry.getAttribute('data-query');
+        var mn = entry.getAttribute('data-mainnet') === '1';
+        document.getElementById('runeInput').value = q;
+        castSpell(q, mn);
+    });
+
+    function updateUrl(query) {
+        try {
+            var url = new URL(window.location.href);
+            if (query) url.searchParams.set('rune', query);
+            window.history.replaceState({}, '', url.toString());
+        } catch (e) {}
+    }
+
+    /* ── RESIZE ── */
+    function onResize() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    /* ── INIT ── */
+    function init() {
+        initThree();
+        updateStatsUI();
+        updateAbilityGrid();
+
+        /* toggle panels */
+        document.getElementById('spellbookToggle').addEventListener('click', function () {
+            document.getElementById('spellbookPanel').classList.toggle('collapsed');
+        });
+        document.getElementById('charsheetToggle').addEventListener('click', function () {
+            document.getElementById('charsheetPanel').classList.toggle('collapsed');
+        });
+
+        /* cast on Enter */
+        document.getElementById('runeInput').addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') {
+                castSpell(this.value.trim(), document.getElementById('mainnetCheck').checked);
+            }
+            updateStatsUI(); /* refresh mana badge as user types */
+        });
+        document.getElementById('runeInput').addEventListener('input', function () { updateStatsUI(); });
+
+        /* cast button */
+        document.getElementById('castBtn').addEventListener('click', function () {
+            castSpell(document.getElementById('runeInput').value.trim(), document.getElementById('mainnetCheck').checked);
+        });
+
+        /* welcome start */
+        document.getElementById('welcomeStartBtn').addEventListener('click', function () {
+            document.getElementById('welcomeScreen').classList.add('hidden');
+            document.getElementById('spellbookPanel').classList.remove('collapsed');
+            document.getElementById('runeInput').focus();
+        });
+
+        /* death restart */
+        document.getElementById('restartBtn').addEventListener('click', restart);
+
+        /* close entity modal */
+        document.getElementById('closeEntityModal').addEventListener('click', closeEntityModal);
+        document.getElementById('entityModal').addEventListener('click', function (e) {
+            if (e.target === this) closeEntityModal();
+        });
+
+        /* dice click to dismiss early */
+        document.getElementById('diceModal').addEventListener('click', function () {
+            if (diceInterval) { clearInterval(diceInterval); diceInterval = null; }
+        });
+
+        /* action bar */
+        document.getElementById('btnD20').addEventListener('click', function () {
+            rollDice(20, 'FREE D20 ROLL').then(function (r) { addLog('🎲 Free roll: ' + r, 'info'); });
+        });
+        document.getElementById('btnD6').addEventListener('click', function () {
+            rollDice(6, 'FREE D6 ROLL').then(function (r) { addLog('🎲 Free roll: ' + r, 'info'); });
+        });
+        document.getElementById('btnRest').addEventListener('click', function () {
+            if (!P.alive) return;
+            var hpGain = roll(6) + Math.max(0, statMod(P.con));
+            var mpGain = Math.ceil(P.maxMp * 0.35);
+            P.hp = Math.min(P.maxHp, P.hp + hpGain);
+            P.mp = Math.min(P.maxMp, P.mp + mpGain);
+            addLog('🕯 Short rest: +' + hpGain + ' HP, +' + mpGain + ' MP', 'info');
+            updateStatsUI();
+        });
+        document.getElementById('btnCapture').addEventListener('click', function () {
+            renderer.render(scene, camera);
+            var link = document.createElement('a');
+            link.download = 'rune_codex_' + Date.now() + '.png';
+            link.href = renderer.domElement.toDataURL('image/png', 0.88);
+            link.click();
+        });
+        document.getElementById('btnShare').addEventListener('click', function () {
+            var url = window.location.href;
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(url).then(function () { addLog('🔗 Chamber link copied!', 'info'); });
+            } else {
+                prompt('Copy this link to share your chamber:', url);
+            }
+        });
+
+        /* check for rune param in URL */
+        try {
+            var params = new URLSearchParams(window.location.search);
+            var preRune = params.get('rune');
+            if (preRune) {
+                document.getElementById('runeInput').value = preRune;
+                document.getElementById('welcomeScreen').classList.add('hidden');
+                setTimeout(function () { castSpell(preRune, false); }, 500);
+            }
+        } catch (e) {}
+
+        addLog('✦ The Rune Codex awakens. Inscribe a rune to begin.', 'info');
+    }
+
+    init();
+
+})();
+</script>
 </body>
 </html>
