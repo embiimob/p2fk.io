@@ -47,65 +47,56 @@ namespace P2FK.IO
 
         public const int MaxTimeoutSeconds = 420;
 
-        private static readonly SemaphoreSlim _semaphore = new SemaphoreSlim(8, 8);
         private static readonly TimeSpan _timeout = TimeSpan.FromSeconds(MaxTimeoutSeconds);
 
         public async Task<string> RunCommandAsync(string executablePath, string arguments, CancellationToken cancellationToken = default)
         {
-            await _semaphore.WaitAsync(cancellationToken);
+            ProcessStartInfo processStartInfo = new ProcessStartInfo
+            {
+                FileName = executablePath,
+                Arguments = arguments,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+                UseShellExecute = false,
+                StandardOutputEncoding = Encoding.UTF8, // Set the standard output encoding to UTF-8
+                StandardErrorEncoding = Encoding.UTF8   // Set the standard error encoding to UTF-8
+            };
+
+            using var process = new Process { StartInfo = processStartInfo };
+            process.Start();
+
+            using var timeoutCts = new CancellationTokenSource(_timeout);
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+
+            var outputTask = process.StandardOutput.ReadToEndAsync(linkedCts.Token);
+            var errorTask = process.StandardError.ReadToEndAsync(linkedCts.Token);
+
             try
             {
-                ProcessStartInfo processStartInfo = new ProcessStartInfo
-                {
-                    FileName = executablePath,
-                    Arguments = arguments,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    CreateNoWindow = true,
-                    UseShellExecute = false,
-                    StandardOutputEncoding = Encoding.UTF8, // Set the standard output encoding to UTF-8
-                    StandardErrorEncoding = Encoding.UTF8   // Set the standard error encoding to UTF-8
-                };
-
-                using var process = new Process { StartInfo = processStartInfo };
-                process.Start();
-
-                using var timeoutCts = new CancellationTokenSource(_timeout);
-                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
-
-                var outputTask = process.StandardOutput.ReadToEndAsync(linkedCts.Token);
-                var errorTask = process.StandardError.ReadToEndAsync(linkedCts.Token);
-
-                try
-                {
-                    await Task.WhenAll(outputTask, errorTask);
-                    await process.WaitForExitAsync(linkedCts.Token);
-                }
-                catch (OperationCanceledException)
-                {
-                    try { process.Kill(entireProcessTree: true); } catch (Exception) { /* process may have already exited */ }
-
-                    if (timeoutCts.IsCancellationRequested)
-                        return "[\"error: request timed out\"]";
-
-                    return "[\"error: request cancelled\"]";
-                }
-
-                // Task.WhenAll above succeeded without throwing, so both tasks are guaranteed completed successfully
-                string output = outputTask.Result;
-                string error = errorTask.Result;
-
-                if (!string.IsNullOrEmpty(error))
-                {
-                    return $"Error: {error}";
-                }
-
-                return output;
+                await Task.WhenAll(outputTask, errorTask);
+                await process.WaitForExitAsync(linkedCts.Token);
             }
-            finally
+            catch (OperationCanceledException)
             {
-                _semaphore.Release();
+                try { process.Kill(entireProcessTree: true); } catch (Exception) { /* process may have already exited */ }
+
+                if (timeoutCts.IsCancellationRequested)
+                    return "[\"error: request timed out\"]";
+
+                return "[\"error: request cancelled\"]";
             }
+
+            // Task.WhenAll above succeeded without throwing, so both tasks are guaranteed completed successfully
+            string output = outputTask.Result;
+            string error = errorTask.Result;
+
+            if (!string.IsNullOrEmpty(error))
+            {
+                return $"Error: {error}";
+            }
+
+            return output;
         }
     }
 }
