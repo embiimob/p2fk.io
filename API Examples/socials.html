@@ -446,87 +446,49 @@
             background: #7c4dff;
         }
 
-        /* Free-text search row */
-        .freetext-search-row {
-            display: flex;
-            gap: 6px;
-            align-items: center;
-            flex-wrap: wrap;
-            margin-top: 8px;
-        }
-
-        .freetext-search-row input[type="text"] {
-            flex: 1;
-            padding: 8px;
-            background: #333;
-            border: 1px solid #444;
-            color: #e0e0e0;
-            border-radius: 5px;
-            box-sizing: border-box;
-        }
-
-        #freetextSearchBtn {
-            padding: 8px 12px;
-            background: #03dac6;
-            border: none;
-            color: #121212;
-            border-radius: 5px;
-            cursor: pointer;
-            font-weight: bold;
-            white-space: nowrap;
-        }
-
-        #freetextSearchBtn:hover:not(:disabled) { background: #00bfa5; }
-        #freetextSearchBtn:disabled { background: #444; color: #888; opacity: 0.7; }
-
-        /* Blockchain badge */
-        .blockchain-badge {
-            display: inline-block;
-            background: #03dac6;
-            color: #121212;
-            font-size: 0.65em;
-            font-weight: bold;
-            padding: 2px 5px;
-            border-radius: 3px;
-            margin-left: 6px;
+        /* Blockchain chain icon (small inline SVG image) */
+        .chain-icon-img {
+            width: 16px;
+            height: 16px;
             vertical-align: middle;
+            border-radius: 2px;
+            margin-left: 5px;
         }
 
-        /* Free-text results */
-        .freetext-results-wrapper {
-            margin-top: 20px;
-        }
-
-        .freetext-section-title {
-            color: #03dac6;
-            font-size: 0.9em;
-            font-weight: bold;
-            margin: 12px 0 6px;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
-
-        .freetext-result-item {
+        /* Profile search result items (for freetext mode) */
+        .ft-profile-item {
+            display: flex;
+            gap: 10px;
+            align-items: center;
             background: #1e1e1e;
-            padding: 10px 12px;
+            padding: 8px 12px;
             border-radius: 6px;
-            margin-bottom: 8px;
-            border-left: 3px solid #03dac6;
+            margin-bottom: 6px;
+            cursor: pointer;
         }
 
-        .freetext-result-item .result-name {
+        .ft-profile-item:hover { background: #2a2a2a; }
+
+        .ft-profile-item img {
+            width: 40px;
+            height: 40px;
+            border-radius: 4px;
+            object-fit: cover;
+        }
+
+        .ft-profile-name {
             color: #bb86fc;
             font-weight: bold;
-            font-size: 0.95em;
+            font-size: 0.9em;
         }
 
-        .freetext-result-item .result-desc {
+        .ft-profile-bio {
             color: #b0b0b0;
-            font-size: 0.82em;
-            margin-top: 3px;
+            font-size: 0.8em;
         }
 
-        #ftLoadMore {
+        /* Load-more button for freetext results */
+        #ftLoadMoreBtn {
             padding: 8px 18px;
             background: #333;
             border: 1px solid #555;
@@ -537,7 +499,7 @@
             display: none;
         }
 
-        #ftLoadMore:hover { background: #444; }
+        #ftLoadMoreBtn:hover { background: #444; }
 
         /* URL Builder Modal */
         .url-builder-overlay {
@@ -661,12 +623,9 @@
             <div class="search-bar">
                 <input type="text" id="urnInput" placeholder="Enter URN (e.g., embii4u) or #keyword" />
                 <label><input type="checkbox" id="mainnetToggle" /> Mainnet</label>
+                <label><input type="checkbox" id="freetextToggle" /> Free Text</label>
                 <button id="searchBtn" onclick="searchProfile()">Search</button>
                 <button class="url-help-btn" onclick="openUrlBuilder()" title="URL Builder — generate a shareable search link">📎</button>
-            </div>
-            <div class="freetext-search-row">
-                <input type="text" id="freetextInput" placeholder="Free Text Search…" />
-                <button id="freetextSearchBtn" onclick="doFreeTextSearch()">🔍 Search</button>
             </div>
         </div>
         <div class="sidebar">
@@ -688,17 +647,11 @@
                 <div id="profileLoading" class="profile-loading">Loading profile...</div>
             </div>
         </div>
+        <div id="ftProfilesSection" style="display:none;margin-bottom:10px;"></div>
         <div id="messagesThread" class="messages-thread"></div>
         <div id="loading" class="loading" style="display: none;">Loading more messages...</div>
+        <button id="ftLoadMoreBtn" onclick="ftLoadMore()">Load More</button>
         <div id="error" class="error" style="display: none;"></div>
-        <!-- Free-text search results -->
-        <div id="freetextResultsSection" class="freetext-results-wrapper" style="display:none;">
-            <div class="freetext-section-title">👤 Profile Results</div>
-            <div id="freetextProfilesList"></div>
-            <div class="freetext-section-title">📦 Root Results</div>
-            <div id="freetextRootsList"></div>
-            <button id="ftLoadMore" onclick="loadMoreFreetext()">Load More</button>
-        </div>
     </div>
 
     <!-- URL Builder Modal -->
@@ -1718,10 +1671,31 @@
             const $ = (id) => document.getElementById(id);
             $("error").style.display = "none";
             $("profileSection").style.display = "none";
-            $("profileLoading").style.display = "block";
+            $("profileLoading").style.display = "none";
+            $("ftProfilesSection").style.display = "none";
+            $("ftLoadMoreBtn").style.display = "none";
+            $("messagesThread").innerHTML = "";
             $("urnInput").value = inputUrn;
             $("mainnetToggle").checked = isMainnet;
+            $("totalMessages").textContent = "";
+
+            // Free-text mode
+            const isFreeText = document.getElementById("freetextToggle")?.checked;
+            if (isFreeText) {
+                try {
+                    await runFreeTextSearch(inputUrn, isMainnet, true, searchId);
+                } finally {
+                    state.isSearching = false;
+                    state.currentSearchId = null;
+                    state.abortController = null;
+                    if ($searchBtn) { $searchBtn.disabled = false; $searchBtn.textContent = "Search"; }
+                    if ($urnInput) $urnInput.disabled = false;
+                }
+                return;
+            }
+
             $("totalMessages").textContent = "Total Messages: Loading...";
+            $("profileLoading").style.display = "block";
             try {
                 let profile = null;
                 let address = null;
@@ -1923,73 +1897,169 @@
             if (e.target.id === "urlBuilderOverlay") closeUrlBuilder();
         });
 
-        /* ---- Free-text search (GetKnownProfilesBySearchString + GetKnownRootsBySearchString) ---- */
+        /* ---- Blockchain icon helper ---- */
+        function getChainIcon(blockchain) {
+            const cfg = {
+                'BTC':         { fill: '#f7931a', text: '₿'  },
+                'LTC':         { fill: '#a6a9aa', text: 'Ł'  },
+                'DOG':         { fill: '#c2a633', text: 'Ð'  },
+                'MZC':         { fill: '#4a90e2', text: 'M'  },
+                'BTC-testnet': { fill: '#ff9500', text: '₿t' },
+            }[blockchain] || { fill: '#666', text: '?' };
+            const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'><rect width='16' height='16' rx='3' fill='${cfg.fill}'/><text x='8' y='12' text-anchor='middle' font-size='8' font-family='monospace' font-weight='bold' fill='white'>${cfg.text}</text></svg>`;
+            return `<img class="chain-icon-img" src="data:image/svg+xml,${encodeURIComponent(svg)}" alt="${blockchain}" title="${blockchain}">`;
+        }
+
+        /* ---- Free-text search state ---- */
         const ftState = { skip: 0, query: '', hasMore: false, isLoading: false };
         const FT_QTY = 25;
 
-        function renderFtItem(data, blockchain, listId) {
-            const list = document.getElementById(listId);
-            if (!list) return;
-            const item = document.createElement('div');
-            item.className = 'freetext-result-item';
-            const name = data.URN || data.DisplayName || data.Name || 'Unknown';
-            const desc = (data.Bio || data.Description || '').substring(0, 100);
-            item.innerHTML = `<div class="result-name">${escapeHtml(name)}<span class="blockchain-badge">${escapeHtml(blockchain)}</span></div>${desc ? `<div class="result-desc">${escapeHtml(desc)}</div>` : ''}`;
-            list.appendChild(item);
+        /* Render a root as a standard message card in the thread */
+        function renderRootAsMessage(root, blockchain) {
+            const thread = document.getElementById("messagesThread");
+            if (!thread) return;
+            // Map root fields to message card fields
+            const msgText = root.Message || root.Memo || root.Note || root.Text || '';
+            // From = who signed it
+            const fromAddr = (root.Signers && root.Signers[0]) ||
+                             (root.Signer) ||
+                             (root.Input && typeof root.Input === 'object' && Object.keys(root.Input)[0]) ||
+                             (root.FromAddress) || '';
+            // To = the output addresses (usually just one)
+            const outputAddrs = root.Output && typeof root.Output === 'object'
+                ? Object.keys(root.Output) : [];
+            const toAddr = root.ToAddress || (outputAddrs[0] || '');
+            const toDisplay = outputAddrs.length > 1
+                ? outputAddrs.map(a => abbreviateAddress(a)).join(', ')
+                : abbreviateAddress(toAddr);
+            const fromDisplay = abbreviateAddress(fromAddr);
+            const blockDate = root.BlockDate || root.Date || root.CreatedDate || '';
+            const chainIcon = getChainIcon(blockchain);
+            const card = document.createElement("div");
+            card.className = "message-card";
+            const fromSpan = document.createElement("span");
+            fromSpan.className = "urn-link";
+            fromSpan.textContent = fromDisplay;
+            fromSpan.addEventListener("click", () => {
+                if (fromAddr) searchProfile(fromAddr, document.getElementById("mainnetToggle").checked);
+            });
+            const toSpan = document.createElement("span");
+            toSpan.className = "urn-link";
+            toSpan.textContent = toDisplay;
+            toSpan.addEventListener("click", () => {
+                if (toAddr) searchProfile(toAddr, document.getElementById("mainnetToggle").checked);
+            });
+            const msgP = document.createElement("p");
+            msgP.textContent = msgText || '';
+            if (!msgText) {
+                const em = document.createElement("em");
+                em.style.color = "#666";
+                em.textContent = "No message content";
+                msgP.appendChild(em);
+            }
+            const metaDiv = document.createElement("div");
+            metaDiv.className = "message-meta";
+            metaDiv.appendChild(document.createTextNode("From: "));
+            metaDiv.appendChild(fromSpan);
+            metaDiv.appendChild(document.createTextNode(" | To: "));
+            metaDiv.appendChild(toSpan);
+            const chainSpan = document.createElement("span");
+            chainSpan.innerHTML = " | " + chainIcon;
+            metaDiv.appendChild(chainSpan);
+            if (blockDate) {
+                metaDiv.appendChild(document.createTextNode(" | " + blockDate));
+            }
+            card.appendChild(msgP);
+            card.appendChild(metaDiv);
+            thread.appendChild(card);
         }
 
-        async function doFreeTextSearch(skipVal) {
-            const input = document.getElementById('freetextInput');
-            const query = input ? input.value.trim() : '';
-            if (!query) return;
+        /* Render a profile search result as a compact item */
+        function renderProfileItem(prof, blockchain) {
+            const section = document.getElementById("ftProfilesSection");
+            if (!section) return;
+            const item = document.createElement("div");
+            item.className = "ft-profile-item";
+            const name = prof.DisplayName || prof.URN || 'Unknown';
+            const bio = (prof.Bio || '').substring(0, 80);
+            const chainIcon = getChainIcon(blockchain);
+            item.innerHTML = `
+                <img src="${state.fallbackImage}" alt="${escapeHtml(name)}" onerror="this.src='${state.fallbackImage}'">
+                <div>
+                    <div class="ft-profile-name">${escapeHtml(name)} ${chainIcon}</div>
+                    ${bio ? `<div class="ft-profile-bio">${escapeHtml(bio)}</div>` : ''}
+                </div>
+            `;
+            item.onclick = () => {
+                const urn = prof.URN || (prof.Creators && prof.Creators[0]) || '';
+                if (urn) {
+                    document.getElementById('freetextToggle').checked = false;
+                    searchProfile(urn, document.getElementById('mainnetToggle').checked);
+                }
+            };
+            // Load profile image
+            if (prof.Image) {
+                const imgUrl = getImageUrl(prof.Image, prof.URN);
+                loadImageWithTimeout(imgUrl)
+                    .then(url => { item.querySelector('img').src = url; })
+                    .catch(() => {});
+            }
+            section.appendChild(item);
+            section.style.display = "block";
+        }
+
+        /* Free-text search — called by searchProfile when freetextToggle is checked */
+        async function runFreeTextSearch(query, mainnet, isNewSearch, searchId) {
             if (ftState.isLoading) return;
             ftState.isLoading = true;
-            const isNewSearch = (skipVal === undefined);
+            const $ = (id) => document.getElementById(id);
+            const lmBtn = $("ftLoadMoreBtn");
+            if (lmBtn) lmBtn.style.display = "none";
             if (isNewSearch) {
                 ftState.skip = 0;
                 ftState.query = query;
-                document.getElementById('freetextProfilesList').innerHTML = '';
-                document.getElementById('freetextRootsList').innerHTML = '';
-                document.getElementById('freetextResultsSection').style.display = 'none';
+                $("ftProfilesSection").innerHTML = "";
+                $("ftProfilesSection").style.display = "none";
+                $("messagesThread").innerHTML = "";
             }
-            const btn = document.getElementById('freetextSearchBtn');
-            const lmBtn = document.getElementById('ftLoadMore');
-            if (btn) { btn.disabled = true; btn.textContent = 'Searching…'; }
-            if (lmBtn) lmBtn.style.display = 'none';
+            $("loading").style.display = "block";
             try {
-                const skip = isNewSearch ? 0 : ftState.skip;
+                const skip = ftState.skip;
                 const [profResp, rootResp] = await Promise.all([
-                    fetch(`https://p2fk.io/GetKnownProfilesBySearchString?searchString=${encodeURIComponent(ftState.query)}&qty=${FT_QTY}&skip=${skip}`),
+                    isNewSearch
+                        ? fetch(`https://p2fk.io/GetKnownProfilesBySearchString?searchString=${encodeURIComponent(ftState.query)}&qty=10&skip=0`)
+                        : Promise.resolve(null),
                     fetch(`https://p2fk.io/GetKnownRootsBySearchString?searchString=${encodeURIComponent(ftState.query)}&qty=${FT_QTY}&skip=${skip}`)
                 ]);
-                const profResults = profResp.ok ? await profResp.json() : [];
+                if (isNewSearch && profResp && profResp.ok) {
+                    const profResults = await profResp.json();
+                    if (Array.isArray(profResults)) {
+                        profResults.forEach(r => renderProfileItem(r.profile || {}, r.blockchain || 'Unknown'));
+                    }
+                }
                 const rootResults = rootResp.ok ? await rootResp.json() : [];
-                if (Array.isArray(profResults)) {
-                    profResults.forEach(r => renderFtItem(r.profile || {}, r.blockchain || 'Unknown', 'freetextProfilesList'));
-                }
                 if (Array.isArray(rootResults)) {
-                    rootResults.forEach(r => renderFtItem(r.root || {}, r.blockchain || 'Unknown', 'freetextRootsList'));
+                    rootResults.forEach(r => renderRootAsMessage(r.root || {}, r.blockchain || 'Unknown'));
+                    ftState.skip = skip + rootResults.length;
+                    ftState.hasMore = rootResults.length >= FT_QTY;
+                } else {
+                    ftState.hasMore = false;
                 }
-                const gotMore = (profResults.length >= FT_QTY || rootResults.length >= FT_QTY);
-                ftState.skip = skip + FT_QTY;
-                ftState.hasMore = gotMore;
-                document.getElementById('freetextResultsSection').style.display = 'block';
-                if (lmBtn) lmBtn.style.display = gotMore ? 'inline-block' : 'none';
+                if (isNewSearch && (!Array.isArray(rootResults) || rootResults.length === 0)) {
+                    $("messagesThread").innerHTML = '<div class="loading">No results found.</div>';
+                }
+                if (lmBtn) lmBtn.style.display = ftState.hasMore ? "inline-block" : "none";
             } catch (e) {
-                showError('Free-text search failed: ' + e.message);
+                showError("Free-text search failed: " + e.message);
             } finally {
                 ftState.isLoading = false;
-                if (btn) { btn.disabled = false; btn.textContent = '🔍 Search'; }
+                $("loading").style.display = "none";
             }
         }
 
-        function loadMoreFreetext() {
-            doFreeTextSearch(ftState.skip);
+        function ftLoadMore() {
+            runFreeTextSearch(ftState.query, document.getElementById("mainnetToggle").checked, false, null);
         }
-
-        document.getElementById('freetextInput').addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') doFreeTextSearch();
-        });
     </script>
 </body>
 </html>
