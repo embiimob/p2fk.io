@@ -3,16 +3,16 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
-    <title>☠ BANDERSNATCH — Blockchain Void Explorer</title>
+    <title>⚔ DUNGEON CRAWLER — Blockchain Realm Explorer</title>
     <style>
         :root {
-            --blood: #cc2200;
-            --blood-dim: #881100;
-            --blood-glow: #ff4422;
-            --panel: rgba(8, 4, 4, 0.88);
-            --panel-light: rgba(20, 8, 8, 0.9);
-            --text: #ddc8c8;
-            --text-dim: #886666;
+            --blood: #cc6600;
+            --blood-dim: #884400;
+            --blood-glow: #ff9922;
+            --panel: rgba(5, 4, 2, 0.93);
+            --panel-light: rgba(13, 10, 4, 0.94);
+            --text: #e8d5a0;
+            --text-dim: #9a8055;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         html, body {
@@ -48,14 +48,14 @@
         #vignette {
             position: fixed; inset: 0;
             pointer-events: none;
-            background: radial-gradient(ellipse at center, transparent 40%, rgba(30,0,0,0.6) 100%);
+            background: radial-gradient(ellipse at center, transparent 40%, rgba(10,6,2,0.7) 100%);
             z-index: 5;
             transition: opacity 0.3s;
         }
         #damageFlash {
             position: fixed; inset: 0;
             pointer-events: none;
-            background: rgba(200,0,0,0.5);
+            background: rgba(180,60,0,0.5);
             opacity: 0;
             z-index: 6;
             transition: opacity 0.15s;
@@ -137,7 +137,7 @@
         .stat-icon { font-size: 16px; }
         #hpBarContainer {
             width: 100px; height: 14px;
-            background: #220000;
+            background: #1a0e00;
             border-radius: 3px;
             overflow: hidden;
             border: 1px solid var(--blood-dim);
@@ -161,15 +161,15 @@
         }
         .log-entry {
             padding: 4px 0;
-            border-bottom: 1px solid rgba(100,30,30,0.3);
+            border-bottom: 1px solid rgba(120,80,20,0.3);
             animation: fadeIn 0.3s ease;
         }
         .log-entry:last-child { border-bottom: none; }
         .log-time { color: var(--text-dim); margin-right: 6px; }
-        .log-damage { color: #ff6644; }
-        .log-kill { color: #ffaa00; }
-        .log-persuade { color: #88ff88; }
-        .log-info { color: #88aaff; }
+        .log-damage { color: #ff7733; }
+        .log-kill { color: #ffcc00; }
+        .log-persuade { color: #88dd66; }
+        .log-info { color: #88aadd; }
         #breadcrumbBar {
             position: fixed; bottom: 16px; left: 16px;
             display: flex; flex-wrap: wrap; gap: 6px;
@@ -185,7 +185,7 @@
             cursor: pointer;
             transition: all 0.2s;
         }
-        .breadcrumb:hover { background: rgba(80,20,20,0.8); border-color: var(--blood); }
+        .breadcrumb:hover { background: rgba(80,50,10,0.8); border-color: var(--blood); }
         .breadcrumb.active { background: var(--blood-dim); color: #fff; }
         #controlsHint {
             position: fixed; bottom: 16px; right: 16px;
@@ -199,7 +199,7 @@
             display: flex; flex-direction: column;
             align-items: center; justify-content: center;
             z-index: 150;
-            background: rgba(0,0,0,0.85);
+            background: rgba(0,0,0,0.88);
             text-align: center;
             padding: 20px;
             pointer-events: none;
@@ -215,7 +215,7 @@
         .welcome-text {
             font-size: 14px;
             color: var(--text-dim);
-            max-width: 400px;
+            max-width: 440px;
             line-height: 1.8;
         }
         .welcome-hint {
@@ -363,7 +363,7 @@
         .detail-section {
             margin-bottom: 14px;
             padding-bottom: 14px;
-            border-bottom: 1px solid rgba(100,30,30,0.3);
+            border-bottom: 1px solid rgba(120,80,20,0.3);
         }
         .detail-section:last-child { border-bottom: none; }
         .detail-label {
@@ -377,7 +377,7 @@
             word-break: break-all;
         }
         .detail-value.clickable {
-            color: #88aaff;
+            color: #88aadd;
             cursor: pointer;
             text-decoration: underline;
         }
@@ -415,11 +415,11 @@
             background: rgba(0,0,0,0.3);
             border-radius: 4px;
             font-size: 11px;
-            color: #88aaff;
+            color: #88aadd;
             cursor: pointer;
             transition: background 0.2s;
         }
-        .thread-link:hover { background: rgba(50,20,20,0.5); }
+        .thread-link:hover { background: rgba(80,50,10,0.5); }
         #persuadeDialog .modal-box { max-width: 400px; }
         .monster-name-display {
             font-size: 16px;
@@ -434,8 +434,8 @@
     <div id="damageFlash"></div>
 
     <div id="searchHud">
-        <span id="brand">☠ BANDERSNATCH</span>
-        <input type="text" id="searchInput" placeholder="Enter the void...">
+        <span id="brand">⚔ DUNGEON CRAWLER</span>
+        <input type="text" id="searchInput" placeholder="Name thy quarry...">
         <select id="qtySelect">
             <option value="5">5</option>
             <option value="10" selected>10</option>
@@ -446,8 +446,8 @@
             <input type="checkbox" id="mainnetCheck" checked>
             <span>Mainnet</span>
         </label>
-        <button class="hud-btn" id="searchBtn">⚡ DIVE IN</button>
-        <button class="hud-btn hud-btn-secondary" id="captureBtn">📷 CAPTURE</button>
+        <button class="hud-btn" id="searchBtn">⚔ DESCEND</button>
+        <button class="hud-btn hud-btn-secondary" id="captureBtn">📜 SCROLL</button>
         <button class="hud-btn hud-btn-secondary" id="saveBtn">💾 SAVE</button>
         <button class="hud-btn hud-btn-secondary" id="loadBtn">📂 LOAD</button>
     </div>
@@ -459,11 +459,11 @@
             <span id="hpText">100/100</span>
         </div>
         <div class="stat-item">
-            <span class="stat-icon">☠</span>
+            <span class="stat-icon">⚔</span>
             <span id="killsText">0</span>
         </div>
         <div class="stat-item">
-            <span class="stat-icon">✦</span>
+            <span class="stat-icon">💰</span>
             <span id="scoreText">0</span>
         </div>
         <div class="stat-item">
@@ -474,31 +474,31 @@
 
     <div id="combatLog"></div>
     <div id="breadcrumbBar"></div>
-    <div id="controlsHint">drag·zoom·[click]=attack·[P]=persuade·[F]=flee·[X]=save</div>
+    <div id="controlsHint">drag·zoom·[click]=attack·[P]=parley·[F]=flee·[X]=save</div>
 
     <div id="welcomeScreen">
-        <div class="welcome-title">☠ BANDERSNATCH</div>
+        <div class="welcome-title">⚔ DUNGEON CRAWLER</div>
         <div class="welcome-text">
-            A void of blockchain artifacts awaits.<br><br>
-            Monsters guard every discovery.<br>
-            Search to enter. Die to begin again.<br><br>
-            Defeat guardians to unlock artifacts.<br>
-            Persuade with the right words, or flee at a cost.
+            A dungeon of blockchain relics awaits.<br><br>
+            Creatures guard every discovery.<br>
+            Name thy quarry to descend. Fall to rise again.<br><br>
+            Defeat guardians to claim treasures.<br>
+            Parley with the right words, or flee at a cost.
         </div>
-        <div class="welcome-hint">[ enter search above to dive in ]</div>
+        <div class="welcome-hint">[ name thy quarry above to descend ]</div>
     </div>
 
     <div id="deathScreen">
-        <div class="death-title">☠ YOU HAVE BEEN CONSUMED BY THE VOID</div>
-        <div class="death-subtitle">Your search path echoes in eternity...</div>
+        <div class="death-title">☠ YOU HAVE FALLEN IN THE DUNGEON</div>
+        <div class="death-subtitle">Your quest ends in shadow...</div>
         <div class="death-path" id="deathPath"></div>
         <div class="death-stats" id="deathStats"></div>
-        <button class="hud-btn" id="restartBtn">BEGIN AGAIN</button>
+        <button class="hud-btn" id="restartBtn">RISE AGAIN</button>
     </div>
 
     <div id="shareModal" class="modal-overlay">
         <div class="modal-box">
-            <div class="modal-title">📷 VOID RUN CAPTURED</div>
+            <div class="modal-title">📜 QUEST CAPTURED</div>
             <img id="shareImage" class="modal-img" alt="Screenshot">
             <div class="modal-stats" id="shareStats"></div>
             <div class="modal-text" id="sharePath"></div>
@@ -514,11 +514,11 @@
 
     <div id="saveModal" class="modal-overlay">
         <div class="modal-box">
-            <div class="modal-title">💾 SAVE YOUR VOID RUN</div>
+            <div class="modal-title">💾 SAVE YOUR QUEST</div>
             <div class="modal-text">
-                Your game state will be saved as a JSON file.<br><br>
+                Your quest progress will be saved as a JSON file.<br><br>
                 Attach this file to a Sup!? message to preserve it on the blockchain via IPFS.<br><br>
-                Once posted, you'll receive an IPFS hash you can use to reload this exact run.
+                Once posted, you'll receive an IPFS hash to restore your quest.
             </div>
             <div class="modal-text">To address for Sup!? message:</div>
             <input type="text" class="modal-input" id="saveAddress" readonly placeholder="Looking up address...">
@@ -531,9 +531,9 @@
 
     <div id="loadModal" class="modal-overlay">
         <div class="modal-box">
-            <div class="modal-title">📂 LOAD FROM THE VOID</div>
+            <div class="modal-title">📂 LOAD SAVED QUEST</div>
             <div class="modal-text">
-                Enter an IPFS hash from a previously saved Sup!? message attachment.
+                Enter an IPFS hash from a previously saved quest attachment.
             </div>
             <input type="text" class="modal-input" id="loadHash" placeholder="IPFS hash (e.g., Qm...)">
             <div class="modal-buttons">
@@ -546,8 +546,8 @@
     <div id="persuadeDialog" class="modal-overlay">
         <div class="modal-box">
             <div class="monster-name-display" id="persuadeMonsterName"></div>
-            <div class="modal-text" style="text-align:center;">stands before you...<br><br>What do you say?</div>
-            <textarea class="modal-textarea" id="persuadeText" placeholder="Speak your words..."></textarea>
+            <div class="modal-text" style="text-align:center;">bars your path...<br><br>What words do you speak?</div>
+            <textarea class="modal-textarea" id="persuadeText" placeholder="Speak your words, adventurer..."></textarea>
             <div class="modal-buttons">
                 <button class="hud-btn" id="persuadeSpeak">SPEAK</button>
                 <button class="hud-btn hud-btn-secondary" id="persuadeCancel">CANCEL</button>
@@ -599,21 +599,21 @@
 
             // Monster type definitions
             var MTYPES = [
-                { name:'WRAITH',    baseHp:60,  atk:8,  spd:0.06, aggro:18, range:4.5, clr:0x8899ff, emv:0x001166, weakness:['light','reveal','address','key'] },
-                { name:'GOLEM',     baseHp:130, atk:22, spd:0.02, aggro:12, range:5.5, clr:0x556655, emv:0xff0000, weakness:['break','hash','chain','block'] },
-                { name:'SPECTER',   baseHp:45,  atk:13, spd:0.05, aggro:20, range:6.0, clr:0x00ff88, emv:0x004422, weakness:['anchor','bind','txid','sign'] },
-                { name:'SHADOW',    baseHp:85,  atk:18, spd:0.07, aggro:16, range:5.0, clr:0x110000, emv:0xff1100, weakness:['light','expose','burn','reveal'] },
-                { name:'ORACLE',    baseHp:35,  atk:0,  spd:0.01, aggro:0,  range:0,   clr:0xffcc00, emv:0x664400, weakness:['*'] },
-                { name:'LEVIATHAN', baseHp:220, atk:28, spd:0.03, aggro:28, range:7.0, clr:0x880000, emv:0x440000, weakness:['destroy','end','null','void'] }
+                { name:'IMP',        baseHp:60,  atk:8,  spd:0.06, aggro:18, range:4.5, clr:0xff4400, emv:0x661100, weakness:['light','silver','holy','bless'] },
+                { name:'STONE TROLL',baseHp:130, atk:22, spd:0.02, aggro:12, range:5.5, clr:0x556655, emv:0x223322, weakness:['break','shatter','earth','hammer'] },
+                { name:'WRAITH',     baseHp:45,  atk:13, spd:0.05, aggro:20, range:6.0, clr:0x8899ff, emv:0x001166, weakness:['anchor','bind','banish','name'] },
+                { name:'HELLSPAWN', baseHp:85,  atk:18, spd:0.07, aggro:16, range:5.0, clr:0x220000, emv:0xcc1100, weakness:['light','holy','purge','banish'] },
+                { name:'ARCHMAGE',  baseHp:35,  atk:0,  spd:0.01, aggro:0,  range:0,   clr:0xffcc00, emv:0x664400, weakness:['*'] },
+                { name:'DEMON LORD',baseHp:220, atk:28, spd:0.03, aggro:28, range:7.0, clr:0x880000, emv:0x440000, weakness:['destroy','banish','holy','rune'] }
             ];
-            var MPREFIXES = ['VOID','DARK','CORRUPT','LOST','FORGOTTEN','ANCIENT','NULL','DEAD','BROKEN','CURSED','ROTTEN','HOLLOW'];
+            var MPREFIXES = ['INFERNAL','CURSED','ANCIENT','FORSAKEN','DARK','ROTTEN','UNDEAD','WRETCHED','HELLBORN','FALLEN','TWISTED','ACCURSED'];
 
             // Tunable combat constants
             var ATTACK_COOLDOWN_MS = 700;
             var MIN_PERSUADE_TEXT_LENGTH = 25;
             var PERSUADE_FALLBACK_CHANCE = 0.45;
             var SCREENSHOT_QUALITY = 0.88;
-            var SAVE_KEYWORD = 'BandersnatchSave';
+            var SAVE_KEYWORD = 'DungeonCrawlerSave';
 
             // Game state
             var game = {
@@ -888,7 +888,7 @@
 
                 // Vignette intensity based on HP
                 var vignetteOpacity = 0.3 + (1 - game.hp / game.maxHp) * 0.5;
-                els.vignette.style.background = 'radial-gradient(ellipse at center, transparent ' + (50 - (1 - game.hp / game.maxHp) * 30) + '%, rgba(30,0,0,' + vignetteOpacity + ') 100%)';
+                els.vignette.style.background = 'radial-gradient(ellipse at center, transparent ' + (50 - (1 - game.hp / game.maxHp) * 30) + '%, rgba(10,6,2,' + vignetteOpacity + ') 100%)';
             }
 
             function addCombatLog(msg, type) {
@@ -938,8 +938,8 @@
             // Initialize Three.js scene
             function initThree() {
                 scene = new THREE.Scene();
-                scene.background = new THREE.Color(0x000000);
-                scene.fog = new THREE.FogExp2(0x0a0000, 0.018);
+                scene.background = new THREE.Color(0x030201);
+                scene.fog = new THREE.FogExp2(0x0a0804, 0.018);
 
                 camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
                 camera.position.set(0, 15, 40);
@@ -959,19 +959,19 @@
 
                 clock = new THREE.Clock();
 
-                // Lighting
-                var ambientLight = new THREE.AmbientLight(0x220000, 0.6);
+                // Lighting — dungeon torchlight
+                var ambientLight = new THREE.AmbientLight(0x1a0e04, 0.6);
                 scene.add(ambientLight);
 
-                var light1 = new THREE.PointLight(0x880000, 1.5, 60);
+                var light1 = new THREE.PointLight(0xcc5500, 1.5, 60);
                 light1.position.set(20, 15, 20);
                 scene.add(light1);
 
-                var light2 = new THREE.PointLight(0x440066, 1.2, 50);
+                var light2 = new THREE.PointLight(0x442200, 1.2, 50);
                 light2.position.set(-25, 10, -15);
                 scene.add(light2);
 
-                var light3 = new THREE.PointLight(0x224400, 0.8, 40);
+                var light3 = new THREE.PointLight(0x221100, 0.8, 40);
                 light3.position.set(0, -20, 25);
                 scene.add(light3);
 
@@ -1000,9 +1000,9 @@
                 var positions = [];
                 var colors = [];
                 var starColors = [
-                    [0.8, 0.3, 0.3],  // deep red
-                    [0.5, 0.5, 0.8],  // pale blue
-                    [0.9, 0.85, 0.8]  // bone white
+                    [0.9, 0.5, 0.1],  // torchlight orange
+                    [0.7, 0.55, 0.25], // pale amber
+                    [0.9, 0.88, 0.75]  // bone white
                 ];
 
                 for (var i = 0; i < 3500; i++) {
@@ -1043,9 +1043,9 @@
                     var z = r * Math.cos(phi);
                     positions.push(x, y, z);
 
-                    // Crimson/maroon colors
+                    // Stone dust / torch smoke colors
                     var intensity = 0.3 + Math.random() * 0.3;
-                    colors.push(intensity, intensity * 0.1, intensity * 0.1);
+                    colors.push(intensity * 0.8, intensity * 0.5, intensity * 0.15);
                 }
 
                 geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
@@ -1065,20 +1065,20 @@
             function createNexus() {
                 var group = new THREE.Group();
 
-                // Core orb
+                // Core orb — dungeon portal
                 var coreGeo = new THREE.SphereGeometry(2, 32, 32);
                 var coreMat = new THREE.MeshBasicMaterial({
-                    color: 0x880000,
+                    color: 0x553300,
                     transparent: true,
                     opacity: 0.8
                 });
                 var core = new THREE.Mesh(coreGeo, coreMat);
                 group.add(core);
 
-                // Outer wireframe
+                // Outer wireframe — runic cage
                 var wireGeo = new THREE.IcosahedronGeometry(3, 1);
                 var wireMat = new THREE.MeshBasicMaterial({
-                    color: 0xcc2200,
+                    color: 0xcc7700,
                     wireframe: true,
                     transparent: true,
                     opacity: 0.6
@@ -1086,8 +1086,8 @@
                 var wire = new THREE.Mesh(wireGeo, wireMat);
                 group.add(wire);
 
-                // Inner glow light
-                var light = new THREE.PointLight(0xff2200, 2, 25);
+                // Inner glow light — torchlight
+                var light = new THREE.PointLight(0xff8800, 2, 25);
                 group.add(light);
 
                 nexus = group;
@@ -1099,7 +1099,7 @@
             function createSelectionRing() {
                 var geo = new THREE.TorusGeometry(2.5, 0.08, 8, 32);
                 var mat = new THREE.MeshBasicMaterial({
-                    color: 0xff4422,
+                    color: 0xff8800,
                     transparent: true,
                     opacity: 0
                 });
@@ -1162,13 +1162,13 @@
                 var count = Math.floor(rng() * 3) + 2 + Math.min(depth, 3);
                 var monsters = [];
 
-                // Check for Leviathan at depth >= 3
-                var hasLeviathan = depth >= 3 && rng() < 0.3;
+                // Check for Demon Lord at depth >= 3
+                var hasDemonLord = depth >= 3 && rng() < 0.3;
 
                 for (var i = 0; i < count; i++) {
                     var typeIdx;
-                    if (hasLeviathan && i === count - 1) {
-                        typeIdx = 5; // Leviathan
+                    if (hasDemonLord && i === count - 1) {
+                        typeIdx = 5; // Demon Lord
                     } else {
                         typeIdx = Math.floor(rng() * 5); // Types 0-4
                     }
@@ -1221,12 +1221,12 @@
                 var typeIdx = def.typeIdx;
 
                 if (typeIdx === 0) {
-                    // WRAITH - floating sphere with tendrils
+                    // IMP — floating demon with tendrils
                     var coreMat = new THREE.MeshPhongMaterial({
                         color: def.color,
                         emissive: def.emissive,
                         transparent: true,
-                        opacity: 0.7
+                        opacity: 0.85
                     });
                     var core = new THREE.Mesh(new THREE.SphereGeometry(0.9, 8, 8), coreMat);
                     group.add(core);
@@ -1243,15 +1243,15 @@
                         group.add(tendril);
                     }
 
-                    var light = new THREE.PointLight(0x4466ff, 1.2, 10);
+                    var light = new THREE.PointLight(0xff4400, 1.2, 10);
                     group.add(light);
                     group.userData.bobOffset = Math.random() * Math.PI * 2;
 
                 } else if (typeIdx === 1) {
-                    // GOLEM - stacked boxes
+                    // STONE TROLL — stacked rocky blocks
                     var stoneMat = new THREE.MeshPhongMaterial({
                         color: def.color,
-                        emissive: def.emissive,
+                        emissive: 0x111a11,
                         flatShading: true
                     });
 
@@ -1280,7 +1280,7 @@
                     group.add(light);
 
                 } else if (typeIdx === 2) {
-                    // SPECTER - wireframe icosahedron
+                    // WRAITH — ghostly wireframe, teleporting undead
                     var outerMat = new THREE.MeshBasicMaterial({
                         color: def.color,
                         wireframe: true,
@@ -1297,12 +1297,12 @@
                     var inner = new THREE.Mesh(new THREE.IcosahedronGeometry(0.7, 0), innerMat);
                     group.add(inner);
 
-                    var light = new THREE.PointLight(0x00ff66, 1.0, 12);
+                    var light = new THREE.PointLight(0x4466ff, 1.0, 12);
                     group.add(light);
                     group.userData.teleportTimer = 3000 + Math.random() * 2000;
 
                 } else if (typeIdx === 3) {
-                    // SHADOW - black sphere with spikes
+                    // HELLSPAWN — black sphere with spikes
                     var shadowMat = new THREE.MeshPhongMaterial({
                         color: 0x110000,
                         emissive: def.emissive
@@ -1330,7 +1330,7 @@
                     group.add(light);
 
                 } else if (typeIdx === 4) {
-                    // ORACLE - torus knot
+                    // ARCHMAGE — magical torus knot, non-aggressive
                     var oracleMat = new THREE.MeshPhongMaterial({
                         color: def.color,
                         emissive: def.emissive,
@@ -1355,7 +1355,7 @@
                     });
 
                 } else if (typeIdx === 5) {
-                    // LEVIATHAN - serpent chain
+                    // DEMON LORD — serpentine boss
                     var sizes = [1.4, 1.2, 1.0, 0.9, 0.8, 0.6, 0.5];
                     var levMat = new THREE.MeshPhongMaterial({
                         color: def.color,
@@ -1447,12 +1447,12 @@
 
                 // Name
                 ctx.font = 'bold 18px monospace';
-                ctx.fillStyle = '#cc2200';
+                ctx.fillStyle = '#cc6600';
                 ctx.textAlign = 'center';
                 ctx.fillText(def.name, 128, 22);
 
                 // HP bar background
-                ctx.fillStyle = '#220000';
+                ctx.fillStyle = '#1a0e00';
                 ctx.fillRect(28, 36, 200, 16);
 
                 // HP bar
@@ -1495,8 +1495,8 @@
                 } else if (type === 'object') {
                     radius = 16;
                     material = new THREE.MeshPhongMaterial({
-                        color: 0xaa4400,
-                        emissive: 0x441100,
+                        color: 0xaa8800,
+                        emissive: 0x443300,
                         transparent: true,
                         opacity: 0
                     });
@@ -1621,7 +1621,7 @@
                 game.kills++;
                 game.score += 50 * (1 + game.depth);
 
-                addCombatLog('You slayed ' + def.name + '!', 'kill');
+                addCombatLog('You slew ' + def.name + '!', 'kill');
                 updateStatsUI();
 
                 // Check if artifact should unlock
@@ -1708,7 +1708,7 @@
                     monsterPersuaded.get(query).add(def.idx);
 
                     game.score += 30;
-                    addCombatLog('You persuaded ' + def.name + ' to leave!', 'persuade');
+                    addCombatLog('You convinced ' + def.name + ' to withdraw!', 'persuade');
                     updateStatsUI();
 
                     checkArtifactUnlock(query);
@@ -1785,7 +1785,7 @@
                                     artifact.mesh.remove(artifact.mesh.userData.lockRing);
                                 }, 1000);
                             }
-                            addCombatLog('Artifact unlocked!', 'info');
+                            addCombatLog('Treasure unlocked!', 'info');
                         }
                     });
                 }
@@ -1935,7 +1935,7 @@
                     updateStatsUI();
                     updateUrl();
 
-                    addCombatLog('Searched: "' + query + '" — Found ' + totalArtifacts + ' artifacts, ' + (monsterDefsList.length - killedSet.size - persuadedSet.size) + ' guardians', 'info');
+                    addCombatLog('Explored: "' + query + '" — Found ' + totalArtifacts + ' relics, ' + (monsterDefsList.length - killedSet.size - persuadedSet.size) + ' guardians', 'info');
 
                 } catch (err) {
                     console.error('Search error:', err);
@@ -1947,7 +1947,7 @@
 
             function createConnectionLine(artifactMesh) {
                 var material = new THREE.LineBasicMaterial({
-                    color: 0x440000,
+                    color: 0x332200,
                     transparent: true,
                     opacity: 0.3
                 });
@@ -1993,7 +1993,7 @@
 
                 if (type === 'root') {
                     var root = data.Root || data;
-                    content += '<div class="detail-type">ROOT MESSAGE</div>';
+                    content += '<div class="detail-type">ANCIENT SCROLL</div>';
                     content += '<div class="detail-title">' + esc(root.TransactionId || 'Unknown').substring(0, 20) + '...</div>';
 
                     content += '<div class="detail-section">';
@@ -2024,18 +2024,18 @@
 
                     // Thread links
                     content += '<div class="thread-section">';
-                    content += '<div class="thread-title">🔗 FOLLOW THE THREAD</div>';
+                    content += '<div class="thread-title">⚔ DELVE DEEPER</div>';
                     if (root.Sender) {
-                        content += '<div class="thread-link" onclick="window.bdsDrillDown(\'' + esc(root.Sender) + '\')">→ Sender address</div>';
+                        content += '<div class="thread-link" onclick="window.bdsDrillDown(\'' + esc(root.Sender) + '\')">→ Sender</div>';
                     }
                     if (root.TransactionId) {
-                        content += '<div class="thread-link" onclick="window.bdsDrillDown(\'' + esc(root.TransactionId.substring(0, 12)) + '\')">→ Transaction prefix</div>';
+                        content += '<div class="thread-link" onclick="window.bdsDrillDown(\'' + esc(root.TransactionId.substring(0, 12)) + '\')">→ Sigil prefix</div>';
                     }
                     content += '</div>';
 
                 } else if (type === 'object') {
                     var obj = data.Object || data;
-                    content += '<div class="detail-type">OBJECT</div>';
+                    content += '<div class="detail-type">RELIC</div>';
                     content += '<div class="detail-title">' + esc(obj.Name || 'Unknown Object') + '</div>';
 
                     if (obj.Image) {
@@ -2064,18 +2064,18 @@
                     }
 
                     content += '<div class="thread-section">';
-                    content += '<div class="thread-title">🔗 FOLLOW THE THREAD</div>';
+                    content += '<div class="thread-title">⚔ DELVE DEEPER</div>';
                     if (obj.Creator) {
-                        content += '<div class="thread-link" onclick="window.bdsDrillDown(\'' + esc(obj.Creator) + '\')">→ Creator address</div>';
+                        content += '<div class="thread-link" onclick="window.bdsDrillDown(\'' + esc(obj.Creator) + '\')">→ Creator</div>';
                     }
                     if (obj.Name) {
-                        content += '<div class="thread-link" onclick="window.bdsDrillDown(\'' + esc(obj.Name) + '\')">→ Search by name</div>';
+                        content += '<div class="thread-link" onclick="window.bdsDrillDown(\'' + esc(obj.Name) + '\')">→ Seek by name</div>';
                     }
                     content += '</div>';
 
                 } else if (type === 'profile') {
                     var prof = data.Profile || data;
-                    content += '<div class="detail-type">PROFILE</div>';
+                    content += '<div class="detail-type">ADVENTURER</div>';
                     content += '<div class="detail-title">' + esc(prof.Name || prof.Keyword || 'Unknown Profile') + '</div>';
 
                     if (prof.Image) {
@@ -2104,15 +2104,15 @@
                     }
 
                     content += '<div class="thread-section">';
-                    content += '<div class="thread-title">🔗 FOLLOW THE THREAD</div>';
+                    content += '<div class="thread-title">⚔ DELVE DEEPER</div>';
                     if (prof.Address) {
-                        content += '<div class="thread-link" onclick="window.bdsDrillDown(\'' + esc(prof.Address) + '\')">→ Profile address</div>';
+                        content += '<div class="thread-link" onclick="window.bdsDrillDown(\'' + esc(prof.Address) + '\')">→ Adventurer address</div>';
                     }
                     if (prof.Keyword) {
-                        content += '<div class="thread-link" onclick="window.bdsDrillDown(\'' + esc(prof.Keyword) + '\')">→ Search keyword</div>';
+                        content += '<div class="thread-link" onclick="window.bdsDrillDown(\'' + esc(prof.Keyword) + '\')">→ Seek keyword</div>';
                     }
                     if (prof.Name) {
-                        content += '<div class="thread-link" onclick="window.bdsDrillDown(\'' + esc(prof.Name) + '\')">→ Search name</div>';
+                        content += '<div class="thread-link" onclick="window.bdsDrillDown(\'' + esc(prof.Name) + '\')">→ Seek name</div>';
                     }
                     content += '</div>';
                 }
@@ -2195,8 +2195,8 @@
 
                     // Stats text
                     ctx.font = 'bold 18px monospace';
-                    ctx.fillStyle = '#cc2200';
-                    ctx.fillText('☠ BANDERSNATCH — VOID RUN', 20, canvas.height - 80);
+                    ctx.fillStyle = '#cc6600';
+                    ctx.fillText('⚔ DUNGEON CRAWLER — QUEST RUN', 20, canvas.height - 80);
 
                     ctx.font = '14px monospace';
                     ctx.fillStyle = '#ddc8c8';
@@ -2224,7 +2224,7 @@
             function downloadScreenshot() {
                 var a = document.createElement('a');
                 a.href = els.shareImage.src;
-                a.download = 'bandersnatch_run_' + Date.now() + '.jpg';
+                a.download = 'dungeon_screenshot_' + Date.now() + '.jpg';
                 document.body.appendChild(a);
                 a.click();
                 a.remove();
@@ -2253,7 +2253,7 @@
             function saveGame() {
                 var saveData = {
                     version: '1',
-                    game: 'bandersnatch',
+                    game: 'dungeon-crawler',
                     savedAt: new Date().toISOString(),
                     stats: {
                         hp: game.hp,
@@ -2272,7 +2272,7 @@
                 var url = URL.createObjectURL(blob);
                 var a = document.createElement('a');
                 a.href = url;
-                a.download = 'bandersnatch_save_' + Date.now() + '.json';
+                a.download = 'dungeon_save_' + Date.now() + '.json';
                 document.body.appendChild(a);
                 a.click();
                 a.remove();
@@ -2302,8 +2302,8 @@
                     var resp = await fetch('https://ipfs.io/ipfs/' + hash);
                     var data = await resp.json();
 
-                    if (data.game !== 'bandersnatch') {
-                        throw new Error('Not a Bandersnatch save');
+                    if (data.game !== 'dungeon-crawler') {
+                        throw new Error('Not a Dungeon Crawler save');
                     }
 
                     // Restore state
@@ -2341,7 +2341,7 @@
                     game.hp = data.stats.hp;
                     updateStatsUI();
 
-                    addCombatLog('Game loaded from IPFS!', 'info');
+                    addCombatLog('Quest loaded from IPFS!', 'info');
                 } catch (e) {
                     console.error('Load error:', e);
                     addCombatLog('Failed to load: ' + e.message, 'damage');
@@ -2397,7 +2397,7 @@
                         if (nearest) {
                             openPersuadeDialog(nearest);
                         } else {
-                            addCombatLog('No monster nearby to persuade', 'info');
+                            addCombatLog('No creature nearby to parley', 'info');
                         }
                     } else if (e.key === 'f' || e.key === 'F') {
                         var nearest = findNearestMonster();
@@ -2467,10 +2467,10 @@
 
                     // Type-specific animations
                     if (def.typeIdx === 0) {
-                        // WRAITH bob
+                        // IMP bob
                         group.position.y = def.position.y + Math.sin(now * 0.002 + (group.userData.bobOffset || 0)) * 0.5;
                     } else if (def.typeIdx === 2) {
-                        // SPECTER teleport
+                        // WRAITH teleport
                         group.userData.teleportTimer -= delta * 1000;
                         if (group.userData.teleportTimer <= 0) {
                             group.position.set(
@@ -2481,7 +2481,7 @@
                             group.userData.teleportTimer = 3000 + Math.random() * 2000;
                         }
                     } else if (def.typeIdx === 5) {
-                        // LEVIATHAN circle
+                        // DEMON LORD circle
                         group.userData.circleAngle = (group.userData.circleAngle || 0) + delta * 0.3;
                         var r = 15;
                         group.position.x = Math.cos(group.userData.circleAngle) * r;
@@ -2632,7 +2632,7 @@
                 // Start animation
                 animate();
 
-                addCombatLog('Bandersnatch initialized. Enter the void...', 'info');
+                addCombatLog('The dungeon awakens. Name thy quarry...', 'info');
             }
 
             // Start when DOM ready
