@@ -425,15 +425,15 @@
 
         /* URL Builder Help Button */
         .url-help-btn {
-            width: 28px;
-            height: 28px;
-            min-width: 28px;
+            width: 20px;
+            height: 20px;
+            min-width: 20px;
             border-radius: 50%;
             background: #6200ea;
             color: white;
             border: none;
             cursor: pointer;
-            font-size: 0.9em;
+            font-size: 0.75em;
             font-weight: bold;
             display: flex;
             align-items: center;
@@ -445,6 +445,99 @@
         .url-help-btn:hover {
             background: #7c4dff;
         }
+
+        /* Free-text search row */
+        .freetext-search-row {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+            flex-wrap: wrap;
+            margin-top: 8px;
+        }
+
+        .freetext-search-row input[type="text"] {
+            flex: 1;
+            padding: 8px;
+            background: #333;
+            border: 1px solid #444;
+            color: #e0e0e0;
+            border-radius: 5px;
+            box-sizing: border-box;
+        }
+
+        #freetextSearchBtn {
+            padding: 8px 12px;
+            background: #03dac6;
+            border: none;
+            color: #121212;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            white-space: nowrap;
+        }
+
+        #freetextSearchBtn:hover:not(:disabled) { background: #00bfa5; }
+        #freetextSearchBtn:disabled { background: #444; color: #888; opacity: 0.7; }
+
+        /* Blockchain badge */
+        .blockchain-badge {
+            display: inline-block;
+            background: #03dac6;
+            color: #121212;
+            font-size: 0.65em;
+            font-weight: bold;
+            padding: 2px 5px;
+            border-radius: 3px;
+            margin-left: 6px;
+            vertical-align: middle;
+        }
+
+        /* Free-text results */
+        .freetext-results-wrapper {
+            margin-top: 20px;
+        }
+
+        .freetext-section-title {
+            color: #03dac6;
+            font-size: 0.9em;
+            font-weight: bold;
+            margin: 12px 0 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .freetext-result-item {
+            background: #1e1e1e;
+            padding: 10px 12px;
+            border-radius: 6px;
+            margin-bottom: 8px;
+            border-left: 3px solid #03dac6;
+        }
+
+        .freetext-result-item .result-name {
+            color: #bb86fc;
+            font-weight: bold;
+            font-size: 0.95em;
+        }
+
+        .freetext-result-item .result-desc {
+            color: #b0b0b0;
+            font-size: 0.82em;
+            margin-top: 3px;
+        }
+
+        #ftLoadMore {
+            padding: 8px 18px;
+            background: #333;
+            border: 1px solid #555;
+            color: #bb86fc;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px 0;
+            display: none;
+        }
+
+        #ftLoadMore:hover { background: #444; }
 
         /* URL Builder Modal */
         .url-builder-overlay {
@@ -569,7 +662,11 @@
                 <input type="text" id="urnInput" placeholder="Enter URN (e.g., embii4u) or #keyword" />
                 <label><input type="checkbox" id="mainnetToggle" /> Mainnet</label>
                 <button id="searchBtn" onclick="searchProfile()">Search</button>
-                <button class="url-help-btn" onclick="openUrlBuilder()" title="URL Builder — generate a shareable search link">?</button>
+                <button class="url-help-btn" onclick="openUrlBuilder()" title="URL Builder — generate a shareable search link">📎</button>
+            </div>
+            <div class="freetext-search-row">
+                <input type="text" id="freetextInput" placeholder="Free Text Search…" />
+                <button id="freetextSearchBtn" onclick="doFreeTextSearch()">🔍 Search</button>
             </div>
         </div>
         <div class="sidebar">
@@ -594,6 +691,14 @@
         <div id="messagesThread" class="messages-thread"></div>
         <div id="loading" class="loading" style="display: none;">Loading more messages...</div>
         <div id="error" class="error" style="display: none;"></div>
+        <!-- Free-text search results -->
+        <div id="freetextResultsSection" class="freetext-results-wrapper" style="display:none;">
+            <div class="freetext-section-title">👤 Profile Results</div>
+            <div id="freetextProfilesList"></div>
+            <div class="freetext-section-title">📦 Root Results</div>
+            <div id="freetextRootsList"></div>
+            <button id="ftLoadMore" onclick="loadMoreFreetext()">Load More</button>
+        </div>
     </div>
 
     <!-- URL Builder Modal -->
@@ -1816,6 +1921,74 @@
 
         document.getElementById("urlBuilderOverlay").addEventListener("click", (e) => {
             if (e.target.id === "urlBuilderOverlay") closeUrlBuilder();
+        });
+
+        /* ---- Free-text search (GetKnownProfilesBySearchString + GetKnownRootsBySearchString) ---- */
+        const ftState = { skip: 0, query: '', hasMore: false, isLoading: false };
+        const FT_QTY = 25;
+
+        function renderFtItem(data, blockchain, listId) {
+            const list = document.getElementById(listId);
+            if (!list) return;
+            const item = document.createElement('div');
+            item.className = 'freetext-result-item';
+            const name = data.URN || data.DisplayName || data.Name || 'Unknown';
+            const desc = (data.Bio || data.Description || '').substring(0, 100);
+            item.innerHTML = `<div class="result-name">${escapeHtml(name)}<span class="blockchain-badge">${escapeHtml(blockchain)}</span></div>${desc ? `<div class="result-desc">${escapeHtml(desc)}</div>` : ''}`;
+            list.appendChild(item);
+        }
+
+        async function doFreeTextSearch(skipVal) {
+            const input = document.getElementById('freetextInput');
+            const query = input ? input.value.trim() : '';
+            if (!query) return;
+            if (ftState.isLoading) return;
+            ftState.isLoading = true;
+            const isNewSearch = (skipVal === undefined);
+            if (isNewSearch) {
+                ftState.skip = 0;
+                ftState.query = query;
+                document.getElementById('freetextProfilesList').innerHTML = '';
+                document.getElementById('freetextRootsList').innerHTML = '';
+                document.getElementById('freetextResultsSection').style.display = 'none';
+            }
+            const btn = document.getElementById('freetextSearchBtn');
+            const lmBtn = document.getElementById('ftLoadMore');
+            if (btn) { btn.disabled = true; btn.textContent = 'Searching…'; }
+            if (lmBtn) lmBtn.style.display = 'none';
+            try {
+                const skip = isNewSearch ? 0 : ftState.skip;
+                const [profResp, rootResp] = await Promise.all([
+                    fetch(`https://p2fk.io/GetKnownProfilesBySearchString?searchString=${encodeURIComponent(ftState.query)}&qty=${FT_QTY}&skip=${skip}`),
+                    fetch(`https://p2fk.io/GetKnownRootsBySearchString?searchString=${encodeURIComponent(ftState.query)}&qty=${FT_QTY}&skip=${skip}`)
+                ]);
+                const profResults = profResp.ok ? await profResp.json() : [];
+                const rootResults = rootResp.ok ? await rootResp.json() : [];
+                if (Array.isArray(profResults)) {
+                    profResults.forEach(r => renderFtItem(r.profile || {}, r.blockchain || 'Unknown', 'freetextProfilesList'));
+                }
+                if (Array.isArray(rootResults)) {
+                    rootResults.forEach(r => renderFtItem(r.root || {}, r.blockchain || 'Unknown', 'freetextRootsList'));
+                }
+                const gotMore = (profResults.length >= FT_QTY || rootResults.length >= FT_QTY);
+                ftState.skip = skip + FT_QTY;
+                ftState.hasMore = gotMore;
+                document.getElementById('freetextResultsSection').style.display = 'block';
+                if (lmBtn) lmBtn.style.display = gotMore ? 'inline-block' : 'none';
+            } catch (e) {
+                showError('Free-text search failed: ' + e.message);
+            } finally {
+                ftState.isLoading = false;
+                if (btn) { btn.disabled = false; btn.textContent = '🔍 Search'; }
+            }
+        }
+
+        function loadMoreFreetext() {
+            doFreeTextSearch(ftState.skip);
+        }
+
+        document.getElementById('freetextInput').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') doFreeTextSearch();
         });
     </script>
 </body>

@@ -599,15 +599,15 @@
 
   /* URL Builder Help Button */
   .url-help-btn {
-    width: 28px;
-    height: 28px;
-    min-width: 28px;
+    width: 20px;
+    height: 20px;
+    min-width: 20px;
     border-radius: 50%;
     background: #6200ea;
     color: white;
     border: none;
     cursor: pointer;
-    font-size: 0.9em;
+    font-size: 0.75em;
     font-weight: bold;
     display: flex;
     align-items: center;
@@ -619,6 +619,75 @@
   .url-help-btn:hover {
     background: #7c4dff;
   }
+
+  /* Free-text search section */
+  .freetext-search-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .freetext-search-row input[type="text"] {
+    padding: 8px;
+    background: #1e1e1e;
+    border: 1px solid #333;
+    color: #e0e0e0;
+    border-radius: 5px;
+    flex: 1 1 160px;
+    max-width: 220px;
+  }
+  #freetextSearchBtn {
+    padding: 8px 12px;
+    background: #03dac6;
+    border: none;
+    color: #121212;
+    border-radius: 5px;
+    cursor: pointer;
+    font-weight: bold;
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+  #freetextSearchBtn:hover:not(:disabled) { background: #00bfa5; }
+  #freetextSearchBtn:disabled { background: #444; color: #888; opacity: 0.7; }
+
+  /* Blockchain badge */
+  .blockchain-badge {
+    display: inline-block;
+    background: #03dac6;
+    color: #121212;
+    font-size: 0.65em;
+    font-weight: bold;
+    padding: 2px 5px;
+    border-radius: 3px;
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    z-index: 10;
+  }
+
+  /* Free-text results sections */
+  .freetext-section {
+    margin-bottom: 20px;
+  }
+  .freetext-section-title {
+    color: #03dac6;
+    font-size: 0.9em;
+    font-weight: bold;
+    margin: 8px 0 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  #freetextLoadMore {
+    padding: 8px 18px;
+    background: #333;
+    border: 1px solid #555;
+    color: #bb86fc;
+    border-radius: 5px;
+    cursor: pointer;
+    margin: 10px 0;
+    display: none;
+  }
+  #freetextLoadMore:hover { background: #444; }
 
   /* URL Builder Modal */
   .url-builder-overlay {
@@ -742,6 +811,7 @@
     <div class="search-bar">
       <input type="text" id="urnInput" placeholder="Enter URN (e.g., embii4u) or #keyword">
       <button id="searchBtn" onclick="searchProfile()">Search</button>
+      <button class="url-help-btn" onclick="openUrlBuilder()" title="URL Builder — generate a shareable search link">📎</button>
       <label><input type="checkbox" id="mainnetToggle"> Mainnet</label>
       <select id="sortSelect">
         <option value="newest">Newest</option>
@@ -751,13 +821,16 @@
         <option value="highestActivity">Highest Activity</option>
         <option value="recentActivity">Recent Activity</option>
       </select>
+      <div class="freetext-search-row">
+        <input type="text" id="freetextInput" placeholder="Free Text Search…">
+        <button id="freetextSearchBtn" onclick="doFreeTextSearch()">🔍 Search</button>
+      </div>
       <div class="filter-buttons">
         <button id="filterAll" class="active" onclick="filterObjects('all')">All</button>
         <button id="filterCreated" onclick="filterObjects('created')">Created</button>
         <button id="filterOwned" onclick="filterObjects('owned')">Owned</button>
       </div>
       <div id="objectCount" class="object-count" style="display: none;"></div>
-      <button class="url-help-btn" onclick="openUrlBuilder()" title="URL Builder — generate a shareable search link">?</button>
     </div>
     <div id="profileSection" class="profile-section">
       <div class="profile-content">
@@ -786,6 +859,18 @@
     <div id="objectsGrid" class="objects-grid"></div>
     <div id="loading" class="loading" style="display: none;">Loading more objects...</div>
     <div id="error" class="error" style="display: none;"></div>
+    <!-- Free-text search results -->
+    <div id="freetextResultsSection" style="display:none;">
+      <div class="freetext-section">
+        <div class="freetext-section-title">🔍 Object Results</div>
+        <div id="freetextObjectsGrid" class="objects-grid"></div>
+      </div>
+      <div class="freetext-section">
+        <div class="freetext-section-title">📦 Root Results</div>
+        <div id="freetextRootsGrid" class="objects-grid"></div>
+      </div>
+      <button id="freetextLoadMore" onclick="loadMoreFreetext()">Load More</button>
+    </div>
   </div>
   <div id="modalOverlay" class="modal-overlay" aria-hidden="true">
     <button id="modalNavLeft" class="modal-nav" aria-label="Previous object" style="display:none;" onclick="navigateObject(-1)">&larr;</button>
@@ -1971,6 +2056,94 @@
 
   document.getElementById('urlBuilderOverlay').addEventListener('click', (e) => {
     if (e.target.id === 'urlBuilderOverlay') closeUrlBuilder();
+  });
+
+  /* ---- Free-text search (GetKnownObjectsBySearchString + GetKnownRootsBySearchString) ---- */
+  const freetextState = { skip: 0, query: '', hasMore: false, isLoading: false };
+  const FT_QTY = 25;
+
+  function renderFrSearchCard(data, blockchain, nameField, descField, gridId) {
+    const grid = document.getElementById(gridId);
+    if (!grid) return;
+    const card = document.createElement('div');
+    card.className = 'object-card';
+    const name = data[nameField] || data.Name || data.DisplayName || data.URN || 'Unknown';
+    const desc = (data[descField] || data.Description || '').substring(0, 80);
+    const imageUrl = getImageUrl(data.Image, data.URN);
+    card.innerHTML = `
+      <div style="position:relative;">
+        <img src="${state.fallbackImage}" alt="${name}" style="display:block;width:100%;height:140px;object-fit:cover;border-radius:5px;">
+        <span class="blockchain-badge">${escapeHtml(blockchain)}</span>
+      </div>
+      <h3>${escapeHtml(name)}</h3>
+      ${desc ? `<p>${escapeHtml(desc)}</p>` : ''}
+    `;
+    if (imageUrl && imageUrl !== state.fallbackImage) {
+      const img = card.querySelector('img');
+      img.src = imageUrl;
+    } else if (isTextUrn(data.URN)) {
+      fetchTextForUrn(data.URN, false).then(text => {
+        if (text) card.querySelector('img').src = generateTextImage(text, 250, 140);
+      }).catch(() => {});
+    }
+    grid.appendChild(card);
+  }
+
+  function escapeHtml(str) {
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  async function doFreeTextSearch(skipVal) {
+    const input = document.getElementById('freetextInput');
+    const query = input ? input.value.trim() : '';
+    if (!query) return;
+    if (freetextState.isLoading) return;
+    freetextState.isLoading = true;
+    const isNewSearch = (skipVal === undefined);
+    if (isNewSearch) {
+      freetextState.skip = 0;
+      freetextState.query = query;
+      document.getElementById('freetextObjectsGrid').innerHTML = '';
+      document.getElementById('freetextRootsGrid').innerHTML = '';
+      document.getElementById('freetextResultsSection').style.display = 'none';
+    }
+    const btn = document.getElementById('freetextSearchBtn');
+    const lmBtn = document.getElementById('freetextLoadMore');
+    if (btn) { btn.disabled = true; btn.textContent = 'Searching…'; }
+    if (lmBtn) lmBtn.style.display = 'none';
+    try {
+      const skip = isNewSearch ? 0 : freetextState.skip;
+      const [objResp, rootResp] = await Promise.all([
+        fetch(`https://p2fk.io/GetKnownObjectsBySearchString?searchString=${encodeURIComponent(freetextState.query)}&qty=${FT_QTY}&skip=${skip}`),
+        fetch(`https://p2fk.io/GetKnownRootsBySearchString?searchString=${encodeURIComponent(freetextState.query)}&qty=${FT_QTY}&skip=${skip}`)
+      ]);
+      const objResults = objResp.ok ? await objResp.json() : [];
+      const rootResults = rootResp.ok ? await rootResp.json() : [];
+      if (Array.isArray(objResults)) {
+        objResults.forEach(r => renderFrSearchCard(r.object || {}, r.blockchain || 'Unknown', 'Name', 'Description', 'freetextObjectsGrid'));
+      }
+      if (Array.isArray(rootResults)) {
+        rootResults.forEach(r => renderFrSearchCard(r.root || {}, r.blockchain || 'Unknown', 'URN', 'Description', 'freetextRootsGrid'));
+      }
+      const gotMore = (objResults.length >= FT_QTY || rootResults.length >= FT_QTY);
+      freetextState.skip = skip + FT_QTY;
+      freetextState.hasMore = gotMore;
+      document.getElementById('freetextResultsSection').style.display = 'block';
+      if (lmBtn) lmBtn.style.display = gotMore ? 'inline-block' : 'none';
+    } catch (e) {
+      showError('Free-text search failed: ' + e.message);
+    } finally {
+      freetextState.isLoading = false;
+      if (btn) { btn.disabled = false; btn.textContent = '🔍 Search'; }
+    }
+  }
+
+  function loadMoreFreetext() {
+    doFreeTextSearch(freetextState.skip);
+  }
+
+  document.getElementById('freetextInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') doFreeTextSearch();
   });
 </script>
 </body>
