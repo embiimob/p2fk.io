@@ -1,0 +1,932 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>✨ Bandersnatch — Sup!? Explorer</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      background: #121212;
+      color: #e0e0e0;
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+    }
+    /* ── Top Bar ─────────────────────────────────────────── */
+    .top-bar {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      background: #121212;
+      border-bottom: 1px solid #2a2a2a;
+      z-index: 1000;
+      padding: 8px 15px;
+    }
+    .top-bar-inner {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    .brand {
+      color: #bb86fc;
+      font-weight: bold;
+      font-size: 1.05em;
+      white-space: nowrap;
+      flex: 0 0 auto;
+      letter-spacing: 0.03em;
+    }
+    #searchInput {
+      flex: 1 1 200px;
+      min-width: 120px;
+      max-width: 340px;
+      padding: 7px 10px;
+      background: #1e1e1e;
+      border: 1px solid #333;
+      color: #e0e0e0;
+      border-radius: 5px;
+      font-size: 0.95em;
+    }
+    #searchInput:focus { outline: 1px solid #bb86fc; border-color: #bb86fc; }
+    #qtySelect {
+      padding: 7px 6px;
+      background: #1e1e1e;
+      border: 1px solid #333;
+      color: #e0e0e0;
+      border-radius: 5px;
+      cursor: pointer;
+      flex: 0 0 auto;
+    }
+    .mainnet-label {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      flex: 0 0 auto;
+      font-size: 0.88em;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    #searchBtn {
+      padding: 7px 18px;
+      background: #6200ea;
+      border: none;
+      color: #fff;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 0.95em;
+      flex: 0 0 auto;
+      min-width: 80px;
+      transition: background 0.2s;
+    }
+    #searchBtn:hover:not(:disabled) { background: #7c4dff; }
+    #searchBtn:disabled { background: #444; opacity: 0.7; cursor: default; }
+    /* ── Breadcrumbs ─────────────────────────────────────── */
+    .breadcrumbs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      align-items: center;
+      padding: 5px 15px 5px;
+      background: #121212;
+      border-bottom: 1px solid #1e1e1e;
+      font-size: 0.8em;
+      min-height: 30px;
+    }
+    .breadcrumb-item {
+      color: #bb86fc;
+      cursor: pointer;
+      text-decoration: underline;
+      max-width: 160px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .breadcrumb-item:hover { color: #fff; }
+    .breadcrumb-item.current { color: #e0e0e0; text-decoration: none; cursor: default; }
+    .breadcrumb-sep { color: #555; }
+    /* ── Container ───────────────────────────────────────── */
+    .container {
+      padding: 15px;
+      padding-top: 105px; /* top-bar (~50) + breadcrumbs (~30) + gap */
+    }
+    /* ── Spinner ─────────────────────────────────────────── */
+    .spinner-wrap {
+      display: flex;
+      justify-content: center;
+      padding: 40px 0;
+    }
+    .spinner {
+      width: 40px; height: 40px;
+      border: 4px solid #333;
+      border-top-color: #bb86fc;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    /* ── Tabs ────────────────────────────────────────────── */
+    .tabs {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+    }
+    .tab-btn {
+      padding: 7px 14px;
+      background: #1e1e1e;
+      border: 1px solid #333;
+      color: #b0b0b0;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.9em;
+      transition: background 0.2s, color 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .tab-btn:hover { background: #2a2a2a; color: #e0e0e0; }
+    .tab-btn.active { background: #6200ea; border-color: #6200ea; color: #fff; }
+    .tab-count {
+      background: rgba(255,255,255,0.15);
+      border-radius: 10px;
+      padding: 1px 7px;
+      font-size: 0.82em;
+    }
+    .tab-btn.active .tab-count { background: rgba(255,255,255,0.25); }
+    /* ── Section panel ───────────────────────────────────── */
+    .section-panel { display: none; }
+    .section-panel.active { display: block; }
+    /* ── Cards grid ─────────────────────────────────────── */
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 14px;
+      margin-bottom: 14px;
+    }
+    /* ── Result card ─────────────────────────────────────── */
+    .result-card {
+      background: #1e1e1e;
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+      padding: 13px;
+      position: relative;
+      overflow: hidden;
+      transition: transform 0.15s;
+    }
+    .result-card:hover { transform: translateY(-3px); }
+    .result-card .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+    .card-title {
+      font-size: 0.92em;
+      font-weight: bold;
+      color: #bb86fc;
+      word-break: break-all;
+      flex: 1;
+    }
+    .card-meta {
+      font-size: 0.78em;
+      color: #888;
+      margin-bottom: 5px;
+    }
+    .card-text {
+      font-size: 0.82em;
+      color: #c0c0c0;
+      line-height: 1.5;
+      word-break: break-word;
+      margin-bottom: 6px;
+    }
+    /* ── Blockchain badge ────────────────────────────────── */
+    .chain-badge {
+      font-size: 0.72em;
+      font-weight: bold;
+      padding: 2px 7px;
+      border-radius: 10px;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    /* ── Address / keyword links ─────────────────────────── */
+    .drill-link {
+      color: #bb86fc;
+      cursor: pointer;
+      text-decoration: underline;
+      word-break: break-all;
+    }
+    .drill-link:hover { color: #fff; }
+    /* ── Object thumbnail ────────────────────────────────── */
+    .obj-thumb {
+      width: 100%;
+      height: 140px;
+      object-fit: cover;
+      border-radius: 5px;
+      margin-bottom: 8px;
+      background: #2a2a2a;
+    }
+    .obj-thumb-placeholder {
+      width: 100%;
+      height: 140px;
+      background: #2a2a2a;
+      border-radius: 5px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2em;
+      margin-bottom: 8px;
+      color: #555;
+    }
+    /* ── Profile avatar ──────────────────────────────────── */
+    .profile-avatar {
+      width: 60px;
+      height: 60px;
+      object-fit: cover;
+      border-radius: 50%;
+      flex-shrink: 0;
+      background: #2a2a2a;
+    }
+    .profile-avatar-placeholder {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      background: #2a2a2a;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.6em;
+      flex-shrink: 0;
+      color: #555;
+    }
+    .profile-header-row {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      margin-bottom: 8px;
+    }
+    .profile-info { flex: 1; min-width: 0; }
+    /* ── Expand/collapse detail ──────────────────────────── */
+    .expand-btn {
+      background: none;
+      border: 1px solid #444;
+      color: #bb86fc;
+      border-radius: 4px;
+      padding: 3px 9px;
+      cursor: pointer;
+      font-size: 0.78em;
+      margin-top: 6px;
+      transition: background 0.15s;
+    }
+    .expand-btn:hover { background: #2a2a2a; }
+    .detail-panel {
+      display: none;
+      margin-top: 10px;
+      background: #151515;
+      border-radius: 5px;
+      padding: 10px;
+      font-size: 0.78em;
+      color: #c0c0c0;
+      word-break: break-all;
+      max-height: 300px;
+      overflow-y: auto;
+      transition: max-height 0.3s ease;
+    }
+    .detail-panel.open { display: block; }
+    .detail-panel pre {
+      margin: 0;
+      white-space: pre-wrap;
+      font-family: monospace;
+      font-size: 0.9em;
+      color: #a0d0ff;
+    }
+    /* ── Load More button ────────────────────────────────── */
+    .load-more-btn {
+      display: block;
+      width: 100%;
+      max-width: 220px;
+      margin: 4px auto 20px;
+      padding: 9px 0;
+      background: #1e1e1e;
+      border: 1px solid #444;
+      color: #bb86fc;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.9em;
+      text-align: center;
+      transition: background 0.2s;
+    }
+    .load-more-btn:hover { background: #2a2a2a; }
+    .load-more-btn:disabled { opacity: 0.5; cursor: default; }
+    /* ── Empty / error states ────────────────────────────── */
+    .empty-msg {
+      text-align: center;
+      padding: 30px 0;
+      color: #666;
+      font-size: 0.9em;
+    }
+    .error-msg {
+      background: #2a1515;
+      border: 1px solid #8b0000;
+      color: #ff6b6b;
+      border-radius: 6px;
+      padding: 12px 15px;
+      margin-bottom: 14px;
+      font-size: 0.88em;
+    }
+    /* ── Welcome splash ──────────────────────────────────── */
+    .welcome {
+      text-align: center;
+      padding: 60px 20px 30px;
+      color: #555;
+    }
+    .welcome h2 { color: #bb86fc; font-size: 1.6em; margin-bottom: 10px; }
+    .welcome p { font-size: 0.95em; line-height: 1.7; max-width: 480px; margin: 0 auto; }
+    /* ── Responsive tweaks ───────────────────────────────── */
+    @media (max-width: 500px) {
+      .brand { font-size: 0.9em; }
+      .cards-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Fixed Top Bar ───────────────────────────────────────── -->
+<div class="top-bar">
+  <div class="top-bar-inner">
+    <span class="brand">✨ Bandersnatch</span>
+    <input id="searchInput" type="text" placeholder="Search roots, objects, profiles…" autocomplete="off" />
+    <select id="qtySelect" title="Results per endpoint">
+      <option value="5">5</option>
+      <option value="10" selected>10</option>
+      <option value="25">25</option>
+      <option value="50">50</option>
+    </select>
+    <label class="mainnet-label" title="Toggle mainnet / testnet">
+      <input type="checkbox" id="mainnetCheck" checked />
+      Mainnet
+    </label>
+    <button id="searchBtn">Search</button>
+  </div>
+</div>
+
+<!-- ── Breadcrumbs ─────────────────────────────────────────── -->
+<div class="breadcrumbs" id="breadcrumbs"></div>
+
+<!-- ── Main Content ───────────────────────────────────────── -->
+<div class="container" id="mainContainer">
+  <div class="welcome" id="welcomeMsg">
+    <h2>✨ Bandersnatch</h2>
+    <p>
+      Type anything to explore the Sup!? blockchain — search by keyword, address, name, or phrase.<br><br>
+      Every result is a portal. Click any address or keyword to follow the story deeper.
+    </p>
+  </div>
+</div>
+
+<script>
+/* ─────────────────────────────────────────────────────────────
+   CONSTANTS & STATE
+───────────────────────────────────────────────────────────── */
+const BASE = 'https://p2fk.io';
+const CHAIN_COLORS = {
+  BTC: '#f7931a', LTC: '#bfbbbb', DOG: '#c3a634', MZC: '#00aaff',
+  'BTC-testnet': '#4caf50', Unknown: '#888'
+};
+
+let history = [];          // { query, mainnet, skip_roots, skip_objects, skip_profiles }
+let currentQuery = '';
+let currentMainnet = true;
+let activeTab = 'roots';
+
+// Per-section state
+let sections = {
+  roots:    { items: [], skip: 0, loading: false, done: false },
+  objects:  { items: [], skip: 0, loading: false, done: false },
+  profiles: { items: [], skip: 0, loading: false, done: false }
+};
+
+// Simple LRU-ish cache (key → result array)
+const cache = new Map();
+function cacheKey(endpoint, q, mainnet, skip, qty) {
+  return `${endpoint}|${q}|${mainnet}|${skip}|${qty}`;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   UTILITY HELPERS
+───────────────────────────────────────────────────────────── */
+const abbreviate = (s) => s && s.length > 14 ? `${s.slice(0, 6)}…${s.slice(-4)}` : (s || '');
+
+const isBitcoinAddress = (s) => {
+  if (!s || typeof s !== 'string') return false;
+  const t = s.trim();
+  return /^[13][1-9A-HJ-NP-Za-km-z]{24,33}$/.test(t) ||
+         /^bc1[ac-hj-np-z02-9]{39,59}$/.test(t) ||
+         /^[mn2][1-9A-HJ-NP-Za-km-z]{24,33}$/.test(t) ||
+         /^tb1[ac-hj-np-z02-9]{39,59}$/.test(t);
+};
+
+function chainBadge(blockchain) {
+  const bc = blockchain || 'Unknown';
+  const color = CHAIN_COLORS[bc] || CHAIN_COLORS.Unknown;
+  return `<span class="chain-badge" style="background:${color};color:${bc==='LTC'||bc==='Unknown'?'#111':'#fff'}">${escHtml(bc)}</span>`;
+}
+
+function escHtml(str) {
+  if (str == null) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/* Resolve an address from text that could be a keyword (#keyword or keyword) */
+async function resolveAddress(raw, mainnet) {
+  const trimmed = raw.trim();
+  const kw = trimmed.startsWith('#') ? trimmed.slice(1) : trimmed;
+  if (isBitcoinAddress(kw)) return kw;
+  try {
+    const url = `${BASE}/GetPublicAddressByKeyword/${encodeURIComponent(kw)}?mainnet=${mainnet}`;
+    const resp = await fetch(url);
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    return data || null;
+  } catch { return null; }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   FETCH HELPERS (with caching)
+───────────────────────────────────────────────────────────── */
+async function fetchEndpoint(endpoint, q, mainnet, skip, qty) {
+  const key = cacheKey(endpoint, q, mainnet, skip, qty);
+  if (cache.has(key)) return cache.get(key);
+  const url = `${BASE}/${endpoint}?searchString=${encodeURIComponent(q)}&qty=${qty}&skip=${skip}`;
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  const data = await resp.json();
+  const arr = Array.isArray(data) ? data : [];
+  cache.set(key, arr);
+  return arr;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   SEARCH ORCHESTRATION
+───────────────────────────────────────────────────────────── */
+async function runSearch(query, mainnet, isNewSearch = true) {
+  const qty = parseInt(document.getElementById('qtySelect').value, 10);
+  query = query.trim();
+  if (!query) return;
+
+  if (isNewSearch) {
+    // Push to history
+    if (!history.length || history[history.length - 1].query !== query) {
+      history.push({ query, mainnet });
+    }
+    currentQuery = query;
+    currentMainnet = mainnet;
+    sections = {
+      roots:    { items: [], skip: 0, loading: false, done: false },
+      objects:  { items: [], skip: 0, loading: false, done: false },
+      profiles: { items: [], skip: 0, loading: false, done: false }
+    };
+    updateUrl(query, mainnet);
+  }
+
+  renderBreadcrumbs();
+  renderShell();
+  showSpinner(true);
+  setSearching(true);
+
+  try {
+    const [roots, objects, profiles] = await Promise.all([
+      fetchEndpoint('GetKnownRootsBySearchString',    query, mainnet, sections.roots.skip,    qty).catch(() => []),
+      fetchEndpoint('GetKnownObjectsBySearchString',  query, mainnet, sections.objects.skip,  qty).catch(() => []),
+      fetchEndpoint('GetKnownProfilesBySearchString', query, mainnet, sections.profiles.skip, qty).catch(() => [])
+    ]);
+
+    sections.roots.items    = roots;
+    sections.objects.items  = objects;
+    sections.profiles.items = profiles;
+    sections.roots.skip     = roots.length;
+    sections.objects.skip   = objects.length;
+    sections.profiles.skip  = profiles.length;
+    sections.roots.done     = roots.length < qty;
+    sections.objects.done   = objects.length < qty;
+    sections.profiles.done  = profiles.length < qty;
+
+    renderResults();
+  } catch (err) {
+    showError(`Search failed: ${err.message}`);
+  } finally {
+    showSpinner(false);
+    setSearching(false);
+  }
+}
+
+async function loadMore(type) {
+  const qty = parseInt(document.getElementById('qtySelect').value, 10);
+  const sec = sections[type];
+  if (sec.loading || sec.done) return;
+  sec.loading = true;
+  const btn = document.getElementById(`loadMore-${type}`);
+  if (btn) { btn.disabled = true; btn.textContent = 'Loading…'; }
+
+  const endpointMap = {
+    roots:    'GetKnownRootsBySearchString',
+    objects:  'GetKnownObjectsBySearchString',
+    profiles: 'GetKnownProfilesBySearchString'
+  };
+
+  try {
+    const more = await fetchEndpoint(endpointMap[type], currentQuery, currentMainnet, sec.skip, qty);
+    sec.items = sec.items.concat(more);
+    sec.skip += more.length;
+    sec.done = more.length < qty;
+    renderSectionCards(type);
+  } catch (err) {
+    if (btn) btn.textContent = 'Retry';
+  } finally {
+    sec.loading = false;
+    if (btn) btn.disabled = false;
+    updateTabCounts();
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   RENDER: SHELL (tabs + panels)
+───────────────────────────────────────────────────────────── */
+function renderShell() {
+  const container = document.getElementById('mainContainer');
+  container.innerHTML = `
+    <div class="tabs" id="tabsRow"></div>
+    <div id="error-area"></div>
+    <div id="spinner-area"></div>
+    <div class="section-panel${activeTab==='roots'?' active':''}" id="panel-roots">
+      <div class="cards-grid" id="grid-roots"></div>
+      <button class="load-more-btn" id="loadMore-roots" onclick="loadMore('roots')">Load More</button>
+    </div>
+    <div class="section-panel${activeTab==='objects'?' active':''}" id="panel-objects">
+      <div class="cards-grid" id="grid-objects"></div>
+      <button class="load-more-btn" id="loadMore-objects" onclick="loadMore('objects')">Load More</button>
+    </div>
+    <div class="section-panel${activeTab==='profiles'?' active':''}" id="panel-profiles">
+      <div class="cards-grid" id="grid-profiles"></div>
+      <button class="load-more-btn" id="loadMore-profiles" onclick="loadMore('profiles')">Load More</button>
+    </div>
+  `;
+  renderTabButtons();
+}
+
+function renderTabButtons() {
+  const row = document.getElementById('tabsRow');
+  if (!row) return;
+  const tabs = [
+    { id: 'roots',    icon: '📜', label: 'Roots' },
+    { id: 'objects',  icon: '🎨', label: 'Objects' },
+    { id: 'profiles', icon: '👤', label: 'Profiles' }
+  ];
+  row.innerHTML = tabs.map(t => {
+    const count = sections[t.id].items.length;
+    return `<button class="tab-btn${activeTab===t.id?' active':''}" onclick="switchTab('${t.id}')">
+      ${t.icon} ${t.label} <span class="tab-count" id="count-${t.id}">${count}</span>
+    </button>`;
+  }).join('');
+}
+
+function updateTabCounts() {
+  ['roots','objects','profiles'].forEach(id => {
+    const el = document.getElementById(`count-${id}`);
+    if (el) el.textContent = sections[id].items.length;
+  });
+}
+
+function switchTab(id) {
+  activeTab = id;
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  const btn = document.querySelector(`.tab-btn[onclick="switchTab('${id}')"]`);
+  if (btn) btn.classList.add('active');
+  document.querySelectorAll('.section-panel').forEach(p => p.classList.remove('active'));
+  const panel = document.getElementById(`panel-${id}`);
+  if (panel) panel.classList.add('active');
+}
+
+/* ─────────────────────────────────────────────────────────────
+   RENDER: ALL RESULTS
+───────────────────────────────────────────────────────────── */
+function renderResults() {
+  renderSectionCards('roots');
+  renderSectionCards('objects');
+  renderSectionCards('profiles');
+  renderTabButtons();
+}
+
+function renderSectionCards(type) {
+  const grid = document.getElementById(`grid-${type}`);
+  const btn  = document.getElementById(`loadMore-${type}`);
+  if (!grid) return;
+
+  const sec = sections[type];
+  if (sec.items.length === 0) {
+    grid.innerHTML = `<div class="empty-msg" style="grid-column:1/-1">No ${type} found for this search.</div>`;
+  } else {
+    const renderFn = type === 'roots' ? renderRootCard
+                   : type === 'objects' ? renderObjectCard
+                   : renderProfileCard;
+    grid.innerHTML = sec.items.map((item, i) => renderFn(item, i)).join('');
+  }
+
+  if (btn) {
+    btn.style.display = sec.done ? 'none' : 'block';
+    btn.disabled = false;
+    btn.textContent = 'Load More';
+  }
+  updateTabCounts();
+}
+
+/* ─────────────────────────────────────────────────────────────
+   RENDER: ROOT CARD
+───────────────────────────────────────────────────────────── */
+function renderRootCard(item, idx) {
+  const bc  = item.Blockchain || 'Unknown';
+  const r   = item.Root || {};
+  const txid = r.TransactionID || r.TXID || r.txid || '';
+  const ts   = r.Timestamp || r.timestamp || r.BlockTime || r.CreatedAt || '';
+  const addrs = getAddresses(r);
+  const msgPreview = extractMessage(r);
+
+  return `<div class="result-card">
+    <div class="card-header">
+      <span class="card-title">${txid ? abbreviate(txid) : '(no txid)'}</span>
+      ${chainBadge(bc)}
+    </div>
+    ${ts ? `<div class="card-meta">${escHtml(formatTs(ts))}</div>` : ''}
+    ${addrs.length ? `<div class="card-meta">${addrs.map(a =>
+      `<span class="drill-link" onclick="drillDown('${escHtml(a)}')" title="${escHtml(a)}">${escHtml(abbreviate(a))}</span>`
+    ).join(', ')}</div>` : ''}
+    ${msgPreview ? `<div class="card-text">${escHtml(msgPreview.slice(0, 200))}${msgPreview.length > 200 ? '…' : ''}</div>` : ''}
+    <button class="expand-btn" onclick="toggleDetail(this)">Show JSON ▾</button>
+    <div class="detail-panel"><pre>${escHtml(JSON.stringify(r, null, 2))}</pre></div>
+  </div>`;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   RENDER: OBJECT CARD
+───────────────────────────────────────────────────────────── */
+function renderObjectCard(item, idx) {
+  const bc = item.Blockchain || 'Unknown';
+  const o  = item.Object || {};
+  const name     = o.Name || o.ObjectName || o.name || '(unnamed)';
+  const creator  = o.CreatorAddress || o.Creator || o.Address || o.OwnerAddress || '';
+  const urn      = o.URN || o.Urn || o.urn || '';
+  const thumbUrl = urnToThumbUrl(urn);
+
+  return `<div class="result-card">
+    ${thumbUrl
+      ? `<img class="obj-thumb" src="${escHtml(thumbUrl)}" alt="${escHtml(name)}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" /><div class="obj-thumb-placeholder" style="display:none">🎨</div>`
+      : `<div class="obj-thumb-placeholder">🎨</div>`}
+    <div class="card-header">
+      <span class="card-title">${escHtml(name)}</span>
+      ${chainBadge(bc)}
+    </div>
+    ${creator ? `<div class="card-meta">By <span class="drill-link" onclick="drillDown('${escHtml(creator)}')" title="${escHtml(creator)}">${escHtml(abbreviate(creator))}</span></div>` : ''}
+    ${urn ? `<div class="card-meta" style="font-size:0.74em;color:#666">${escHtml(abbreviate(urn))}</div>` : ''}
+    <button class="expand-btn" onclick="toggleDetail(this)">Show Details ▾</button>
+    <div class="detail-panel"><pre>${escHtml(JSON.stringify(o, null, 2))}</pre></div>
+  </div>`;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   RENDER: PROFILE CARD
+───────────────────────────────────────────────────────────── */
+function renderProfileCard(item, idx) {
+  const bc = item.Blockchain || 'Unknown';
+  const p  = item.Profile || {};
+  const displayName = p.DisplayName || p.Name || p.Keyword || p.keyword || '';
+  const keyword     = p.Keyword || p.keyword || '';
+  const address     = p.Address || p.PublicAddress || p.address || '';
+  const bio         = p.Bio || p.Description || p.description || p.About || '';
+  const avatarUrn   = p.ProfileImageURN || p.AvatarURN || p.ImageURN || p.URN || '';
+  const thumbUrl    = urnToThumbUrl(avatarUrn);
+
+  return `<div class="result-card">
+    <div class="profile-header-row">
+      ${thumbUrl
+        ? `<img class="profile-avatar" src="${escHtml(thumbUrl)}" alt="${escHtml(displayName)}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" /><div class="profile-avatar-placeholder" style="display:none">👤</div>`
+        : `<div class="profile-avatar-placeholder">👤</div>`}
+      <div class="profile-info">
+        <div class="card-header" style="margin-bottom:4px">
+          <span class="card-title">${escHtml(displayName || '(no name)')}</span>
+          ${chainBadge(bc)}
+        </div>
+        ${keyword && keyword !== displayName
+          ? `<div class="card-meta"><span class="drill-link" onclick="drillDown('#${escHtml(keyword)}')">#${escHtml(keyword)}</span></div>`
+          : ''}
+        ${address ? `<div class="card-meta"><span class="drill-link" onclick="drillDown('${escHtml(address)}')" title="${escHtml(address)}">${escHtml(abbreviate(address))}</span></div>` : ''}
+      </div>
+    </div>
+    ${bio ? `<div class="card-text">${escHtml(bio.slice(0, 160))}${bio.length > 160 ? '…' : ''}</div>` : ''}
+    <button class="expand-btn" onclick="toggleDetail(this)">Show Details ▾</button>
+    <div class="detail-panel"><pre>${escHtml(JSON.stringify(p, null, 2))}</pre></div>
+  </div>`;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   EXPAND / COLLAPSE
+───────────────────────────────────────────────────────────── */
+function toggleDetail(btn) {
+  const panel = btn.nextElementSibling;
+  const open  = panel.classList.toggle('open');
+  btn.textContent = open ? 'Hide ▴' : (btn.textContent.startsWith('Hide') ? 'Show Details ▾' : btn.textContent.replace('▴', '▾').replace('Hide','Show'));
+  if (open && btn.textContent.startsWith('Hide')) {
+    // infer correct label from sibling
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   DRILL DOWN
+───────────────────────────────────────────────────────────── */
+async function drillDown(raw) {
+  const mainnet = document.getElementById('mainnetCheck').checked;
+  let query = raw.trim();
+
+  // If it looks like a keyword (starts with #), resolve to address first
+  if (query.startsWith('#')) {
+    const kw = query.slice(1);
+    showSpinner(true);
+    const resolved = await resolveAddress(kw, mainnet).catch(() => null);
+    showSpinner(false);
+    // Search using the keyword itself for broader results
+    query = kw;
+  }
+
+  document.getElementById('searchInput').value = query;
+  document.getElementById('mainnetCheck').checked = mainnet;
+  runSearch(query, mainnet, true);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   BREADCRUMBS
+───────────────────────────────────────────────────────────── */
+function renderBreadcrumbs() {
+  const el = document.getElementById('breadcrumbs');
+  if (!history.length) { el.innerHTML = ''; return; }
+  const parts = [];
+  history.forEach((h, i) => {
+    const isCurrent = i === history.length - 1;
+    const label = h.query.length > 24 ? h.query.slice(0, 22) + '…' : h.query;
+    if (i > 0) parts.push(`<span class="breadcrumb-sep">›</span>`);
+    if (isCurrent) {
+      parts.push(`<span class="breadcrumb-item current">${escHtml(label)}</span>`);
+    } else {
+      parts.push(`<span class="breadcrumb-item" onclick="jumpToHistory(${i})">${escHtml(label)}</span>`);
+    }
+  });
+  el.innerHTML = parts.join('');
+}
+
+function jumpToHistory(idx) {
+  const entry = history[idx];
+  if (!entry) return;
+  history = history.slice(0, idx + 1);
+  document.getElementById('searchInput').value = entry.query;
+  document.getElementById('mainnetCheck').checked = entry.mainnet;
+  currentQuery = entry.query;
+  currentMainnet = entry.mainnet;
+  sections = {
+    roots:    { items: [], skip: 0, loading: false, done: false },
+    objects:  { items: [], skip: 0, loading: false, done: false },
+    profiles: { items: [], skip: 0, loading: false, done: false }
+  };
+  renderBreadcrumbs();
+  updateUrl(entry.query, entry.mainnet);
+  runSearch(entry.query, entry.mainnet, false);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   URL STATE
+───────────────────────────────────────────────────────────── */
+function updateUrl(q, mainnet) {
+  const params = new URLSearchParams({ q, mainnet: mainnet ? 'true' : 'false' });
+  history_api_replace(`?${params}`);
+}
+
+function history_api_replace(url) {
+  try { window.history.replaceState(null, '', url); } catch {}
+}
+
+/* ─────────────────────────────────────────────────────────────
+   UI HELPERS
+───────────────────────────────────────────────────────────── */
+function showSpinner(show) {
+  let area = document.getElementById('spinner-area');
+  if (!area) return;
+  area.innerHTML = show ? '<div class="spinner-wrap"><div class="spinner"></div></div>' : '';
+}
+
+function showError(msg) {
+  let area = document.getElementById('error-area');
+  if (!area) {
+    document.getElementById('mainContainer').insertAdjacentHTML('afterbegin',
+      `<div id="error-area" class="error-msg">${escHtml(msg)}</div>`);
+    return;
+  }
+  area.innerHTML = `<div class="error-msg">${escHtml(msg)}</div>`;
+}
+
+function setSearching(busy) {
+  document.getElementById('searchBtn').disabled = busy;
+  document.getElementById('searchInput').disabled = busy;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   HELPER: EXTRACT DATA FROM OBJECTS
+───────────────────────────────────────────────────────────── */
+function getAddresses(obj) {
+  const addrs = new Set();
+  const candidates = [
+    obj.OutputAddresses, obj.Addresses, obj.CreatorAddress, obj.OwnerAddress,
+    obj.Address, obj.SenderAddress, obj.RecipientAddress
+  ];
+  candidates.forEach(v => {
+    if (!v) return;
+    if (Array.isArray(v)) v.forEach(a => a && addrs.add(String(a)));
+    else addrs.add(String(v));
+  });
+  return [...addrs].filter(Boolean).slice(0, 4);
+}
+
+function extractMessage(obj) {
+  const candidates = [
+    obj.Message, obj.PublicMessage, obj.Data, obj.Text, obj.Content,
+    obj.Memo, obj.Note, obj.Comment, obj.Description
+  ];
+  for (const v of candidates) {
+    if (v && typeof v === 'string' && v.trim()) return v.trim();
+  }
+  return '';
+}
+
+function urnToThumbUrl(urn) {
+  if (!urn || typeof urn !== 'string') return null;
+  const u = urn.trim();
+  if (u.startsWith('http://') || u.startsWith('https://')) return u;
+  if (u.startsWith('ipfs://')) return `https://ipfs.io/ipfs/${u.slice(7)}`;
+  const ipfsMatch = u.match(/^(?:ipfs:)?([A-Za-z0-9]{46,59})$/);
+  if (ipfsMatch) return `https://ipfs.io/ipfs/${ipfsMatch[1]}`;
+  return null;
+}
+
+function formatTs(ts) {
+  if (!ts) return '';
+  try {
+    const d = new Date(typeof ts === 'number' ? ts * 1000 : ts);
+    if (isNaN(d.getTime())) return String(ts);
+    return d.toLocaleString();
+  } catch { return String(ts); }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   DEBOUNCE
+───────────────────────────────────────────────────────────── */
+let debounceTimer = null;
+function debounce(fn, delay) {
+  return (...args) => {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => fn(...args), delay);
+  };
+}
+
+/* ─────────────────────────────────────────────────────────────
+   INIT
+───────────────────────────────────────────────────────────── */
+document.addEventListener('DOMContentLoaded', () => {
+  const btn   = document.getElementById('searchBtn');
+  const input = document.getElementById('searchInput');
+  const check = document.getElementById('mainnetCheck');
+
+  btn.addEventListener('click', () => {
+    const q = input.value.trim();
+    if (q) runSearch(q, check.checked, true);
+  });
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      const q = input.value.trim();
+      if (q) runSearch(q, check.checked, true);
+    }
+  });
+
+  // Check URL params
+  const params = new URLSearchParams(window.location.search);
+  const qParam = params.get('q');
+  const mainnetParam = params.get('mainnet');
+  if (qParam) {
+    input.value = qParam;
+    if (mainnetParam !== null) check.checked = mainnetParam !== 'false';
+    runSearch(qParam, check.checked, true);
+  }
+});
+</script>
+</body>
+</html>
