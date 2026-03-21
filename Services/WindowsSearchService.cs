@@ -32,7 +32,7 @@ namespace P2FK.IO.Services
                 '1' => "BTC",
                 'm' or 'n' => "BTC-testnet",
                 'L' => "LTC",
-                'D' => "DOGE",
+                'D' => "DOG",
                 'M' => "MZC",
                 _ => "Unknown"
             };
