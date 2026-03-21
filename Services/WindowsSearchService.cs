@@ -94,16 +94,16 @@ namespace P2FK.IO.Services
         // ── Public search methods ──────────────────────────────────────────────
 
         public async Task<List<SearchResultRoot>> SearchRootsAsync(
-            string searchString, int qty, int skip, string blockchain = "")
+            string searchString, int qty, int skip)
         {
             qty = Math.Clamp(qty, 1, 100);
             skip = Math.Max(skip, 0);
 
-            string cacheKey = $"roots:{searchString.ToLowerInvariant()}:{qty}:{skip}:{blockchain.ToLowerInvariant()}";
+            string cacheKey = $"roots:{searchString?.ToLowerInvariant() ?? ""}:{qty}:{skip}";
             if (_cache.TryGetValue(cacheKey, out List<SearchResultRoot>? cached) && cached != null)
                 return cached;
 
-            string sanitized = Sanitize(searchString);
+            string sanitized = Sanitize(searchString ?? "");
             bool hasSearch = !string.IsNullOrWhiteSpace(sanitized);
 
             // Use a forward-slash SCOPE URI as required by Windows Search; escape any single quotes
@@ -162,10 +162,6 @@ namespace P2FK.IO.Services
 
                 string detectedBlockchain = DetectFirstOutputAddress(rootObj.Value);
 
-                if (!string.IsNullOrWhiteSpace(blockchain) &&
-                    !detectedBlockchain.Equals(blockchain, StringComparison.OrdinalIgnoreCase))
-                    continue;
-
                 if (skipped < skip) { skipped++; continue; }
 
                 results.Add(new SearchResultRoot
@@ -180,16 +176,16 @@ namespace P2FK.IO.Services
         }
 
         public async Task<List<SearchResultObject>> SearchObjectsAsync(
-            string searchString, int qty, int skip, string blockchain = "")
+            string searchString, int qty, int skip)
         {
             qty = Math.Clamp(qty, 1, 100);
             skip = Math.Max(skip, 0);
 
-            string cacheKey = $"objects:{searchString.ToLowerInvariant()}:{qty}:{skip}:{blockchain.ToLowerInvariant()}";
+            string cacheKey = $"objects:{searchString?.ToLowerInvariant() ?? ""}:{qty}:{skip}";
             if (_cache.TryGetValue(cacheKey, out List<SearchResultObject>? cached) && cached != null)
                 return cached;
 
-            string sanitized = Sanitize(searchString);
+            string sanitized = Sanitize(searchString ?? "");
             bool hasSearch = !string.IsNullOrWhiteSpace(sanitized);
 
             string scopeUri = "file:///" + _rootPath.Replace('\\', '/').Replace("'", "''");
@@ -237,10 +233,6 @@ namespace P2FK.IO.Services
 
                 string detectedBlockchain = DetectBlockchain(address);
 
-                if (!string.IsNullOrWhiteSpace(blockchain) &&
-                    !detectedBlockchain.Equals(blockchain, StringComparison.OrdinalIgnoreCase))
-                    continue;
-
                 if (skipped < skip) { skipped++; continue; }
 
                 if (!File.Exists(row.Path)) continue;
@@ -260,16 +252,16 @@ namespace P2FK.IO.Services
         }
 
         public async Task<List<SearchResultProfile>> SearchProfilesAsync(
-            string searchString, int qty, int skip, string blockchain = "")
+            string searchString, int qty, int skip)
         {
             qty = Math.Clamp(qty, 1, 100);
             skip = Math.Max(skip, 0);
 
-            string cacheKey = $"profiles:{searchString.ToLowerInvariant()}:{qty}:{skip}:{blockchain.ToLowerInvariant()}";
+            string cacheKey = $"profiles:{searchString?.ToLowerInvariant() ?? ""}:{qty}:{skip}";
             if (_cache.TryGetValue(cacheKey, out List<SearchResultProfile>? cached) && cached != null)
                 return cached;
 
-            string sanitized = Sanitize(searchString);
+            string sanitized = Sanitize(searchString ?? "");
             bool hasSearch = !string.IsNullOrWhiteSpace(sanitized);
 
             string scopeUri = "file:///" + _rootPath.Replace('\\', '/').Replace("'", "''");
@@ -315,10 +307,6 @@ namespace P2FK.IO.Services
                 if (address == null) continue;
 
                 string detectedBlockchain = DetectBlockchain(address);
-
-                if (!string.IsNullOrWhiteSpace(blockchain) &&
-                    !detectedBlockchain.Equals(blockchain, StringComparison.OrdinalIgnoreCase))
-                    continue;
 
                 if (skipped < skip) { skipped++; continue; }
 

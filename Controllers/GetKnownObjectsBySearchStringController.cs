@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Mvc;
-using P2FK.IO.Models;
 using P2FK.IO.Services;
 using System.Runtime.Versioning;
 
@@ -18,8 +17,7 @@ namespace P2FK.IO.Controllers
         }
 
         [HttpGet]
-        public async Task<ActionResult> Get(
-            string searchString = "", BlockchainFilter? blockchain = null, int qty = 10, int skip = 0)
+        public async Task<ActionResult> Get(string searchString = "", int qty = 10, int skip = 0)
         {
             if (searchString.Length > 2048)
                 return BadRequest("[\"invalid search string\"]");
@@ -27,8 +25,7 @@ namespace P2FK.IO.Controllers
             qty = Math.Clamp(qty, 1, 100);
             skip = Math.Max(skip, 0);
 
-            var results = await _searchService.SearchObjectsAsync(
-                searchString, qty, skip, blockchain?.ToString() ?? "");
+            var results = await _searchService.SearchObjectsAsync(searchString, qty, skip);
             return new JsonResult(results);
         }
     }
