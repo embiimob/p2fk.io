@@ -16,16 +16,17 @@ namespace P2FK.IO.Controllers
             _searchService = searchService;
         }
 
-        [HttpGet("{searchString}")]
-        public async Task<ActionResult> Get(string searchString, int qty = 10, int skip = 0)
+        [HttpGet]
+        public async Task<ActionResult> Get(
+            string searchString = "", string blockchain = "", int qty = 10, int skip = 0)
         {
-            if (string.IsNullOrWhiteSpace(searchString) || searchString.Length > 2048)
+            if (searchString.Length > 2048)
                 return BadRequest("[\"invalid search string\"]");
 
             qty = Math.Clamp(qty, 1, 100);
             skip = Math.Max(skip, 0);
 
-            var results = await _searchService.SearchRootsAsync(searchString, qty, skip);
+            var results = await _searchService.SearchRootsAsync(searchString, qty, skip, blockchain);
             return new JsonResult(results);
         }
     }

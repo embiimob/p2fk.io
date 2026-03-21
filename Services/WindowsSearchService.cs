@@ -94,36 +94,44 @@ namespace P2FK.IO.Services
         // ── Public search methods ──────────────────────────────────────────────
 
         public async Task<List<SearchResultRoot>> SearchRootsAsync(
-            string searchString, int qty, int skip)
+            string searchString, int qty, int skip, string blockchain = "")
         {
             qty = Math.Clamp(qty, 1, 100);
             skip = Math.Max(skip, 0);
 
-            string cacheKey = $"roots:{searchString.ToLowerInvariant()}:{qty}:{skip}";
+            string cacheKey = $"roots:{searchString.ToLowerInvariant()}:{qty}:{skip}:{blockchain.ToLowerInvariant()}";
             if (_cache.TryGetValue(cacheKey, out List<SearchResultRoot>? cached) && cached != null)
                 return cached;
 
             string sanitized = Sanitize(searchString);
-            if (string.IsNullOrWhiteSpace(sanitized))
-                return new List<SearchResultRoot>();
+            bool hasSearch = !string.IsNullOrWhiteSpace(sanitized);
 
             // Use a forward-slash SCOPE URI as required by Windows Search; escape any single quotes
             string scopeUri = "file:///" + _rootPath.Replace('\\', '/').Replace("'", "''");
 
-            string sql = $"""
-                SELECT System.ItemPathDisplay, System.DateModified
-                FROM SystemIndex
-                WHERE SCOPE='{scopeUri}'
-                  AND FREETEXT('{sanitized}')
-                ORDER BY System.DateModified DESC
-                """;
+            string sql = hasSearch
+                ? $"""
+                    SELECT System.ItemPathDisplay, System.DateModified
+                    FROM SystemIndex
+                    WHERE SCOPE='{scopeUri}'
+                      AND System.FileName = 'ROOT.json'
+                      AND FREETEXT('{sanitized}')
+                    ORDER BY System.DateModified DESC
+                    """
+                : $"""
+                    SELECT System.ItemPathDisplay, System.DateModified
+                    FROM SystemIndex
+                    WHERE SCOPE='{scopeUri}'
+                      AND System.FileName = 'ROOT.json'
+                    ORDER BY System.DateModified DESC
+                    """;
 
             var rows = await Task.Run(() => ExecuteSearchQuery(sql));
 
             // If Windows Search returned nothing (index not ready or JSON not yet indexed),
             // fall back to a direct filesystem scan so results are available immediately.
             if (rows.Count == 0)
-                rows = await FallbackScanAsync("ROOT.json", searchString);
+                rows = await FallbackScanAsync("ROOT.json", sanitized);
 
             // Deduplicate by transaction ID, keeping the newest-modified row per txid
             var txMap = new Dictionary<string, SearchRow>(StringComparer.OrdinalIgnoreCase);
@@ -149,16 +157,20 @@ namespace P2FK.IO.Services
 
                 if (!File.Exists(rootJsonPath)) continue;
 
-                if (skipped < skip) { skipped++; continue; }
-
                 var rootObj = await ReadJsonAsync<JsonElement?>(rootJsonPath);
                 if (rootObj == null) continue;
 
-                string blockchain = DetectFirstOutputAddress(rootObj.Value);
+                string detectedBlockchain = DetectFirstOutputAddress(rootObj.Value);
+
+                if (!string.IsNullOrWhiteSpace(blockchain) &&
+                    !detectedBlockchain.Equals(blockchain, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (skipped < skip) { skipped++; continue; }
 
                 results.Add(new SearchResultRoot
                 {
-                    Blockchain = blockchain,
+                    Blockchain = detectedBlockchain,
                     Root = rootObj
                 });
             }
@@ -168,36 +180,43 @@ namespace P2FK.IO.Services
         }
 
         public async Task<List<SearchResultObject>> SearchObjectsAsync(
-            string searchString, int qty, int skip)
+            string searchString, int qty, int skip, string blockchain = "")
         {
             qty = Math.Clamp(qty, 1, 100);
             skip = Math.Max(skip, 0);
 
-            string cacheKey = $"objects:{searchString.ToLowerInvariant()}:{qty}:{skip}";
+            string cacheKey = $"objects:{searchString.ToLowerInvariant()}:{qty}:{skip}:{blockchain.ToLowerInvariant()}";
             if (_cache.TryGetValue(cacheKey, out List<SearchResultObject>? cached) && cached != null)
                 return cached;
 
             string sanitized = Sanitize(searchString);
-            if (string.IsNullOrWhiteSpace(sanitized))
-                return new List<SearchResultObject>();
+            bool hasSearch = !string.IsNullOrWhiteSpace(sanitized);
 
             string scopeUri = "file:///" + _rootPath.Replace('\\', '/').Replace("'", "''");
 
-            string sql = $"""
-                SELECT System.ItemPathDisplay, System.DateModified
-                FROM SystemIndex
-                WHERE SCOPE='{scopeUri}'
-                  AND System.FileName = 'OBJ.json'
-                  AND FREETEXT('{sanitized}')
-                ORDER BY System.DateModified DESC
-                """;
+            string sql = hasSearch
+                ? $"""
+                    SELECT System.ItemPathDisplay, System.DateModified
+                    FROM SystemIndex
+                    WHERE SCOPE='{scopeUri}'
+                      AND System.FileName = 'OBJ.json'
+                      AND FREETEXT('{sanitized}')
+                    ORDER BY System.DateModified DESC
+                    """
+                : $"""
+                    SELECT System.ItemPathDisplay, System.DateModified
+                    FROM SystemIndex
+                    WHERE SCOPE='{scopeUri}'
+                      AND System.FileName = 'OBJ.json'
+                    ORDER BY System.DateModified DESC
+                    """;
 
             var rows = await Task.Run(() => ExecuteSearchQuery(sql));
 
             // If Windows Search returned nothing (index not ready or JSON not yet indexed),
             // fall back to a direct filesystem scan so results are available immediately.
             if (rows.Count == 0)
-                rows = await FallbackScanAsync("OBJ.json", searchString);
+                rows = await FallbackScanAsync("OBJ.json", sanitized);
 
             // Deduplicate by file path
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -216,6 +235,12 @@ namespace P2FK.IO.Services
                 string? address = ExtractAddressFromPath(row.Path);
                 if (address == null) continue;
 
+                string detectedBlockchain = DetectBlockchain(address);
+
+                if (!string.IsNullOrWhiteSpace(blockchain) &&
+                    !detectedBlockchain.Equals(blockchain, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
                 if (skipped < skip) { skipped++; continue; }
 
                 if (!File.Exists(row.Path)) continue;
@@ -225,7 +250,7 @@ namespace P2FK.IO.Services
 
                 results.Add(new SearchResultObject
                 {
-                    Blockchain = DetectBlockchain(address),
+                    Blockchain = detectedBlockchain,
                     Object = obj
                 });
             }
@@ -235,36 +260,43 @@ namespace P2FK.IO.Services
         }
 
         public async Task<List<SearchResultProfile>> SearchProfilesAsync(
-            string searchString, int qty, int skip)
+            string searchString, int qty, int skip, string blockchain = "")
         {
             qty = Math.Clamp(qty, 1, 100);
             skip = Math.Max(skip, 0);
 
-            string cacheKey = $"profiles:{searchString.ToLowerInvariant()}:{qty}:{skip}";
+            string cacheKey = $"profiles:{searchString.ToLowerInvariant()}:{qty}:{skip}:{blockchain.ToLowerInvariant()}";
             if (_cache.TryGetValue(cacheKey, out List<SearchResultProfile>? cached) && cached != null)
                 return cached;
 
             string sanitized = Sanitize(searchString);
-            if (string.IsNullOrWhiteSpace(sanitized))
-                return new List<SearchResultProfile>();
+            bool hasSearch = !string.IsNullOrWhiteSpace(sanitized);
 
             string scopeUri = "file:///" + _rootPath.Replace('\\', '/').Replace("'", "''");
 
-            string sql = $"""
-                SELECT System.ItemPathDisplay, System.DateModified
-                FROM SystemIndex
-                WHERE SCOPE='{scopeUri}'
-                  AND System.FileName = 'GetProfileByAddress.json'
-                  AND FREETEXT('{sanitized}')
-                ORDER BY System.DateModified DESC
-                """;
+            string sql = hasSearch
+                ? $"""
+                    SELECT System.ItemPathDisplay, System.DateModified
+                    FROM SystemIndex
+                    WHERE SCOPE='{scopeUri}'
+                      AND System.FileName = 'GetProfileByAddress.json'
+                      AND FREETEXT('{sanitized}')
+                    ORDER BY System.DateModified DESC
+                    """
+                : $"""
+                    SELECT System.ItemPathDisplay, System.DateModified
+                    FROM SystemIndex
+                    WHERE SCOPE='{scopeUri}'
+                      AND System.FileName = 'GetProfileByAddress.json'
+                    ORDER BY System.DateModified DESC
+                    """;
 
             var rows = await Task.Run(() => ExecuteSearchQuery(sql));
 
             // If Windows Search returned nothing (index not ready or JSON not yet indexed),
             // fall back to a direct filesystem scan so results are available immediately.
             if (rows.Count == 0)
-                rows = await FallbackScanAsync("GetProfileByAddress.json", searchString);
+                rows = await FallbackScanAsync("GetProfileByAddress.json", sanitized);
 
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var ordered = rows
@@ -282,6 +314,12 @@ namespace P2FK.IO.Services
                 string? address = ExtractAddressFromPath(row.Path);
                 if (address == null) continue;
 
+                string detectedBlockchain = DetectBlockchain(address);
+
+                if (!string.IsNullOrWhiteSpace(blockchain) &&
+                    !detectedBlockchain.Equals(blockchain, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
                 if (skipped < skip) { skipped++; continue; }
 
                 if (!File.Exists(row.Path)) continue;
@@ -291,7 +329,7 @@ namespace P2FK.IO.Services
 
                 results.Add(new SearchResultProfile
                 {
-                    Blockchain = DetectBlockchain(address),
+                    Blockchain = detectedBlockchain,
                     Profile = profile
                 });
             }
@@ -306,6 +344,8 @@ namespace P2FK.IO.Services
         /// Scans the <c>root</c> directory tree for files named
         /// <paramref name="fileName"/> whose content contains
         /// <paramref name="searchString"/> (case-insensitive).
+        /// When <paramref name="searchString"/> is empty or whitespace all matching
+        /// files are returned without a content check.
         /// Used when Windows Search has not yet indexed the JSON files.
         /// </summary>
         private Task<List<SearchRow>> FallbackScanAsync(string fileName, string searchString)
@@ -317,18 +357,23 @@ namespace P2FK.IO.Services
                 if (!Directory.Exists(_rootPath))
                     return rows;
 
+                bool filterByContent = !string.IsNullOrWhiteSpace(searchString);
+
                 // Use '*' wildcard with SearchOption to avoid manual recursion
                 foreach (string filePath in Directory.EnumerateFiles(
                     _rootPath, fileName, SearchOption.AllDirectories))
                 {
                     try
                     {
-                        string content = File.ReadAllText(filePath);
-                        if (content.Contains(searchString, StringComparison.OrdinalIgnoreCase))
+                        if (filterByContent)
                         {
-                            DateTime modified = File.GetLastWriteTimeUtc(filePath);
-                            rows.Add(new SearchRow(filePath, modified));
+                            string content = File.ReadAllText(filePath);
+                            if (!content.Contains(searchString, StringComparison.OrdinalIgnoreCase))
+                                continue;
                         }
+
+                        DateTime modified = File.GetLastWriteTimeUtc(filePath);
+                        rows.Add(new SearchRow(filePath, modified));
                     }
                     catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                     {
