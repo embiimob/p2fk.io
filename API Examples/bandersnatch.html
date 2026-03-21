@@ -1,0 +1,2639 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>☠ BANDERSNATCH — Blockchain Void Explorer</title>
+    <style>
+        :root {
+            --blood: #cc2200;
+            --blood-dim: #881100;
+            --blood-glow: #ff4422;
+            --panel: rgba(8, 4, 4, 0.88);
+            --panel-light: rgba(20, 8, 8, 0.9);
+            --text: #ddc8c8;
+            --text-dim: #886666;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body {
+            width: 100%; height: 100%;
+            overflow: hidden;
+            background: #000;
+            color: var(--text);
+            font-family: 'Courier New', monospace;
+        }
+        canvas { display: block; }
+        @keyframes shake {
+            0%,100%{transform:translate(0,0)}
+            15%{transform:translate(-6px,-4px)}
+            30%{transform:translate(6px,3px)}
+            45%{transform:translate(-4px,6px)}
+            60%{transform:translate(4px,-6px)}
+            75%{transform:translate(-6px,4px)}
+            90%{transform:translate(3px,-3px)}
+        }
+        .shaking { animation: shake 0.45s ease; }
+        @keyframes flicker {
+            0%,100%{opacity:1}
+            50%{opacity:0.85}
+            75%{opacity:0.95}
+        }
+        .flickering { animation: flicker 0.15s infinite; }
+        @keyframes pulse-glow {
+            0%,100%{text-shadow:0 0 8px var(--blood-glow),0 0 20px var(--blood)}
+            50%{text-shadow:0 0 15px var(--blood-glow),0 0 35px var(--blood)}
+        }
+        @keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+        .fade-in { animation: fadeIn 0.4s ease; }
+        #vignette {
+            position: fixed; inset: 0;
+            pointer-events: none;
+            background: radial-gradient(ellipse at center, transparent 40%, rgba(30,0,0,0.6) 100%);
+            z-index: 5;
+            transition: opacity 0.3s;
+        }
+        #damageFlash {
+            position: fixed; inset: 0;
+            pointer-events: none;
+            background: rgba(200,0,0,0.5);
+            opacity: 0;
+            z-index: 6;
+            transition: opacity 0.15s;
+        }
+        #searchHud {
+            position: fixed; top: 0; left: 0; right: 0;
+            background: linear-gradient(180deg, var(--panel) 0%, rgba(8,4,4,0.7) 100%);
+            padding: 10px 16px;
+            display: flex; align-items: center; gap: 12px;
+            z-index: 100;
+            border-bottom: 1px solid rgba(204,34,0,0.3);
+        }
+        #brand {
+            font-size: 18px; font-weight: bold;
+            color: var(--blood);
+            animation: pulse-glow 2s infinite;
+            white-space: nowrap;
+            letter-spacing: 2px;
+        }
+        #searchInput {
+            flex: 1; max-width: 280px;
+            padding: 8px 12px;
+            background: rgba(0,0,0,0.6);
+            border: 1px solid var(--blood-dim);
+            border-radius: 4px;
+            color: var(--text);
+            font-family: inherit;
+            font-size: 14px;
+            outline: none;
+        }
+        #searchInput:focus { border-color: var(--blood); box-shadow: 0 0 8px rgba(204,34,0,0.4); }
+        #searchInput::placeholder { color: var(--text-dim); }
+        #qtySelect {
+            padding: 8px;
+            background: rgba(0,0,0,0.6);
+            border: 1px solid var(--blood-dim);
+            border-radius: 4px;
+            color: var(--text);
+            font-family: inherit;
+            cursor: pointer;
+        }
+        .hud-label {
+            display: flex; align-items: center; gap: 6px;
+            font-size: 12px; color: var(--text-dim);
+            cursor: pointer;
+        }
+        .hud-label input[type="checkbox"] {
+            accent-color: var(--blood);
+        }
+        .hud-btn {
+            padding: 8px 14px;
+            background: linear-gradient(180deg, var(--blood) 0%, var(--blood-dim) 100%);
+            border: none;
+            border-radius: 4px;
+            color: #fff;
+            font-family: inherit;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+        .hud-btn:hover { background: linear-gradient(180deg, var(--blood-glow) 0%, var(--blood) 100%); box-shadow: 0 0 12px var(--blood); }
+        .hud-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .hud-btn-secondary {
+            background: rgba(0,0,0,0.5);
+            border: 1px solid var(--blood-dim);
+        }
+        .hud-btn-secondary:hover { background: rgba(50,10,10,0.7); }
+        #statsBar {
+            position: fixed; top: 52px; left: 16px;
+            background: var(--panel);
+            padding: 8px 14px;
+            border-radius: 4px;
+            display: flex; align-items: center; gap: 16px;
+            font-size: 13px;
+            z-index: 99;
+        }
+        .stat-item { display: flex; align-items: center; gap: 6px; }
+        .stat-icon { font-size: 16px; }
+        #hpBarContainer {
+            width: 100px; height: 14px;
+            background: #220000;
+            border-radius: 3px;
+            overflow: hidden;
+            border: 1px solid var(--blood-dim);
+        }
+        #hpBar {
+            height: 100%;
+            background: linear-gradient(90deg, #00aa00, #44cc44);
+            transition: width 0.3s, background 0.3s;
+        }
+        #combatLog {
+            position: fixed; top: 100px; left: 16px;
+            width: 300px; max-height: 240px;
+            overflow-y: auto;
+            background: var(--panel);
+            border-radius: 4px;
+            padding: 8px;
+            font-size: 11px;
+            z-index: 98;
+            scrollbar-width: thin;
+            scrollbar-color: var(--blood-dim) transparent;
+        }
+        .log-entry {
+            padding: 4px 0;
+            border-bottom: 1px solid rgba(100,30,30,0.3);
+            animation: fadeIn 0.3s ease;
+        }
+        .log-entry:last-child { border-bottom: none; }
+        .log-time { color: var(--text-dim); margin-right: 6px; }
+        .log-damage { color: #ff6644; }
+        .log-kill { color: #ffaa00; }
+        .log-persuade { color: #88ff88; }
+        .log-info { color: #88aaff; }
+        #breadcrumbBar {
+            position: fixed; bottom: 16px; left: 16px;
+            display: flex; flex-wrap: wrap; gap: 6px;
+            max-width: 50%;
+            z-index: 98;
+        }
+        .breadcrumb {
+            padding: 4px 10px;
+            background: var(--panel);
+            border: 1px solid var(--blood-dim);
+            border-radius: 12px;
+            font-size: 11px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .breadcrumb:hover { background: rgba(80,20,20,0.8); border-color: var(--blood); }
+        .breadcrumb.active { background: var(--blood-dim); color: #fff; }
+        #controlsHint {
+            position: fixed; bottom: 16px; right: 16px;
+            font-size: 10px;
+            color: var(--text-dim);
+            z-index: 98;
+            text-align: right;
+        }
+        #welcomeScreen {
+            position: fixed; inset: 0;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            z-index: 150;
+            background: rgba(0,0,0,0.85);
+            text-align: center;
+            padding: 20px;
+        }
+        #welcomeScreen.hidden { display: none; }
+        .welcome-title {
+            font-size: 48px;
+            color: var(--blood);
+            animation: pulse-glow 2s infinite, flicker 3s infinite;
+            margin-bottom: 20px;
+            letter-spacing: 4px;
+        }
+        .welcome-text {
+            font-size: 14px;
+            color: var(--text-dim);
+            max-width: 400px;
+            line-height: 1.8;
+        }
+        .welcome-hint {
+            margin-top: 30px;
+            font-size: 12px;
+            color: var(--blood-dim);
+            animation: pulse-glow 3s infinite;
+        }
+        #deathScreen {
+            position: fixed; inset: 0;
+            display: none; flex-direction: column;
+            align-items: center; justify-content: center;
+            z-index: 200;
+            background: rgba(0,0,0,0.95);
+            text-align: center;
+            padding: 20px;
+        }
+        #deathScreen.visible { display: flex; }
+        .death-title {
+            font-size: 36px;
+            color: var(--blood);
+            animation: flicker 0.2s infinite;
+            margin-bottom: 20px;
+        }
+        .death-subtitle {
+            font-size: 14px;
+            color: var(--text-dim);
+            margin-bottom: 30px;
+            font-style: italic;
+        }
+        .death-path {
+            font-size: 12px;
+            color: var(--text-dim);
+            margin-bottom: 20px;
+            max-width: 500px;
+        }
+        .death-stats {
+            font-size: 16px;
+            color: var(--text);
+            margin-bottom: 30px;
+        }
+        .modal-overlay {
+            position: fixed; inset: 0;
+            display: none; align-items: center; justify-content: center;
+            z-index: 180;
+            background: rgba(0,0,0,0.85);
+        }
+        .modal-overlay.visible { display: flex; }
+        .modal-box {
+            background: var(--panel-light);
+            border: 1px solid var(--blood-dim);
+            border-radius: 8px;
+            padding: 20px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        .modal-title {
+            font-size: 18px;
+            color: var(--blood);
+            margin-bottom: 16px;
+            text-align: center;
+        }
+        .modal-text {
+            font-size: 12px;
+            color: var(--text-dim);
+            line-height: 1.6;
+            margin-bottom: 16px;
+        }
+        .modal-input {
+            width: 100%;
+            padding: 10px;
+            background: rgba(0,0,0,0.5);
+            border: 1px solid var(--blood-dim);
+            border-radius: 4px;
+            color: var(--text);
+            font-family: inherit;
+            font-size: 13px;
+            margin-bottom: 12px;
+        }
+        .modal-input:focus { outline: none; border-color: var(--blood); }
+        .modal-textarea {
+            width: 100%;
+            min-height: 80px;
+            padding: 10px;
+            background: rgba(0,0,0,0.5);
+            border: 1px solid var(--blood-dim);
+            border-radius: 4px;
+            color: var(--text);
+            font-family: inherit;
+            font-size: 13px;
+            resize: vertical;
+            margin-bottom: 12px;
+        }
+        .modal-buttons {
+            display: flex; gap: 10px; justify-content: center;
+            flex-wrap: wrap;
+        }
+        .modal-img {
+            width: 100%;
+            border-radius: 4px;
+            margin-bottom: 12px;
+            border: 1px solid var(--blood-dim);
+        }
+        .modal-stats {
+            font-size: 11px;
+            color: var(--text-dim);
+            margin-bottom: 12px;
+            text-align: center;
+        }
+        #detailPanel {
+            position: fixed; top: 52px; right: 0;
+            width: 320px;
+            max-height: calc(100vh - 70px);
+            background: var(--panel);
+            border-left: 1px solid var(--blood-dim);
+            transform: translateX(100%);
+            transition: transform 0.3s;
+            z-index: 97;
+            overflow-y: auto;
+            padding: 16px;
+        }
+        #detailPanel.open { transform: translateX(0); }
+        .detail-close {
+            position: absolute; top: 8px; right: 8px;
+            background: none; border: none;
+            color: var(--text-dim);
+            font-size: 18px;
+            cursor: pointer;
+        }
+        .detail-close:hover { color: var(--blood); }
+        .detail-title {
+            font-size: 14px;
+            color: var(--blood);
+            margin-bottom: 12px;
+            padding-right: 24px;
+        }
+        .detail-type {
+            font-size: 10px;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+        .detail-section {
+            margin-bottom: 14px;
+            padding-bottom: 14px;
+            border-bottom: 1px solid rgba(100,30,30,0.3);
+        }
+        .detail-section:last-child { border-bottom: none; }
+        .detail-label {
+            font-size: 10px;
+            color: var(--text-dim);
+            margin-bottom: 4px;
+        }
+        .detail-value {
+            font-size: 12px;
+            color: var(--text);
+            word-break: break-all;
+        }
+        .detail-value.clickable {
+            color: #88aaff;
+            cursor: pointer;
+            text-decoration: underline;
+        }
+        .detail-value.clickable:hover { color: #aaccff; }
+        .detail-image {
+            width: 100%;
+            max-height: 150px;
+            object-fit: contain;
+            border-radius: 4px;
+            margin-bottom: 12px;
+            background: rgba(0,0,0,0.3);
+        }
+        .detail-message {
+            font-size: 11px;
+            background: rgba(0,0,0,0.3);
+            padding: 10px;
+            border-radius: 4px;
+            max-height: 120px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .thread-section {
+            margin-top: 12px;
+        }
+        .thread-title {
+            font-size: 11px;
+            color: var(--blood);
+            margin-bottom: 8px;
+        }
+        .thread-link {
+            display: block;
+            padding: 6px 8px;
+            margin-bottom: 4px;
+            background: rgba(0,0,0,0.3);
+            border-radius: 4px;
+            font-size: 11px;
+            color: #88aaff;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .thread-link:hover { background: rgba(50,20,20,0.5); }
+        #persuadeDialog .modal-box { max-width: 400px; }
+        .monster-name-display {
+            font-size: 16px;
+            color: var(--blood);
+            text-align: center;
+            margin-bottom: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div id="vignette"></div>
+    <div id="damageFlash"></div>
+
+    <div id="searchHud">
+        <span id="brand">☠ BANDERSNATCH</span>
+        <input type="text" id="searchInput" placeholder="Enter the void...">
+        <select id="qtySelect">
+            <option value="5">5</option>
+            <option value="10" selected>10</option>
+            <option value="25">25</option>
+            <option value="50">50</option>
+        </select>
+        <label class="hud-label">
+            <input type="checkbox" id="mainnetCheck" checked>
+            <span>Mainnet</span>
+        </label>
+        <button class="hud-btn" id="searchBtn">⚡ DIVE IN</button>
+        <button class="hud-btn hud-btn-secondary" id="captureBtn">📷 CAPTURE</button>
+        <button class="hud-btn hud-btn-secondary" id="saveBtn">💾 SAVE</button>
+        <button class="hud-btn hud-btn-secondary" id="loadBtn">📂 LOAD</button>
+    </div>
+
+    <div id="statsBar">
+        <div class="stat-item">
+            <span class="stat-icon">❤</span>
+            <div id="hpBarContainer"><div id="hpBar"></div></div>
+            <span id="hpText">100/100</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-icon">☠</span>
+            <span id="killsText">0</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-icon">✦</span>
+            <span id="scoreText">0</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-icon">⬇</span>
+            <span id="depthText">0</span>
+        </div>
+    </div>
+
+    <div id="combatLog"></div>
+    <div id="breadcrumbBar"></div>
+    <div id="controlsHint">drag·zoom·[click]=attack·[P]=persuade·[F]=flee·[X]=save</div>
+
+    <div id="welcomeScreen">
+        <div class="welcome-title">☠ BANDERSNATCH</div>
+        <div class="welcome-text">
+            A void of blockchain artifacts awaits.<br><br>
+            Monsters guard every discovery.<br>
+            Search to enter. Die to begin again.<br><br>
+            Defeat guardians to unlock artifacts.<br>
+            Persuade with the right words, or flee at a cost.
+        </div>
+        <div class="welcome-hint">[ enter search above to dive in ]</div>
+    </div>
+
+    <div id="deathScreen">
+        <div class="death-title">☠ YOU HAVE BEEN CONSUMED BY THE VOID</div>
+        <div class="death-subtitle">Your search path echoes in eternity...</div>
+        <div class="death-path" id="deathPath"></div>
+        <div class="death-stats" id="deathStats"></div>
+        <button class="hud-btn" id="restartBtn">BEGIN AGAIN</button>
+    </div>
+
+    <div id="shareModal" class="modal-overlay">
+        <div class="modal-box">
+            <div class="modal-title">📷 VOID RUN CAPTURED</div>
+            <img id="shareImage" class="modal-img" alt="Screenshot">
+            <div class="modal-stats" id="shareStats"></div>
+            <div class="modal-text" id="sharePath"></div>
+            <div class="modal-text">Shareable URL:</div>
+            <input type="text" class="modal-input" id="shareUrl" readonly>
+            <div class="modal-buttons">
+                <button class="hud-btn" id="downloadScreenshot">Download Screenshot</button>
+                <button class="hud-btn hud-btn-secondary" id="copyUrl">Copy URL</button>
+                <button class="hud-btn hud-btn-secondary" id="closeShare">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="saveModal" class="modal-overlay">
+        <div class="modal-box">
+            <div class="modal-title">💾 SAVE YOUR VOID RUN</div>
+            <div class="modal-text">
+                Your game state will be saved as a JSON file.<br><br>
+                Attach this file to a Sup!? message to preserve it on the blockchain via IPFS.<br><br>
+                Once posted, you'll receive an IPFS hash you can use to reload this exact run.
+            </div>
+            <div class="modal-text">To address for Sup!? message:</div>
+            <input type="text" class="modal-input" id="saveAddress" readonly placeholder="Looking up address...">
+            <div class="modal-buttons">
+                <button class="hud-btn" id="downloadSave">Download Save File</button>
+                <button class="hud-btn hud-btn-secondary" id="closeSave">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="loadModal" class="modal-overlay">
+        <div class="modal-box">
+            <div class="modal-title">📂 LOAD FROM THE VOID</div>
+            <div class="modal-text">
+                Enter an IPFS hash from a previously saved Sup!? message attachment.
+            </div>
+            <input type="text" class="modal-input" id="loadHash" placeholder="IPFS hash (e.g., Qm...)">
+            <div class="modal-buttons">
+                <button class="hud-btn" id="loadFromIpfs">Load from IPFS</button>
+                <button class="hud-btn hud-btn-secondary" id="closeLoad">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="persuadeDialog" class="modal-overlay">
+        <div class="modal-box">
+            <div class="monster-name-display" id="persuadeMonsterName"></div>
+            <div class="modal-text" style="text-align:center;">stands before you...<br><br>What do you say?</div>
+            <textarea class="modal-textarea" id="persuadeText" placeholder="Speak your words..."></textarea>
+            <div class="modal-buttons">
+                <button class="hud-btn" id="persuadeSpeak">SPEAK</button>
+                <button class="hud-btn hud-btn-secondary" id="persuadeCancel">CANCEL</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="detailPanel">
+        <button class="detail-close" id="closeDetail">&times;</button>
+        <div id="detailContent"></div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r134/examples/js/controls/OrbitControls.js"></script>
+    <script>
+        (function() {
+            'use strict';
+
+            var BASE = 'https://p2fk.io';
+
+            // Escape HTML for XSS prevention
+            function esc(str) {
+                if (str == null) return '';
+                return String(str)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#39;');
+            }
+
+            // Deterministic hashing
+            function strHash(str) {
+                var h = 0x811c9dc5;
+                for (var i = 0; i < str.length; i++) {
+                    h ^= str.charCodeAt(i);
+                    h = Math.imul(h, 0x01000193);
+                }
+                return h >>> 0;
+            }
+
+            function seededRng(seed) {
+                var s = seed >>> 0;
+                return function() {
+                    s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+                    return s / 4294967296;
+                };
+            }
+
+            // Monster type definitions
+            var MTYPES = [
+                { name:'WRAITH',    baseHp:60,  atk:8,  spd:0.06, aggro:18, range:4.5, clr:0x8899ff, emv:0x001166, weakness:['light','reveal','address','key'] },
+                { name:'GOLEM',     baseHp:130, atk:22, spd:0.02, aggro:12, range:5.5, clr:0x556655, emv:0xff0000, weakness:['break','hash','chain','block'] },
+                { name:'SPECTER',   baseHp:45,  atk:13, spd:0.05, aggro:20, range:6.0, clr:0x00ff88, emv:0x004422, weakness:['anchor','bind','txid','sign'] },
+                { name:'SHADOW',    baseHp:85,  atk:18, spd:0.07, aggro:16, range:5.0, clr:0x110000, emv:0xff1100, weakness:['light','expose','burn','reveal'] },
+                { name:'ORACLE',    baseHp:35,  atk:0,  spd:0.01, aggro:0,  range:0,   clr:0xffcc00, emv:0x664400, weakness:['*'] },
+                { name:'LEVIATHAN', baseHp:220, atk:28, spd:0.03, aggro:28, range:7.0, clr:0x880000, emv:0x440000, weakness:['destroy','end','null','void'] }
+            ];
+            var MPREFIXES = ['VOID','DARK','CORRUPT','LOST','FORGOTTEN','ANCIENT','NULL','DEAD','BROKEN','CURSED','ROTTEN','HOLLOW'];
+
+            // Game state
+            var game = {
+                hp: 100,
+                maxHp: 100,
+                score: 0,
+                kills: 0,
+                depth: 0,
+                alive: true
+            };
+
+            var searchHistory = [];
+            var monsterDefs = new Map();
+            var monsterKills = new Map();
+            var monsterPersuaded = new Map();
+
+            // Three.js globals
+            var scene, camera, renderer, controls, clock;
+            var nexus, starField, nebula;
+            var currentArtifacts = [];
+            var monsterMeshes = [];
+            var connectionLines = [];
+            var selectionRing = null;
+            var selectedArtifact = null;
+            var targetMonster = null;
+
+            var raycaster = new THREE.Raycaster();
+            var mouse = new THREE.Vector2();
+
+            var cameraTarget = null;
+            var cameraLerping = false;
+
+            var attackCooldown = 0;
+            var lastAttackTime = 0;
+
+            // Audio context
+            var _ac = null;
+            function ac() {
+                if (!_ac) {
+                    try {
+                        _ac = new (window.AudioContext || window.webkitAudioContext)();
+                    } catch (e) {
+                        console.warn('Web Audio not available');
+                    }
+                }
+                return _ac;
+            }
+
+            function playNoise(dur, freq, type, vol) {
+                var ctx = ac();
+                if (!ctx) return;
+                try {
+                    var osc = ctx.createOscillator();
+                    var gain = ctx.createGain();
+                    osc.type = type || 'square';
+                    osc.frequency.value = freq || 100;
+                    gain.gain.value = vol || 0.3;
+                    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.start();
+                    osc.stop(ctx.currentTime + dur);
+                } catch (e) {}
+            }
+
+            function playHit() {
+                playNoise(0.12, 120, 'square', 0.35);
+            }
+
+            function playMonsterHit() {
+                playNoise(0.08, 60, 'sawtooth', 0.25);
+            }
+
+            function playExplosion() {
+                var ctx = ac();
+                if (!ctx) return;
+                try {
+                    var bufferSize = ctx.sampleRate * 0.3;
+                    var buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+                    var data = buffer.getChannelData(0);
+                    for (var i = 0; i < bufferSize; i++) {
+                        data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
+                    }
+                    var source = ctx.createBufferSource();
+                    var gain = ctx.createGain();
+                    source.buffer = buffer;
+                    gain.gain.value = 0.4;
+                    source.connect(gain);
+                    gain.connect(ctx.destination);
+                    source.start();
+                } catch (e) {}
+            }
+
+            function playDeathSound() {
+                var ctx = ac();
+                if (!ctx) return;
+                try {
+                    var osc = ctx.createOscillator();
+                    var gain = ctx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(80, ctx.currentTime);
+                    osc.frequency.exponentialRampToValueAtTime(30, ctx.currentTime + 2.5);
+                    gain.gain.setValueAtTime(0.5, ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 2.5);
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.start();
+                    osc.stop(ctx.currentTime + 2.5);
+                } catch (e) {}
+            }
+
+            function playPersuadeSuccess() {
+                var ctx = ac();
+                if (!ctx) return;
+                try {
+                    [440, 550, 660].forEach(function(f, i) {
+                        setTimeout(function() {
+                            var osc = ctx.createOscillator();
+                            var gain = ctx.createGain();
+                            osc.type = 'triangle';
+                            osc.frequency.value = f;
+                            gain.gain.value = 0.25;
+                            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+                            osc.connect(gain);
+                            gain.connect(ctx.destination);
+                            osc.start();
+                            osc.stop(ctx.currentTime + 0.3);
+                        }, i * 100);
+                    });
+                } catch (e) {}
+            }
+
+            function playPersuadeFail() {
+                var ctx = ac();
+                if (!ctx) return;
+                try {
+                    [300, 200, 100].forEach(function(f, i) {
+                        setTimeout(function() {
+                            var osc = ctx.createOscillator();
+                            var gain = ctx.createGain();
+                            osc.type = 'sawtooth';
+                            osc.frequency.value = f;
+                            gain.gain.value = 0.3;
+                            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+                            osc.connect(gain);
+                            gain.connect(ctx.destination);
+                            osc.start();
+                            osc.stop(ctx.currentTime + 0.15);
+                        }, i * 80);
+                    });
+                } catch (e) {}
+            }
+
+            function playMonsterGrowl() {
+                var ctx = ac();
+                if (!ctx) return;
+                try {
+                    var osc = ctx.createOscillator();
+                    var lfo = ctx.createOscillator();
+                    var lfoGain = ctx.createGain();
+                    var gain = ctx.createGain();
+                    osc.type = 'sawtooth';
+                    osc.frequency.value = 40;
+                    lfo.type = 'sine';
+                    lfo.frequency.value = 5;
+                    lfoGain.gain.value = 15;
+                    gain.gain.value = 0.2;
+                    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+                    lfo.connect(lfoGain);
+                    lfoGain.connect(osc.frequency);
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    lfo.start();
+                    osc.start();
+                    osc.stop(ctx.currentTime + 0.5);
+                    lfo.stop(ctx.currentTime + 0.5);
+                } catch (e) {}
+            }
+
+            var hbTimer = null;
+            var hbBPM = 60;
+
+            function startHeartbeat() {
+                if (hbTimer) clearTimeout(hbTimer);
+                function beat() {
+                    if (!game.alive) return;
+                    playNoise(0.08, 50, 'sine', 0.15);
+                    setTimeout(function() {
+                        if (game.alive) playNoise(0.06, 45, 'sine', 0.12);
+                    }, 120);
+                    hbTimer = setTimeout(beat, 60000 / hbBPM);
+                }
+                beat();
+            }
+
+            function stopHeartbeat() {
+                if (hbTimer) {
+                    clearTimeout(hbTimer);
+                    hbTimer = null;
+                }
+            }
+
+            function updateHeartbeatBPM() {
+                hbBPM = 58 + Math.round((1 - game.hp / game.maxHp) * 90);
+            }
+
+            // DOM elements
+            var els = {};
+            function initElements() {
+                els.searchInput = document.getElementById('searchInput');
+                els.qtySelect = document.getElementById('qtySelect');
+                els.mainnetCheck = document.getElementById('mainnetCheck');
+                els.searchBtn = document.getElementById('searchBtn');
+                els.captureBtn = document.getElementById('captureBtn');
+                els.saveBtn = document.getElementById('saveBtn');
+                els.loadBtn = document.getElementById('loadBtn');
+                els.hpBar = document.getElementById('hpBar');
+                els.hpText = document.getElementById('hpText');
+                els.killsText = document.getElementById('killsText');
+                els.scoreText = document.getElementById('scoreText');
+                els.depthText = document.getElementById('depthText');
+                els.combatLog = document.getElementById('combatLog');
+                els.breadcrumbBar = document.getElementById('breadcrumbBar');
+                els.welcomeScreen = document.getElementById('welcomeScreen');
+                els.deathScreen = document.getElementById('deathScreen');
+                els.deathPath = document.getElementById('deathPath');
+                els.deathStats = document.getElementById('deathStats');
+                els.restartBtn = document.getElementById('restartBtn');
+                els.shareModal = document.getElementById('shareModal');
+                els.shareImage = document.getElementById('shareImage');
+                els.shareStats = document.getElementById('shareStats');
+                els.sharePath = document.getElementById('sharePath');
+                els.shareUrl = document.getElementById('shareUrl');
+                els.downloadScreenshot = document.getElementById('downloadScreenshot');
+                els.copyUrl = document.getElementById('copyUrl');
+                els.closeShare = document.getElementById('closeShare');
+                els.saveModal = document.getElementById('saveModal');
+                els.saveAddress = document.getElementById('saveAddress');
+                els.downloadSave = document.getElementById('downloadSave');
+                els.closeSave = document.getElementById('closeSave');
+                els.loadModal = document.getElementById('loadModal');
+                els.loadHash = document.getElementById('loadHash');
+                els.loadFromIpfs = document.getElementById('loadFromIpfs');
+                els.closeLoad = document.getElementById('closeLoad');
+                els.persuadeDialog = document.getElementById('persuadeDialog');
+                els.persuadeMonsterName = document.getElementById('persuadeMonsterName');
+                els.persuadeText = document.getElementById('persuadeText');
+                els.persuadeSpeak = document.getElementById('persuadeSpeak');
+                els.persuadeCancel = document.getElementById('persuadeCancel');
+                els.detailPanel = document.getElementById('detailPanel');
+                els.detailContent = document.getElementById('detailContent');
+                els.closeDetail = document.getElementById('closeDetail');
+                els.vignette = document.getElementById('vignette');
+                els.damageFlash = document.getElementById('damageFlash');
+            }
+
+            // UI update functions
+            function updateStatsUI() {
+                var pct = Math.max(0, game.hp / game.maxHp * 100);
+                els.hpBar.style.width = pct + '%';
+                if (pct > 60) {
+                    els.hpBar.style.background = 'linear-gradient(90deg, #00aa00, #44cc44)';
+                } else if (pct > 30) {
+                    els.hpBar.style.background = 'linear-gradient(90deg, #ccaa00, #ffcc44)';
+                } else {
+                    els.hpBar.style.background = 'linear-gradient(90deg, #cc2200, #ff4422)';
+                }
+                els.hpText.textContent = Math.max(0, game.hp) + '/' + game.maxHp;
+                els.killsText.textContent = game.kills;
+                els.scoreText.textContent = game.score;
+                els.depthText.textContent = game.depth;
+
+                // Vignette intensity based on HP
+                var vignetteOpacity = 0.3 + (1 - game.hp / game.maxHp) * 0.5;
+                els.vignette.style.background = 'radial-gradient(ellipse at center, transparent ' + (50 - (1 - game.hp / game.maxHp) * 30) + '%, rgba(30,0,0,' + vignetteOpacity + ') 100%)';
+            }
+
+            function addCombatLog(msg, type) {
+                var now = new Date();
+                var timeStr = now.getHours().toString().padStart(2, '0') + ':' +
+                              now.getMinutes().toString().padStart(2, '0') + ':' +
+                              now.getSeconds().toString().padStart(2, '0');
+                var entry = document.createElement('div');
+                entry.className = 'log-entry fade-in';
+                entry.innerHTML = '<span class="log-time">' + timeStr + '</span><span class="log-' + (type || 'info') + '">' + esc(msg) + '</span>';
+                els.combatLog.appendChild(entry);
+
+                // Keep only last 8 entries
+                while (els.combatLog.children.length > 8) {
+                    els.combatLog.removeChild(els.combatLog.firstChild);
+                }
+                els.combatLog.scrollTop = els.combatLog.scrollHeight;
+            }
+
+            function updateBreadcrumbs() {
+                els.breadcrumbBar.innerHTML = '';
+                searchHistory.forEach(function(item, idx) {
+                    var pill = document.createElement('div');
+                    pill.className = 'breadcrumb' + (idx === searchHistory.length - 1 ? ' active' : '');
+                    pill.textContent = item.query;
+                    pill.onclick = function() {
+                        replayToIndex(idx);
+                    };
+                    els.breadcrumbBar.appendChild(pill);
+                });
+            }
+
+            function showDamageFlash() {
+                els.damageFlash.style.opacity = '1';
+                setTimeout(function() {
+                    els.damageFlash.style.opacity = '0';
+                }, 150);
+            }
+
+            function triggerScreenShake() {
+                renderer.domElement.classList.add('shaking');
+                setTimeout(function() {
+                    renderer.domElement.classList.remove('shaking');
+                }, 450);
+            }
+
+            // Initialize Three.js scene
+            function initThree() {
+                scene = new THREE.Scene();
+                scene.background = new THREE.Color(0x000000);
+                scene.fog = new THREE.FogExp2(0x0a0000, 0.018);
+
+                camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+                camera.position.set(0, 15, 40);
+
+                renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+                document.body.insertBefore(renderer.domElement, document.body.firstChild);
+
+                controls = new THREE.OrbitControls(camera, renderer.domElement);
+                controls.enableDamping = true;
+                controls.dampingFactor = 0.05;
+                controls.autoRotate = true;
+                controls.autoRotateSpeed = 0.3;
+                controls.minDistance = 10;
+                controls.maxDistance = 100;
+
+                clock = new THREE.Clock();
+
+                // Lighting
+                var ambientLight = new THREE.AmbientLight(0x220000, 0.6);
+                scene.add(ambientLight);
+
+                var light1 = new THREE.PointLight(0x880000, 1.5, 60);
+                light1.position.set(20, 15, 20);
+                scene.add(light1);
+
+                var light2 = new THREE.PointLight(0x440066, 1.2, 50);
+                light2.position.set(-25, 10, -15);
+                scene.add(light2);
+
+                var light3 = new THREE.PointLight(0x224400, 0.8, 40);
+                light3.position.set(0, -20, 25);
+                scene.add(light3);
+
+                // Create starfield
+                createStarfield();
+
+                // Create nebula
+                createNebula();
+
+                // Create central nexus
+                createNexus();
+
+                // Create selection ring
+                createSelectionRing();
+
+                // Window resize handler
+                window.addEventListener('resize', onWindowResize);
+
+                // Mouse handlers
+                renderer.domElement.addEventListener('mousemove', onMouseMove);
+                renderer.domElement.addEventListener('click', onMouseClick);
+            }
+
+            function createStarfield() {
+                var geometry = new THREE.BufferGeometry();
+                var positions = [];
+                var colors = [];
+                var starColors = [
+                    [0.8, 0.3, 0.3],  // deep red
+                    [0.5, 0.5, 0.8],  // pale blue
+                    [0.9, 0.85, 0.8]  // bone white
+                ];
+
+                for (var i = 0; i < 3500; i++) {
+                    var x = (Math.random() - 0.5) * 400;
+                    var y = (Math.random() - 0.5) * 400;
+                    var z = (Math.random() - 0.5) * 400;
+                    positions.push(x, y, z);
+
+                    var col = starColors[Math.floor(Math.random() * starColors.length)];
+                    colors.push(col[0], col[1], col[2]);
+                }
+
+                geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+                geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+                var material = new THREE.PointsMaterial({
+                    size: 0.8,
+                    vertexColors: true,
+                    transparent: true,
+                    opacity: 0.8
+                });
+
+                starField = new THREE.Points(geometry, material);
+                scene.add(starField);
+            }
+
+            function createNebula() {
+                var geometry = new THREE.BufferGeometry();
+                var positions = [];
+                var colors = [];
+
+                for (var i = 0; i < 400; i++) {
+                    var theta = Math.random() * Math.PI * 2;
+                    var phi = Math.acos(Math.random() * 2 - 1);
+                    var r = 50 + Math.random() * 100;
+                    var x = r * Math.sin(phi) * Math.cos(theta);
+                    var y = r * Math.sin(phi) * Math.sin(theta);
+                    var z = r * Math.cos(phi);
+                    positions.push(x, y, z);
+
+                    // Crimson/maroon colors
+                    var intensity = 0.3 + Math.random() * 0.3;
+                    colors.push(intensity, intensity * 0.1, intensity * 0.1);
+                }
+
+                geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+                geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+                var material = new THREE.PointsMaterial({
+                    size: 3,
+                    vertexColors: true,
+                    transparent: true,
+                    opacity: 0.4
+                });
+
+                nebula = new THREE.Points(geometry, material);
+                scene.add(nebula);
+            }
+
+            function createNexus() {
+                var group = new THREE.Group();
+
+                // Core orb
+                var coreGeo = new THREE.SphereGeometry(2, 32, 32);
+                var coreMat = new THREE.MeshBasicMaterial({
+                    color: 0x880000,
+                    transparent: true,
+                    opacity: 0.8
+                });
+                var core = new THREE.Mesh(coreGeo, coreMat);
+                group.add(core);
+
+                // Outer wireframe
+                var wireGeo = new THREE.IcosahedronGeometry(3, 1);
+                var wireMat = new THREE.MeshBasicMaterial({
+                    color: 0xcc2200,
+                    wireframe: true,
+                    transparent: true,
+                    opacity: 0.6
+                });
+                var wire = new THREE.Mesh(wireGeo, wireMat);
+                group.add(wire);
+
+                // Inner glow light
+                var light = new THREE.PointLight(0xff2200, 2, 25);
+                group.add(light);
+
+                nexus = group;
+                nexus.userData.core = core;
+                nexus.userData.wire = wire;
+                scene.add(nexus);
+            }
+
+            function createSelectionRing() {
+                var geo = new THREE.TorusGeometry(2.5, 0.08, 8, 32);
+                var mat = new THREE.MeshBasicMaterial({
+                    color: 0xff4422,
+                    transparent: true,
+                    opacity: 0
+                });
+                selectionRing = new THREE.Mesh(geo, mat);
+                selectionRing.rotation.x = Math.PI / 2;
+                scene.add(selectionRing);
+            }
+
+            function onWindowResize() {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            }
+
+            function onMouseMove(event) {
+                mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+                mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            }
+
+            function onMouseClick(event) {
+                if (!game.alive) return;
+
+                raycaster.setFromCamera(mouse, camera);
+
+                // Check monsters first
+                var monsterHits = raycaster.intersectObjects(monsterMeshes.map(function(m) { return m.group; }), true);
+                if (monsterHits.length > 0) {
+                    var hitObj = monsterHits[0].object;
+                    while (hitObj.parent && !hitObj.userData.isMonster) {
+                        hitObj = hitObj.parent;
+                    }
+                    if (hitObj.userData.isMonster) {
+                        attackMonster(hitObj);
+                        return;
+                    }
+                }
+
+                // Check artifacts
+                var artifactMeshes = currentArtifacts.map(function(a) { return a.mesh; });
+                var artifactHits = raycaster.intersectObjects(artifactMeshes, true);
+                if (artifactHits.length > 0) {
+                    var mesh = artifactHits[0].object;
+                    while (mesh.parent && !mesh.userData.artifactData) {
+                        mesh = mesh.parent;
+                    }
+                    if (mesh.userData.artifactData) {
+                        selectArtifact(mesh);
+                    }
+                }
+            }
+
+            // Monster generation
+            function generateMonstersForQuery(query, depth) {
+                if (monsterDefs.has(query)) {
+                    return monsterDefs.get(query);
+                }
+
+                var hash = strHash(query);
+                var rng = seededRng(hash);
+                var count = Math.floor(rng() * 3) + 2 + Math.min(depth, 3);
+                var monsters = [];
+
+                // Check for Leviathan at depth >= 3
+                var hasLeviathan = depth >= 3 && rng() < 0.3;
+
+                for (var i = 0; i < count; i++) {
+                    var typeIdx;
+                    if (hasLeviathan && i === count - 1) {
+                        typeIdx = 5; // Leviathan
+                    } else {
+                        typeIdx = Math.floor(rng() * 5); // Types 0-4
+                    }
+
+                    var mtype = MTYPES[typeIdx];
+                    var prefix = MPREFIXES[Math.floor(rng() * MPREFIXES.length)];
+                    var hp = Math.floor(mtype.baseHp + rng() * 50);
+
+                    // Fibonacci sphere position
+                    var phi = Math.acos(1 - 2 * (i + 0.5) / count);
+                    var theta = Math.PI * (1 + Math.sqrt(5)) * (i + 0.5);
+                    var r = 8 + rng() * 10;
+                    var x = r * Math.sin(phi) * Math.cos(theta);
+                    var y = (rng() - 0.5) * 6;
+                    var z = r * Math.sin(phi) * Math.sin(theta);
+
+                    monsters.push({
+                        idx: i,
+                        typeIdx: typeIdx,
+                        name: prefix + ' ' + mtype.name,
+                        hp: hp,
+                        maxHp: hp,
+                        atk: mtype.atk,
+                        spd: mtype.spd,
+                        aggro: mtype.aggro,
+                        range: mtype.range,
+                        weakness: mtype.weakness,
+                        color: mtype.clr,
+                        emissive: mtype.emv,
+                        position: { x: x, y: y, z: z },
+                        enraged: false,
+                        enrageEnd: 0,
+                        lastAttack: 0,
+                        patrolTarget: null,
+                        teleportCooldown: 0
+                    });
+                }
+
+                monsterDefs.set(query, monsters);
+                return monsters;
+            }
+
+            // Monster mesh creation
+            function createMonsterMesh(def, query) {
+                var group = new THREE.Group();
+                group.userData.isMonster = true;
+                group.userData.def = def;
+                group.userData.query = query;
+
+                var typeIdx = def.typeIdx;
+
+                if (typeIdx === 0) {
+                    // WRAITH - floating sphere with tendrils
+                    var coreMat = new THREE.MeshPhongMaterial({
+                        color: def.color,
+                        emissive: def.emissive,
+                        transparent: true,
+                        opacity: 0.7
+                    });
+                    var core = new THREE.Mesh(new THREE.SphereGeometry(0.9, 8, 8), coreMat);
+                    group.add(core);
+
+                    for (var t = 0; t < 6; t++) {
+                        var tendril = new THREE.Mesh(
+                            new THREE.ConeGeometry(0.07, 1.4, 3),
+                            new THREE.MeshPhongMaterial({ color: def.color, emissive: def.emissive })
+                        );
+                        var angle = (t / 6) * Math.PI * 2;
+                        tendril.position.set(Math.cos(angle) * 0.8, 0, Math.sin(angle) * 0.8);
+                        tendril.rotation.z = Math.PI / 2 + (Math.random() - 0.5) * 0.5;
+                        tendril.rotation.y = angle;
+                        group.add(tendril);
+                    }
+
+                    var light = new THREE.PointLight(0x4466ff, 1.2, 10);
+                    group.add(light);
+                    group.userData.bobOffset = Math.random() * Math.PI * 2;
+
+                } else if (typeIdx === 1) {
+                    // GOLEM - stacked boxes
+                    var stoneMat = new THREE.MeshPhongMaterial({
+                        color: def.color,
+                        emissive: def.emissive,
+                        flatShading: true
+                    });
+
+                    var legs = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.0, 1.0), stoneMat);
+                    legs.position.y = 0;
+                    group.add(legs);
+
+                    var torso = new THREE.Mesh(new THREE.BoxGeometry(1.3, 1.1, 1.0), stoneMat);
+                    torso.position.y = 1.15;
+                    group.add(torso);
+
+                    var head = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.9), stoneMat);
+                    head.position.y = 2.3;
+                    group.add(head);
+
+                    var eyeMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+                    var eye1 = new THREE.Mesh(new THREE.SphereGeometry(0.12, 6, 6), eyeMat);
+                    eye1.position.set(-0.2, 2.4, 0.4);
+                    group.add(eye1);
+                    var eye2 = new THREE.Mesh(new THREE.SphereGeometry(0.12, 6, 6), eyeMat);
+                    eye2.position.set(0.2, 2.4, 0.4);
+                    group.add(eye2);
+
+                    var light = new THREE.PointLight(0xff0000, 1.5, 8);
+                    light.position.y = 2.3;
+                    group.add(light);
+
+                } else if (typeIdx === 2) {
+                    // SPECTER - wireframe icosahedron
+                    var outerMat = new THREE.MeshBasicMaterial({
+                        color: def.color,
+                        wireframe: true,
+                        transparent: true,
+                        opacity: 0.4
+                    });
+                    var outer = new THREE.Mesh(new THREE.IcosahedronGeometry(1.3, 1), outerMat);
+                    group.add(outer);
+
+                    var innerMat = new THREE.MeshPhongMaterial({
+                        color: def.color,
+                        emissive: def.emissive
+                    });
+                    var inner = new THREE.Mesh(new THREE.IcosahedronGeometry(0.7, 0), innerMat);
+                    group.add(inner);
+
+                    var light = new THREE.PointLight(0x00ff66, 1.0, 12);
+                    group.add(light);
+                    group.userData.teleportTimer = 3000 + Math.random() * 2000;
+
+                } else if (typeIdx === 3) {
+                    // SHADOW - black sphere with spikes
+                    var shadowMat = new THREE.MeshPhongMaterial({
+                        color: 0x110000,
+                        emissive: def.emissive
+                    });
+                    var core = new THREE.Mesh(new THREE.SphereGeometry(1.1, 6, 6), shadowMat);
+                    group.add(core);
+
+                    for (var s = 0; s < 8; s++) {
+                        var spike = new THREE.Mesh(
+                            new THREE.ConeGeometry(0.09, 1.3, 3),
+                            new THREE.MeshPhongMaterial({ color: 0x220000, emissive: 0x330000 })
+                        );
+                        var theta = (s / 8) * Math.PI * 2;
+                        var phi = Math.PI * 0.3 + (s % 2) * Math.PI * 0.4;
+                        spike.position.set(
+                            Math.sin(phi) * Math.cos(theta) * 1.2,
+                            Math.cos(phi) * 1.2,
+                            Math.sin(phi) * Math.sin(theta) * 1.2
+                        );
+                        spike.lookAt(spike.position.clone().multiplyScalar(2));
+                        group.add(spike);
+                    }
+
+                    var light = new THREE.PointLight(0xff2200, 0.8, 10);
+                    group.add(light);
+
+                } else if (typeIdx === 4) {
+                    // ORACLE - torus knot
+                    var oracleMat = new THREE.MeshPhongMaterial({
+                        color: def.color,
+                        emissive: def.emissive,
+                        shininess: 100
+                    });
+                    var knot = new THREE.Mesh(new THREE.TorusKnotGeometry(0.8, 0.18, 80, 8), oracleMat);
+                    group.add(knot);
+
+                    var light = new THREE.PointLight(0xffcc00, 1.2, 15);
+                    group.add(light);
+
+                    // Floating hint sprites
+                    var hints = def.weakness.slice(0, 3);
+                    hints.forEach(function(hint, hi) {
+                        var sprite = createTextSprite(hint, 0xffcc00, 0.4);
+                        sprite.position.set(
+                            Math.cos(hi * Math.PI * 2 / 3) * 1.8,
+                            0.8 + hi * 0.3,
+                            Math.sin(hi * Math.PI * 2 / 3) * 1.8
+                        );
+                        group.add(sprite);
+                    });
+
+                } else if (typeIdx === 5) {
+                    // LEVIATHAN - serpent chain
+                    var sizes = [1.4, 1.2, 1.0, 0.9, 0.8, 0.6, 0.5];
+                    var levMat = new THREE.MeshPhongMaterial({
+                        color: def.color,
+                        emissive: def.emissive
+                    });
+
+                    sizes.forEach(function(size, si) {
+                        var seg = new THREE.Mesh(new THREE.SphereGeometry(size, 8, 8), levMat);
+                        var offset = si * 1.8;
+                        seg.position.set(
+                            Math.sin(si * 0.5) * 2,
+                            Math.cos(si * 0.4) * 0.5,
+                            -offset
+                        );
+                        group.add(seg);
+
+                        // Add horns to head
+                        if (si === 0) {
+                            for (var h = 0; h < 4; h++) {
+                                var horn = new THREE.Mesh(
+                                    new THREE.ConeGeometry(0.15, 0.8, 4),
+                                    new THREE.MeshPhongMaterial({ color: 0x440000 })
+                                );
+                                var hAngle = (h / 4) * Math.PI * 2;
+                                horn.position.set(Math.cos(hAngle) * 0.8, 1.2, Math.sin(hAngle) * 0.8);
+                                horn.rotation.x = -0.3;
+                                horn.rotation.z = Math.cos(hAngle) * 0.3;
+                                group.add(horn);
+                            }
+                        }
+                    });
+
+                    var light = new THREE.PointLight(0xff0000, 2.0, 20);
+                    group.add(light);
+                    group.userData.circleAngle = Math.random() * Math.PI * 2;
+                }
+
+                // Add HP label sprite
+                var label = createMonsterLabel(def);
+                label.position.y = typeIdx === 1 ? 3.5 : typeIdx === 5 ? 2.5 : 2;
+                group.add(label);
+                group.userData.label = label;
+
+                group.position.set(def.position.x, def.position.y, def.position.z);
+
+                return group;
+            }
+
+            function createTextSprite(text, color, scale) {
+                var canvas = document.createElement('canvas');
+                canvas.width = 256;
+                canvas.height = 64;
+                var ctx = canvas.getContext('2d');
+                ctx.font = 'bold 32px monospace';
+                ctx.fillStyle = '#' + color.toString(16).padStart(6, '0');
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(text, 128, 32);
+
+                var texture = new THREE.CanvasTexture(canvas);
+                var material = new THREE.SpriteMaterial({ map: texture, transparent: true });
+                var sprite = new THREE.Sprite(material);
+                sprite.scale.set(scale * 4, scale, 1);
+                return sprite;
+            }
+
+            function createMonsterLabel(def) {
+                var canvas = document.createElement('canvas');
+                canvas.width = 256;
+                canvas.height = 64;
+                updateMonsterLabelCanvas(canvas, def);
+
+                var texture = new THREE.CanvasTexture(canvas);
+                var material = new THREE.SpriteMaterial({ map: texture, transparent: true });
+                var sprite = new THREE.Sprite(material);
+                sprite.scale.set(4, 1, 1);
+                sprite.userData.canvas = canvas;
+                sprite.userData.texture = texture;
+                return sprite;
+            }
+
+            function updateMonsterLabelCanvas(canvas, def) {
+                var ctx = canvas.getContext('2d');
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                // Background
+                ctx.fillStyle = 'rgba(0,0,0,0.6)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                // Name
+                ctx.font = 'bold 18px monospace';
+                ctx.fillStyle = '#cc2200';
+                ctx.textAlign = 'center';
+                ctx.fillText(def.name, 128, 22);
+
+                // HP bar background
+                ctx.fillStyle = '#220000';
+                ctx.fillRect(28, 36, 200, 16);
+
+                // HP bar
+                var hpPct = Math.max(0, def.hp / def.maxHp);
+                var hpColor = hpPct > 0.6 ? '#00aa00' : hpPct > 0.3 ? '#ccaa00' : '#cc2200';
+                ctx.fillStyle = hpColor;
+                ctx.fillRect(28, 36, 200 * hpPct, 16);
+
+                // HP text
+                ctx.font = '12px monospace';
+                ctx.fillStyle = '#fff';
+                ctx.fillText(Math.max(0, def.hp) + '/' + def.maxHp, 128, 48);
+            }
+
+            function updateMonsterLabel(monsterMesh) {
+                var label = monsterMesh.userData.label;
+                var def = monsterMesh.userData.def;
+                if (label && label.userData.canvas) {
+                    updateMonsterLabelCanvas(label.userData.canvas, def);
+                    label.userData.texture.needsUpdate = true;
+                }
+            }
+
+            // Artifact creation
+            function createArtifactMesh(data, type, index, total, hasGuardian) {
+                var group = new THREE.Group();
+                var radius, material;
+
+                if (type === 'root') {
+                    radius = 22;
+                    material = new THREE.MeshPhongMaterial({
+                        color: 0x6622aa,
+                        emissive: 0x220066,
+                        transparent: true,
+                        opacity: 0
+                    });
+                    var geo = new THREE.OctahedronGeometry(1.3, 0);
+                    var mesh = new THREE.Mesh(geo, material);
+                    group.add(mesh);
+                } else if (type === 'object') {
+                    radius = 16;
+                    material = new THREE.MeshPhongMaterial({
+                        color: 0xaa4400,
+                        emissive: 0x441100,
+                        transparent: true,
+                        opacity: 0
+                    });
+                    var geo = new THREE.BoxGeometry(1.8, 1.8, 1.8);
+                    var mesh = new THREE.Mesh(geo, material);
+                    group.add(mesh);
+                } else {
+                    // profile
+                    radius = 10;
+                    material = new THREE.MeshPhongMaterial({
+                        color: 0x2266aa,
+                        emissive: 0x112244,
+                        transparent: true,
+                        opacity: 0
+                    });
+                    var sphere = new THREE.Mesh(new THREE.SphereGeometry(1.2, 16, 16), material);
+                    group.add(sphere);
+
+                    // Orbital rings
+                    var ringMat = new THREE.MeshBasicMaterial({
+                        color: 0x4488cc,
+                        transparent: true,
+                        opacity: 0.5
+                    });
+                    var ring1 = new THREE.Mesh(new THREE.TorusGeometry(1.8, 0.04, 8, 32), ringMat);
+                    ring1.rotation.x = Math.PI / 2;
+                    group.add(ring1);
+                    var ring2 = new THREE.Mesh(new THREE.TorusGeometry(1.8, 0.04, 8, 32), ringMat.clone());
+                    ring2.rotation.y = Math.PI / 2;
+                    group.add(ring2);
+                }
+
+                // Calculate position using Fibonacci sphere
+                var phi = Math.acos(1 - 2 * (index + 0.5) / Math.max(total, 1));
+                var theta = Math.PI * (1 + Math.sqrt(5)) * (index + 0.5);
+                var targetX = radius * Math.sin(phi) * Math.cos(theta);
+                var targetY = (Math.random() - 0.5) * 8;
+                var targetZ = radius * Math.sin(phi) * Math.sin(theta);
+
+                group.position.set(0, 0, 0);
+                group.userData.targetPos = new THREE.Vector3(targetX, targetY, targetZ);
+                group.userData.artifactData = data;
+                group.userData.artifactType = type;
+                group.userData.material = material;
+                group.userData.locked = hasGuardian;
+                group.userData.guardianIdx = hasGuardian ? index % 10 : -1;
+
+                // Lock ring for guarded artifacts
+                if (hasGuardian) {
+                    var lockRing = new THREE.Mesh(
+                        new THREE.TorusGeometry(2.0, 0.04, 6, 32),
+                        new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.8 })
+                    );
+                    lockRing.rotation.x = Math.PI / 2;
+                    lockRing.userData.isLockRing = true;
+                    group.add(lockRing);
+                    group.userData.lockRing = lockRing;
+                }
+
+                return group;
+            }
+
+            // Combat system
+            function attackMonster(monsterMesh) {
+                if (!game.alive) return;
+
+                var now = Date.now();
+                if (now - lastAttackTime < 700) return;
+                lastAttackTime = now;
+
+                var def = monsterMesh.userData.def;
+                var damage = 12 + Math.floor(Math.random() * 10);
+
+                // Flash monster white
+                monsterMesh.traverse(function(child) {
+                    if (child.material && child.material.emissive) {
+                        var origEmissive = child.material.emissive.getHex();
+                        child.material.emissive.setHex(0xffffff);
+                        setTimeout(function() {
+                            if (child.material) child.material.emissive.setHex(origEmissive);
+                        }, 100);
+                    }
+                });
+
+                playHit();
+                def.hp -= damage;
+                updateMonsterLabel(monsterMesh);
+
+                addCombatLog('You deal ' + damage + ' damage to ' + def.name, 'damage');
+
+                if (def.hp <= 0) {
+                    killMonster(monsterMesh);
+                } else {
+                    // Counter attack after delay
+                    setTimeout(function() {
+                        if (game.alive && def.hp > 0) {
+                            damagePlayer(def.atk, def.name);
+                        }
+                    }, 350);
+                }
+            }
+
+            function killMonster(monsterMesh) {
+                var def = monsterMesh.userData.def;
+                var query = monsterMesh.userData.query;
+
+                // Particle explosion
+                createExplosion(monsterMesh.position.clone(), def.color);
+                playExplosion();
+
+                // Remove from scene
+                scene.remove(monsterMesh);
+                var idx = monsterMeshes.indexOf(monsterMesh);
+                if (idx !== -1) monsterMeshes.splice(idx, 1);
+
+                // Mark as killed
+                if (!monsterKills.has(query)) {
+                    monsterKills.set(query, new Set());
+                }
+                monsterKills.get(query).add(def.idx);
+
+                game.kills++;
+                game.score += 50 * (1 + game.depth);
+
+                addCombatLog('You slayed ' + def.name + '!', 'kill');
+                updateStatsUI();
+
+                // Check if artifact should unlock
+                checkArtifactUnlock(query);
+            }
+
+            function createExplosion(position, color) {
+                var particles = [];
+                for (var i = 0; i < 20; i++) {
+                    var geo = new THREE.SphereGeometry(0.15, 4, 4);
+                    var mat = new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 1 });
+                    var particle = new THREE.Mesh(geo, mat);
+                    particle.position.copy(position);
+                    particle.userData.velocity = new THREE.Vector3(
+                        (Math.random() - 0.5) * 2,
+                        (Math.random() - 0.5) * 2,
+                        (Math.random() - 0.5) * 2
+                    );
+                    scene.add(particle);
+                    particles.push(particle);
+                }
+
+                var startTime = Date.now();
+                function animateExplosion() {
+                    var elapsed = (Date.now() - startTime) / 1000;
+                    if (elapsed > 1) {
+                        particles.forEach(function(p) { scene.remove(p); });
+                        return;
+                    }
+                    particles.forEach(function(p) {
+                        p.position.add(p.userData.velocity.clone().multiplyScalar(0.05));
+                        p.scale.setScalar(1 - elapsed);
+                        p.material.opacity = 1 - elapsed;
+                    });
+                    requestAnimationFrame(animateExplosion);
+                }
+                animateExplosion();
+            }
+
+            function persuadeMonster(monsterMesh, text) {
+                if (!game.alive) return;
+
+                var def = monsterMesh.userData.def;
+                var query = monsterMesh.userData.query;
+                var success = false;
+
+                // Oracle always succeeds
+                if (def.typeIdx === 4) {
+                    success = true;
+                } else {
+                    // Check for weakness words
+                    var lowerText = text.toLowerCase();
+                    success = def.weakness.some(function(w) {
+                        return lowerText.indexOf(w) !== -1;
+                    });
+
+                    // Or 45% chance with long text
+                    if (!success && text.length > 25 && Math.random() < 0.45) {
+                        success = true;
+                    }
+                }
+
+                if (success) {
+                    // Flash gold
+                    monsterMesh.traverse(function(child) {
+                        if (child.material && child.material.emissive) {
+                            child.material.emissive.setHex(0xffcc00);
+                        }
+                    });
+
+                    playPersuadeSuccess();
+
+                    // Remove from scene
+                    setTimeout(function() {
+                        scene.remove(monsterMesh);
+                        var idx = monsterMeshes.indexOf(monsterMesh);
+                        if (idx !== -1) monsterMeshes.splice(idx, 1);
+                    }, 500);
+
+                    // Mark as persuaded
+                    if (!monsterPersuaded.has(query)) {
+                        monsterPersuaded.set(query, new Set());
+                    }
+                    monsterPersuaded.get(query).add(def.idx);
+
+                    game.score += 30;
+                    addCombatLog('You persuaded ' + def.name + ' to leave!', 'persuade');
+                    updateStatsUI();
+
+                    checkArtifactUnlock(query);
+                } else {
+                    playPersuadeFail();
+
+                    // Enrage monster
+                    def.enraged = true;
+                    def.enrageEnd = Date.now() + 5000;
+                    def.atk = Math.floor(def.atk * 1.5);
+
+                    damagePlayer(def.atk * 2, def.name + ' (enraged)');
+                    addCombatLog(def.name + ' is enraged by your words!', 'damage');
+                }
+            }
+
+            function fleeFromMonster(monsterMesh) {
+                if (!game.alive) return;
+
+                var def = monsterMesh.userData.def;
+
+                damagePlayer(8, 'fleeing');
+                addCombatLog('You flee from ' + def.name + ', taking damage!', 'damage');
+
+                // Move camera away
+                var dir = new THREE.Vector3()
+                    .subVectors(camera.position, monsterMesh.position)
+                    .normalize();
+                cameraTarget = camera.position.clone().add(dir.multiplyScalar(15));
+                cameraLerping = true;
+
+                // Enrage monster
+                def.enraged = true;
+                def.enrageEnd = Date.now() + 8000;
+                def.spd *= 2;
+            }
+
+            function damagePlayer(amount, source) {
+                if (!game.alive) return;
+
+                game.hp -= amount;
+                if (game.hp < 0) game.hp = 0;
+
+                addCombatLog('You take ' + amount + ' damage' + (source ? ' from ' + source : ''), 'damage');
+                updateStatsUI();
+                showDamageFlash();
+                triggerScreenShake();
+                playMonsterHit();
+                updateHeartbeatBPM();
+
+                if (game.hp <= 0) {
+                    triggerDeath();
+                }
+            }
+
+            function checkArtifactUnlock(query) {
+                var defs = monsterDefs.get(query);
+                if (!defs) return;
+
+                var kills = monsterKills.get(query) || new Set();
+                var persuaded = monsterPersuaded.get(query) || new Set();
+                var allCleared = defs.every(function(d) {
+                    return kills.has(d.idx) || persuaded.has(d.idx);
+                });
+
+                if (allCleared) {
+                    // Unlock all artifacts for this query
+                    currentArtifacts.forEach(function(artifact) {
+                        if (artifact.query === query && artifact.mesh.userData.locked) {
+                            artifact.mesh.userData.locked = false;
+                            if (artifact.mesh.userData.lockRing) {
+                                artifact.mesh.userData.lockRing.material.color.setHex(0x00ff00);
+                                setTimeout(function() {
+                                    artifact.mesh.remove(artifact.mesh.userData.lockRing);
+                                }, 1000);
+                            }
+                            addCombatLog('Artifact unlocked!', 'info');
+                        }
+                    });
+                }
+            }
+
+            function triggerDeath() {
+                game.alive = false;
+                stopHeartbeat();
+                playDeathSound();
+
+                showDamageFlash();
+                setTimeout(function() {
+                    var pathStr = searchHistory.map(function(h) { return '"' + h.query + '"'; }).join(' → ');
+                    els.deathPath.textContent = pathStr || 'No path taken';
+                    els.deathStats.innerHTML = 'Score: ' + game.score + ' &nbsp;&nbsp; Kills: ' + game.kills + ' &nbsp;&nbsp; Depth: ' + game.depth;
+                    els.deathScreen.classList.add('visible');
+                }, 800);
+            }
+
+            function fullReset() {
+                // Clear state
+                searchHistory = [];
+                monsterKills = new Map();
+                monsterPersuaded = new Map();
+
+                // Reset game state
+                game.hp = 100;
+                game.maxHp = 100;
+                game.score = 0;
+                game.kills = 0;
+                game.depth = 0;
+                game.alive = true;
+
+                // Clear scene
+                currentArtifacts.forEach(function(a) { scene.remove(a.mesh); });
+                currentArtifacts = [];
+                monsterMeshes.forEach(function(m) { scene.remove(m.group); });
+                monsterMeshes = [];
+                connectionLines.forEach(function(l) { scene.remove(l); });
+                connectionLines = [];
+
+                // Reset UI
+                els.combatLog.innerHTML = '';
+                els.searchInput.value = '';
+                els.welcomeScreen.classList.remove('hidden');
+                els.deathScreen.classList.remove('visible');
+                closeDetailPanel();
+                updateStatsUI();
+                updateBreadcrumbs();
+
+                // Reset camera
+                camera.position.set(0, 15, 40);
+                controls.target.set(0, 0, 0);
+
+                // Restart heartbeat
+                startHeartbeat();
+                updateHeartbeatBPM();
+            }
+
+            // Search and API
+            async function runSearch(query, mainnet, isReplay) {
+                if (!query || query.trim() === '') return;
+                query = query.trim();
+
+                els.searchBtn.disabled = true;
+                els.welcomeScreen.classList.add('hidden');
+
+                try {
+                    var qty = parseInt(els.qtySelect.value) || 10;
+                    var mainnetParam = mainnet ? 'true' : 'false';
+
+                    var results = await Promise.all([
+                        fetch(BASE + '/GetKnownRootsBySearchString?searchString=' + encodeURIComponent(query) + '&qty=' + qty + '&skip=0').then(function(r) { return r.json(); }).catch(function() { return []; }),
+                        fetch(BASE + '/GetKnownObjectsBySearchString?searchString=' + encodeURIComponent(query) + '&qty=' + qty + '&skip=0').then(function(r) { return r.json(); }).catch(function() { return []; }),
+                        fetch(BASE + '/GetKnownProfilesBySearchString?searchString=' + encodeURIComponent(query) + '&qty=' + qty + '&skip=0').then(function(r) { return r.json(); }).catch(function() { return []; })
+                    ]);
+                    var rootsRes = results[0];
+                    var objectsRes = results[1];
+                    var profilesRes = results[2];
+
+                    // Clear current artifacts
+                    currentArtifacts.forEach(function(a) { scene.remove(a.mesh); });
+                    currentArtifacts = [];
+                    monsterMeshes.forEach(function(m) { scene.remove(m.group); });
+                    monsterMeshes = [];
+                    connectionLines.forEach(function(l) { scene.remove(l); });
+                    connectionLines = [];
+
+                    // Generate monster definitions for this query
+                    var monsterDefsList = generateMonstersForQuery(query, game.depth);
+                    var killedSet = monsterKills.get(query) || new Set();
+                    var persuadedSet = monsterPersuaded.get(query) || new Set();
+
+                    // Determine which artifacts get guardians (70%)
+                    var totalArtifacts = rootsRes.length + objectsRes.length + profilesRes.length;
+                    var guardianCount = Math.floor(totalArtifacts * 0.7);
+
+                    // Create artifacts
+                    var artifactIndex = 0;
+
+                    profilesRes.forEach(function(item, i) {
+                        var hasGuardian = artifactIndex < guardianCount;
+                        var mesh = createArtifactMesh(item, 'profile', i, profilesRes.length, hasGuardian);
+                        scene.add(mesh);
+                        currentArtifacts.push({ mesh: mesh, type: 'profile', data: item, query: query });
+                        createConnectionLine(mesh);
+                        artifactIndex++;
+                    });
+
+                    objectsRes.forEach(function(item, i) {
+                        var hasGuardian = artifactIndex < guardianCount;
+                        var mesh = createArtifactMesh(item, 'object', i, objectsRes.length, hasGuardian);
+                        scene.add(mesh);
+                        currentArtifacts.push({ mesh: mesh, type: 'object', data: item, query: query });
+                        createConnectionLine(mesh);
+                        artifactIndex++;
+                    });
+
+                    rootsRes.forEach(function(item, i) {
+                        var hasGuardian = artifactIndex < guardianCount;
+                        var mesh = createArtifactMesh(item, 'root', i, rootsRes.length, hasGuardian);
+                        scene.add(mesh);
+                        currentArtifacts.push({ mesh: mesh, type: 'root', data: item, query: query });
+                        createConnectionLine(mesh);
+                        artifactIndex++;
+                    });
+
+                    // Create monsters (only those not killed/persuaded)
+                    monsterDefsList.forEach(function(def) {
+                        if (!killedSet.has(def.idx) && !persuadedSet.has(def.idx)) {
+                            var monsterMesh = createMonsterMesh(def, query);
+                            scene.add(monsterMesh);
+                            monsterMeshes.push({ group: monsterMesh, def: def, query: query });
+                        }
+                    });
+
+                    // Check if all monsters already cleared
+                    checkArtifactUnlock(query);
+
+                    // Update history
+                    if (!isReplay) {
+                        searchHistory.push({ query: query, mainnet: mainnet });
+                        game.depth++;
+                    }
+
+                    updateBreadcrumbs();
+                    updateStatsUI();
+                    updateUrl();
+
+                    addCombatLog('Searched: "' + query + '" — Found ' + totalArtifacts + ' artifacts, ' + (monsterDefsList.length - killedSet.size - persuadedSet.size) + ' guardians', 'info');
+
+                } catch (err) {
+                    console.error('Search error:', err);
+                    addCombatLog('Search failed: ' + err.message, 'damage');
+                }
+
+                els.searchBtn.disabled = false;
+            }
+
+            function createConnectionLine(artifactMesh) {
+                var material = new THREE.LineBasicMaterial({
+                    color: 0x440000,
+                    transparent: true,
+                    opacity: 0.3
+                });
+                var geometry = new THREE.BufferGeometry().setFromPoints([
+                    new THREE.Vector3(0, 0, 0),
+                    artifactMesh.userData.targetPos.clone()
+                ]);
+                var line = new THREE.Line(geometry, material);
+                scene.add(line);
+                connectionLines.push(line);
+                artifactMesh.userData.connectionLine = line;
+            }
+
+            function drillDown(raw) {
+                if (!raw) return;
+                var query = raw.trim();
+
+                // Try to extract meaningful identifier
+                if (query.length > 30) {
+                    query = query.substring(0, 30);
+                }
+
+                els.searchInput.value = query;
+                runSearch(query, els.mainnetCheck.checked, false);
+            }
+
+            function selectArtifact(mesh) {
+                selectedArtifact = mesh;
+                selectionRing.position.copy(mesh.position);
+                selectionRing.material.opacity = 0.8;
+
+                // Show detail panel
+                showDetailPanel(mesh.userData.artifactData, mesh.userData.artifactType);
+
+                // Fly camera toward artifact
+                var dir = new THREE.Vector3().subVectors(mesh.position, camera.position).normalize();
+                cameraTarget = mesh.position.clone().sub(dir.multiplyScalar(8));
+                cameraLerping = true;
+            }
+
+            function showDetailPanel(data, type) {
+                var content = '';
+
+                if (type === 'root') {
+                    var root = data.Root || data;
+                    content += '<div class="detail-type">ROOT MESSAGE</div>';
+                    content += '<div class="detail-title">' + esc(root.TransactionId || 'Unknown').substring(0, 20) + '...</div>';
+
+                    content += '<div class="detail-section">';
+                    content += '<div class="detail-label">Message</div>';
+                    content += '<div class="detail-message">' + esc(root.Message || 'No message') + '</div>';
+                    content += '</div>';
+
+                    if (root.Signature) {
+                        content += '<div class="detail-section">';
+                        content += '<div class="detail-label">Signature</div>';
+                        content += '<div class="detail-value">' + esc(root.Signature).substring(0, 40) + '...</div>';
+                        content += '</div>';
+                    }
+
+                    if (root.TransactionId) {
+                        content += '<div class="detail-section">';
+                        content += '<div class="detail-label">Transaction ID</div>';
+                        content += '<div class="detail-value clickable" onclick="window.bdsDrillDown(\'' + esc(root.TransactionId) + '\')">' + esc(root.TransactionId) + '</div>';
+                        content += '</div>';
+                    }
+
+                    if (root.Sender) {
+                        content += '<div class="detail-section">';
+                        content += '<div class="detail-label">From</div>';
+                        content += '<div class="detail-value clickable" onclick="window.bdsDrillDown(\'' + esc(root.Sender) + '\')">' + esc(root.Sender) + '</div>';
+                        content += '</div>';
+                    }
+
+                    // Thread links
+                    content += '<div class="thread-section">';
+                    content += '<div class="thread-title">🔗 FOLLOW THE THREAD</div>';
+                    if (root.Sender) {
+                        content += '<div class="thread-link" onclick="window.bdsDrillDown(\'' + esc(root.Sender) + '\')">→ Sender address</div>';
+                    }
+                    if (root.TransactionId) {
+                        content += '<div class="thread-link" onclick="window.bdsDrillDown(\'' + esc(root.TransactionId.substring(0, 12)) + '\')">→ Transaction prefix</div>';
+                    }
+                    content += '</div>';
+
+                } else if (type === 'object') {
+                    var obj = data.Object || data;
+                    content += '<div class="detail-type">OBJECT</div>';
+                    content += '<div class="detail-title">' + esc(obj.Name || 'Unknown Object') + '</div>';
+
+                    if (obj.Image) {
+                        content += '<img class="detail-image" src="https://ipfs.io/ipfs/' + esc(obj.Image) + '" alt="Object" onerror="this.style.display=\'none\'">';
+                    }
+
+                    if (obj.Description) {
+                        content += '<div class="detail-section">';
+                        content += '<div class="detail-label">Description</div>';
+                        content += '<div class="detail-value">' + esc(obj.Description) + '</div>';
+                        content += '</div>';
+                    }
+
+                    if (obj.URN) {
+                        content += '<div class="detail-section">';
+                        content += '<div class="detail-label">URN</div>';
+                        content += '<div class="detail-value">' + esc(obj.URN) + '</div>';
+                        content += '</div>';
+                    }
+
+                    if (obj.Creator) {
+                        content += '<div class="detail-section">';
+                        content += '<div class="detail-label">Creator</div>';
+                        content += '<div class="detail-value clickable" onclick="window.bdsDrillDown(\'' + esc(obj.Creator) + '\')">' + esc(obj.Creator) + '</div>';
+                        content += '</div>';
+                    }
+
+                    content += '<div class="thread-section">';
+                    content += '<div class="thread-title">🔗 FOLLOW THE THREAD</div>';
+                    if (obj.Creator) {
+                        content += '<div class="thread-link" onclick="window.bdsDrillDown(\'' + esc(obj.Creator) + '\')">→ Creator address</div>';
+                    }
+                    if (obj.Name) {
+                        content += '<div class="thread-link" onclick="window.bdsDrillDown(\'' + esc(obj.Name) + '\')">→ Search by name</div>';
+                    }
+                    content += '</div>';
+
+                } else if (type === 'profile') {
+                    var prof = data.Profile || data;
+                    content += '<div class="detail-type">PROFILE</div>';
+                    content += '<div class="detail-title">' + esc(prof.Name || prof.Keyword || 'Unknown Profile') + '</div>';
+
+                    if (prof.Image) {
+                        content += '<img class="detail-image" src="https://ipfs.io/ipfs/' + esc(prof.Image) + '" alt="Avatar" onerror="this.style.display=\'none\'">';
+                    }
+
+                    if (prof.Keyword) {
+                        content += '<div class="detail-section">';
+                        content += '<div class="detail-label">Keyword</div>';
+                        content += '<div class="detail-value">' + esc(prof.Keyword) + '</div>';
+                        content += '</div>';
+                    }
+
+                    if (prof.Bio) {
+                        content += '<div class="detail-section">';
+                        content += '<div class="detail-label">Bio</div>';
+                        content += '<div class="detail-value">' + esc(prof.Bio) + '</div>';
+                        content += '</div>';
+                    }
+
+                    if (prof.Address) {
+                        content += '<div class="detail-section">';
+                        content += '<div class="detail-label">Address</div>';
+                        content += '<div class="detail-value clickable" onclick="window.bdsDrillDown(\'' + esc(prof.Address) + '\')">' + esc(prof.Address) + '</div>';
+                        content += '</div>';
+                    }
+
+                    content += '<div class="thread-section">';
+                    content += '<div class="thread-title">🔗 FOLLOW THE THREAD</div>';
+                    if (prof.Address) {
+                        content += '<div class="thread-link" onclick="window.bdsDrillDown(\'' + esc(prof.Address) + '\')">→ Profile address</div>';
+                    }
+                    if (prof.Keyword) {
+                        content += '<div class="thread-link" onclick="window.bdsDrillDown(\'' + esc(prof.Keyword) + '\')">→ Search keyword</div>';
+                    }
+                    if (prof.Name) {
+                        content += '<div class="thread-link" onclick="window.bdsDrillDown(\'' + esc(prof.Name) + '\')">→ Search name</div>';
+                    }
+                    content += '</div>';
+                }
+
+                els.detailContent.innerHTML = content;
+                els.detailPanel.classList.add('open');
+            }
+
+            function closeDetailPanel() {
+                els.detailPanel.classList.remove('open');
+                selectedArtifact = null;
+                selectionRing.material.opacity = 0;
+            }
+
+            // URL state
+            function updateUrl() {
+                var path = searchHistory.map(function(h) { return h.query; }).join('|');
+                var mainnet = els.mainnetCheck.checked;
+                var url = window.location.pathname;
+                if (path) {
+                    url += '?path=' + encodeURIComponent(path) + '&mainnet=' + mainnet;
+                }
+                window.history.replaceState(null, '', url);
+            }
+
+            async function loadFromUrl() {
+                var params = new URLSearchParams(window.location.search);
+                var path = params.get('path');
+                var mainnet = params.get('mainnet') !== 'false';
+
+                els.mainnetCheck.checked = mainnet;
+
+                if (path) {
+                    var queries = path.split('|');
+                    for (var i = 0; i < queries.length; i++) {
+                        await runSearch(queries[i], mainnet, false);
+                        await new Promise(function(r) { setTimeout(r, 500); });
+                    }
+                }
+            }
+
+            async function replayToIndex(idx) {
+                var queries = searchHistory.slice(0, idx + 1).map(function(h) { return { query: h.query, mainnet: h.mainnet }; });
+
+                // Reset but keep monsterKills/monsterPersuaded
+                searchHistory = [];
+                game.depth = 0;
+
+                currentArtifacts.forEach(function(a) { scene.remove(a.mesh); });
+                currentArtifacts = [];
+                monsterMeshes.forEach(function(m) { scene.remove(m.group); });
+                monsterMeshes = [];
+                connectionLines.forEach(function(l) { scene.remove(l); });
+                connectionLines = [];
+
+                for (var i = 0; i < queries.length; i++) {
+                    await runSearch(queries[i].query, queries[i].mainnet, false);
+                    await new Promise(function(r) { setTimeout(r, 400); });
+                }
+            }
+
+            // Screenshot / Share
+            function captureRun() {
+                renderer.render(scene, camera);
+                var dataUrl = renderer.domElement.toDataURL('image/jpeg', 0.88);
+
+                // Create offscreen canvas with stats overlay
+                var canvas = document.createElement('canvas');
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+                var ctx = canvas.getContext('2d');
+
+                var img = new Image();
+                img.onload = function() {
+                    ctx.drawImage(img, 0, 0);
+
+                    // Semi-transparent bar at bottom
+                    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+                    ctx.fillRect(0, canvas.height - 110, canvas.width, 110);
+
+                    // Stats text
+                    ctx.font = 'bold 18px monospace';
+                    ctx.fillStyle = '#cc2200';
+                    ctx.fillText('☠ BANDERSNATCH — VOID RUN', 20, canvas.height - 80);
+
+                    ctx.font = '14px monospace';
+                    ctx.fillStyle = '#ddc8c8';
+                    var pathStr = 'PATH: ' + searchHistory.map(function(h) { return '"' + h.query + '"'; }).join(' → ');
+                    ctx.fillText(pathStr.substring(0, 80) + (pathStr.length > 80 ? '...' : ''), 20, canvas.height - 55);
+
+                    ctx.fillText('SCORE: ' + game.score + '  KILLS: ' + game.kills + '  DEPTH: ' + game.depth + '  HP: ' + game.hp + '/' + game.maxHp, 20, canvas.height - 30);
+
+                    var finalUrl = canvas.toDataURL('image/jpeg', 0.88);
+                    els.shareImage.src = finalUrl;
+                    els.shareStats.textContent = 'Score: ' + game.score + ' | Kills: ' + game.kills + ' | Depth: ' + game.depth;
+                    els.sharePath.textContent = 'Path: ' + searchHistory.map(function(h) { return h.query; }).join(' → ');
+
+                    var shareUrl = window.location.origin + window.location.pathname;
+                    if (searchHistory.length > 0) {
+                        shareUrl += '?path=' + encodeURIComponent(searchHistory.map(function(h) { return h.query; }).join('|')) + '&mainnet=' + els.mainnetCheck.checked;
+                    }
+                    els.shareUrl.value = shareUrl;
+
+                    els.shareModal.classList.add('visible');
+                };
+                img.src = dataUrl;
+            }
+
+            function downloadScreenshot() {
+                var a = document.createElement('a');
+                a.href = els.shareImage.src;
+                a.download = 'bandersnatch_run_' + Date.now() + '.jpg';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+            }
+
+            function copyShareUrl() {
+                var url = els.shareUrl.value;
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(url).then(function() {
+                        addCombatLog('URL copied to clipboard!', 'info');
+                    }).catch(function() {
+                        // Fallback for older browsers
+                        els.shareUrl.select();
+                        document.execCommand('copy');
+                        addCombatLog('URL copied to clipboard!', 'info');
+                    });
+                } else {
+                    // Fallback for older browsers
+                    els.shareUrl.select();
+                    document.execCommand('copy');
+                    addCombatLog('URL copied to clipboard!', 'info');
+                }
+            }
+
+            // Save / Load
+            function saveGame() {
+                var saveData = {
+                    version: '1',
+                    game: 'bandersnatch',
+                    savedAt: new Date().toISOString(),
+                    stats: {
+                        hp: game.hp,
+                        maxHp: game.maxHp,
+                        score: game.score,
+                        kills: game.kills,
+                        depth: game.depth
+                    },
+                    searchPath: searchHistory.map(function(h) { return { query: h.query, mainnet: h.mainnet }; }),
+                    killedMonsters: Object.fromEntries([...monsterKills].map(function(kv) { return [kv[0], [...kv[1]]]; })),
+                    persuadedMonsters: Object.fromEntries([...monsterPersuaded].map(function(kv) { return [kv[0], [...kv[1]]]; })),
+                    mainnet: els.mainnetCheck.checked
+                };
+
+                var blob = new Blob([JSON.stringify(saveData, null, 2)], { type: 'application/json' });
+                var url = URL.createObjectURL(blob);
+                var a = document.createElement('a');
+                a.href = url;
+                a.download = 'bandersnatch_save_' + Date.now() + '.json';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+
+                addCombatLog('Save file downloaded!', 'info');
+            }
+
+            async function loadSaveAddress() {
+                try {
+                    var resp = await fetch(BASE + '/GetPublicAddressByKeyword/bandersnatch?mainnet=true');
+                    var address = await resp.text();
+                    els.saveAddress.value = address || 'bandersnatch';
+                } catch (e) {
+                    els.saveAddress.value = 'bandersnatch';
+                }
+            }
+
+            async function loadFromIPFS(hash) {
+                hash = hash.trim();
+                if (!hash) {
+                    addCombatLog('Please enter an IPFS hash', 'damage');
+                    return;
+                }
+
+                try {
+                    var resp = await fetch('https://ipfs.io/ipfs/' + hash);
+                    var data = await resp.json();
+
+                    if (data.game !== 'bandersnatch') {
+                        throw new Error('Not a Bandersnatch save');
+                    }
+
+                    // Restore state
+                    game.hp = data.stats.hp;
+                    game.maxHp = data.stats.maxHp || 100;
+                    game.score = data.stats.score;
+                    game.kills = data.stats.kills;
+                    game.depth = 0; // Will be incremented by replay
+
+                    // Restore kill/persuade state
+                    monsterKills = new Map(Object.entries(data.killedMonsters || {}).map(function(kv) { return [kv[0], new Set(kv[1])]; }));
+                    monsterPersuaded = new Map(Object.entries(data.persuadedMonsters || {}).map(function(kv) { return [kv[0], new Set(kv[1])]; }));
+
+                    // Clear current state
+                    searchHistory = [];
+                    currentArtifacts.forEach(function(a) { scene.remove(a.mesh); });
+                    currentArtifacts = [];
+                    monsterMeshes.forEach(function(m) { scene.remove(m.group); });
+                    monsterMeshes = [];
+                    connectionLines.forEach(function(l) { scene.remove(l); });
+                    connectionLines = [];
+
+                    els.mainnetCheck.checked = data.mainnet !== false;
+                    els.welcomeScreen.classList.add('hidden');
+                    els.loadModal.classList.remove('visible');
+
+                    // Replay search path
+                    for (var i = 0; i < data.searchPath.length; i++) {
+                        var entry = data.searchPath[i];
+                        await runSearch(entry.query, entry.mainnet, false);
+                        await new Promise(function(r) { setTimeout(r, 400); });
+                    }
+
+                    // Restore HP after replay (since it might have been damaged)
+                    game.hp = data.stats.hp;
+                    updateStatsUI();
+
+                    addCombatLog('Game loaded from IPFS!', 'info');
+                } catch (e) {
+                    console.error('Load error:', e);
+                    addCombatLog('Failed to load: ' + e.message, 'damage');
+                }
+            }
+
+            // Persuade dialog
+            var persuadeTarget = null;
+
+            function openPersuadeDialog(monsterMesh) {
+                persuadeTarget = monsterMesh;
+                els.persuadeMonsterName.textContent = monsterMesh.userData.def.name;
+                els.persuadeText.value = '';
+                els.persuadeDialog.classList.add('visible');
+                els.persuadeText.focus();
+            }
+
+            function closePersuadeDialog() {
+                els.persuadeDialog.classList.remove('visible');
+                persuadeTarget = null;
+            }
+
+            function submitPersuade() {
+                if (persuadeTarget && els.persuadeText.value) {
+                    persuadeMonster(persuadeTarget, els.persuadeText.value);
+                }
+                closePersuadeDialog();
+            }
+
+            // Find nearest monster to camera
+            function findNearestMonster() {
+                var nearest = null;
+                var nearestDist = Infinity;
+
+                monsterMeshes.forEach(function(m) {
+                    var dist = m.group.position.distanceTo(camera.position);
+                    if (dist < nearestDist) {
+                        nearestDist = dist;
+                        nearest = m.group;
+                    }
+                });
+
+                return nearestDist < 15 ? nearest : null;
+            }
+
+            // Keyboard controls
+            function initKeyboardControls() {
+                document.addEventListener('keydown', function(e) {
+                    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+                    if (e.key === 'p' || e.key === 'P') {
+                        var nearest = findNearestMonster();
+                        if (nearest) {
+                            openPersuadeDialog(nearest);
+                        } else {
+                            addCombatLog('No monster nearby to persuade', 'info');
+                        }
+                    } else if (e.key === 'f' || e.key === 'F') {
+                        var nearest = findNearestMonster();
+                        if (nearest) {
+                            fleeFromMonster(nearest);
+                        }
+                    } else if (e.key === 'x' || e.key === 'X') {
+                        els.saveModal.classList.add('visible');
+                        loadSaveAddress();
+                    } else if (e.key === 'Escape') {
+                        closeDetailPanel();
+                        els.shareModal.classList.remove('visible');
+                        els.saveModal.classList.remove('visible');
+                        els.loadModal.classList.remove('visible');
+                        closePersuadeDialog();
+                    }
+                });
+            }
+
+            // Monster AI
+            function updateMonsterAI(delta) {
+                if (!game.alive) return;
+
+                var now = Date.now();
+
+                monsterMeshes.forEach(function(m) {
+                    var group = m.group;
+                    var def = m.def;
+
+                    // Check enrage timeout
+                    if (def.enraged && now > def.enrageEnd) {
+                        def.enraged = false;
+                        def.spd = MTYPES[def.typeIdx].spd;
+                        def.atk = MTYPES[def.typeIdx].atk;
+                    }
+
+                    var dist = group.position.distanceTo(camera.position);
+
+                    // Attack if in range
+                    if (dist < def.range && def.atk > 0) {
+                        if (now - def.lastAttack > 2000) {
+                            def.lastAttack = now;
+                            damagePlayer(def.atk, def.name);
+                            playMonsterGrowl();
+                        }
+                    }
+
+                    // Movement AI
+                    var speed = def.spd * (def.enraged ? 1.5 : 1);
+
+                    if (dist < def.aggro && def.aggro > 0) {
+                        // Move toward camera
+                        var dir = new THREE.Vector3().subVectors(camera.position, group.position).normalize();
+                        group.position.addScaledVector(dir, speed * delta * 60);
+                    } else if (def.typeIdx !== 4) {
+                        // Patrol
+                        if (!def.patrolTarget || group.position.distanceTo(def.patrolTarget) < 1) {
+                            def.patrolTarget = new THREE.Vector3(
+                                def.position.x + (Math.random() - 0.5) * 10,
+                                def.position.y + (Math.random() - 0.5) * 4,
+                                def.position.z + (Math.random() - 0.5) * 10
+                            );
+                        }
+                        var dir = new THREE.Vector3().subVectors(def.patrolTarget, group.position).normalize();
+                        group.position.addScaledVector(dir, speed * 0.5 * delta * 60);
+                    }
+
+                    // Type-specific animations
+                    if (def.typeIdx === 0) {
+                        // WRAITH bob
+                        group.position.y = def.position.y + Math.sin(now * 0.002 + (group.userData.bobOffset || 0)) * 0.5;
+                    } else if (def.typeIdx === 2) {
+                        // SPECTER teleport
+                        group.userData.teleportTimer -= delta * 1000;
+                        if (group.userData.teleportTimer <= 0) {
+                            group.position.set(
+                                def.position.x + (Math.random() - 0.5) * 8,
+                                def.position.y + (Math.random() - 0.5) * 4,
+                                def.position.z + (Math.random() - 0.5) * 8
+                            );
+                            group.userData.teleportTimer = 3000 + Math.random() * 2000;
+                        }
+                    } else if (def.typeIdx === 5) {
+                        // LEVIATHAN circle
+                        group.userData.circleAngle = (group.userData.circleAngle || 0) + delta * 0.3;
+                        var r = 15;
+                        group.position.x = Math.cos(group.userData.circleAngle) * r;
+                        group.position.z = Math.sin(group.userData.circleAngle) * r;
+                    }
+
+                    // Rotate all monsters slightly
+                    group.rotation.y += delta * 0.5;
+                });
+            }
+
+            // Animation loop
+            function animate() {
+                requestAnimationFrame(animate);
+
+                var delta = clock.getDelta();
+
+                // Rotate starfield and nebula
+                if (starField) starField.rotation.y += delta * 0.01;
+                if (nebula) nebula.rotation.y -= delta * 0.005;
+
+                // Pulse nexus
+                if (nexus) {
+                    var pulse = Math.sin(Date.now() * 0.003) * 0.1 + 1;
+                    nexus.userData.wire.scale.setScalar(pulse);
+                    nexus.userData.core.material.opacity = 0.6 + Math.sin(Date.now() * 0.005) * 0.2;
+                }
+
+                // Lerp artifacts to position
+                currentArtifacts.forEach(function(artifact) {
+                    var mesh = artifact.mesh;
+                    mesh.position.lerp(mesh.userData.targetPos, delta * 2);
+                    mesh.rotation.y += delta * 0.3;
+                    mesh.rotation.x += delta * 0.1;
+
+                    // Fade in material
+                    if (mesh.userData.material.opacity < 1) {
+                        mesh.userData.material.opacity = Math.min(1, mesh.userData.material.opacity + delta * 0.5);
+                    }
+
+                    // Pulse lock ring
+                    if (mesh.userData.lockRing && mesh.userData.locked) {
+                        var ringPulse = Math.sin(Date.now() * 0.005) * 0.3 + 0.7;
+                        mesh.userData.lockRing.material.opacity = ringPulse;
+                    }
+                });
+
+                // Pulse selection ring
+                if (selectionRing && selectionRing.material.opacity > 0) {
+                    selectionRing.rotation.z += delta * 2;
+                    selectionRing.scale.setScalar(1 + Math.sin(Date.now() * 0.005) * 0.1);
+                    if (selectedArtifact) {
+                        selectionRing.position.copy(selectedArtifact.position);
+                    }
+                }
+
+                // Monster AI
+                updateMonsterAI(delta);
+
+                // Camera lerp
+                if (cameraLerping && cameraTarget) {
+                    camera.position.lerp(cameraTarget, delta * 3);
+                    if (camera.position.distanceTo(cameraTarget) < 0.5) {
+                        cameraLerping = false;
+                    }
+                }
+
+                controls.update();
+                renderer.render(scene, camera);
+            }
+
+            // Event listeners
+            function initEventListeners() {
+                els.searchBtn.addEventListener('click', function() {
+                    runSearch(els.searchInput.value, els.mainnetCheck.checked, false);
+                });
+
+                els.searchInput.addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') {
+                        runSearch(els.searchInput.value, els.mainnetCheck.checked, false);
+                    }
+                });
+
+                els.captureBtn.addEventListener('click', captureRun);
+
+                els.saveBtn.addEventListener('click', function() {
+                    els.saveModal.classList.add('visible');
+                    loadSaveAddress();
+                });
+
+                els.loadBtn.addEventListener('click', function() {
+                    els.loadModal.classList.add('visible');
+                });
+
+                els.restartBtn.addEventListener('click', fullReset);
+
+                // Share modal
+                els.downloadScreenshot.addEventListener('click', downloadScreenshot);
+                els.copyUrl.addEventListener('click', copyShareUrl);
+                els.closeShare.addEventListener('click', function() {
+                    els.shareModal.classList.remove('visible');
+                });
+
+                // Save modal
+                els.downloadSave.addEventListener('click', saveGame);
+                els.closeSave.addEventListener('click', function() {
+                    els.saveModal.classList.remove('visible');
+                });
+
+                // Load modal
+                els.loadFromIpfs.addEventListener('click', function() {
+                    loadFromIPFS(els.loadHash.value);
+                });
+                els.closeLoad.addEventListener('click', function() {
+                    els.loadModal.classList.remove('visible');
+                });
+
+                // Persuade dialog
+                els.persuadeSpeak.addEventListener('click', submitPersuade);
+                els.persuadeCancel.addEventListener('click', closePersuadeDialog);
+                els.persuadeText.addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        submitPersuade();
+                    }
+                });
+
+                // Detail panel
+                els.closeDetail.addEventListener('click', closeDetailPanel);
+
+                // Global drill down function
+                window.bdsDrillDown = drillDown;
+            }
+
+            // Initialize
+            function init() {
+                initElements();
+                initThree();
+                initEventListeners();
+                initKeyboardControls();
+
+                updateStatsUI();
+                startHeartbeat();
+
+                // Load from URL if path exists
+                loadFromUrl();
+
+                // Start animation
+                animate();
+
+                addCombatLog('Bandersnatch initialized. Enter the void...', 'info');
+            }
+
+            // Start when DOM ready
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', init);
+            } else {
+                init();
+            }
+        })();
+    </script>
+</body>
+</html>
