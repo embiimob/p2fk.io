@@ -607,6 +607,13 @@
             ];
             var MPREFIXES = ['VOID','DARK','CORRUPT','LOST','FORGOTTEN','ANCIENT','NULL','DEAD','BROKEN','CURSED','ROTTEN','HOLLOW'];
 
+            // Tunable combat constants
+            var ATTACK_COOLDOWN_MS = 700;
+            var MIN_PERSUADE_TEXT_LENGTH = 25;
+            var PERSUADE_FALLBACK_CHANCE = 0.45;
+            var SCREENSHOT_QUALITY = 0.88;
+            var SAVE_KEYWORD = 'BandersnatchSave';
+
             // Game state
             var game = {
                 hp: 100,
@@ -1556,7 +1563,7 @@
                 if (!game.alive) return;
 
                 var now = Date.now();
-                if (now - lastAttackTime < 700) return;
+                if (now - lastAttackTime < ATTACK_COOLDOWN_MS) return;
                 lastAttackTime = now;
 
                 var def = monsterMesh.userData.def;
@@ -1670,8 +1677,8 @@
                         return lowerText.indexOf(w) !== -1;
                     });
 
-                    // Or 45% chance with long text
-                    if (!success && text.length > 25 && Math.random() < 0.45) {
+                    // Or fallback chance with long thoughtful text
+                    if (!success && text.length > MIN_PERSUADE_TEXT_LENGTH && Math.random() < PERSUADE_FALLBACK_CHANCE) {
                         success = true;
                     }
                 }
@@ -2169,7 +2176,7 @@
             // Screenshot / Share
             function captureRun() {
                 renderer.render(scene, camera);
-                var dataUrl = renderer.domElement.toDataURL('image/jpeg', 0.88);
+                var dataUrl = renderer.domElement.toDataURL('image/jpeg', SCREENSHOT_QUALITY);
 
                 // Create offscreen canvas with stats overlay
                 var canvas = document.createElement('canvas');
@@ -2275,11 +2282,11 @@
 
             async function loadSaveAddress() {
                 try {
-                    var resp = await fetch(BASE + '/GetPublicAddressByKeyword/bandersnatch?mainnet=true');
+                    var resp = await fetch(BASE + '/GetPublicAddressByKeyword/' + SAVE_KEYWORD + '?mainnet=true');
                     var address = await resp.text();
-                    els.saveAddress.value = address || 'bandersnatch';
+                    els.saveAddress.value = address || SAVE_KEYWORD;
                 } catch (e) {
-                    els.saveAddress.value = 'bandersnatch';
+                    els.saveAddress.value = SAVE_KEYWORD;
                 }
             }
 
