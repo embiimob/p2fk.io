@@ -350,21 +350,15 @@ namespace P2FK.IO.Services
 
         /// <summary>
         /// Extracts the blockchain address segment from paths of the form
-        /// …\root\{txId}\{address}\filename
+        /// …\root\{address}\filename  (objects and profiles).
+        /// The address is the name of the folder that directly contains the file.
         /// </summary>
         private static string? ExtractAddressFromPath(string path)
         {
-            // Normalise to use backslash so Split works on Windows paths returned by Windows Search
-            string normalised = path.Replace('/', '\\');
-            string[] parts = normalised.Split('\\');
-
-            // Find the index of the 64-char hex txid segment, then take the next segment as address
-            for (int i = 0; i < parts.Length - 1; i++)
-            {
-                if (TxIdRegex.IsMatch(parts[i]) && parts[i].Length == 64)
-                    return parts.Length > i + 1 ? parts[i + 1] : null;
-            }
-            return null;
+            string? dir = Path.GetDirectoryName(path);
+            if (string.IsNullOrEmpty(dir)) return null;
+            string parentFolderName = Path.GetFileName(dir);
+            return string.IsNullOrEmpty(parentFolderName) ? null : parentFolderName;
         }
 
         // ── JSON helpers ───────────────────────────────────────────────────────
