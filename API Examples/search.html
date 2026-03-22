@@ -814,7 +814,8 @@
       const date = formatDate(obj.CreatedDate);
       const card = document.createElement('a');
       card.className = 'result-card';
-      card.href = `objects.html?urn=${encodeURIComponent(obj.URN || '')}&mainnet=${document.getElementById('mainnetToggle').checked}`;
+      const objectAddress = Object.keys(obj.Creators || {})[0] || '';
+      card.href = `objects.html?urn=${encodeURIComponent(objectAddress)}&mainnet=${document.getElementById('mainnetToggle').checked}`;
       card.target = '_blank';
       card.rel = 'noopener noreferrer';
       const imgEl = document.createElement('img');
@@ -915,7 +916,7 @@
       const metaDiv = document.createElement('div');
       metaDiv.className = 'message-meta';
       const toStr = toLinks.length ? ` | To: ${toLinks.join(', ')}` : '';
-      metaDiv.innerHTML = `From: ${createUrnLink(fromAbbrev, normalized.fromAddress, mainnet)}${toStr} | Date: ${escapeHtml(normalized.blockDate)}`;
+      metaDiv.innerHTML = `From: ${createUrnLink(fromName, normalized.fromAddress, mainnet)}${toStr} | Date: ${escapeHtml(normalized.blockDate)}`;
       card.appendChild(metaDiv);
 
       // Click handler for URN/keyword links
