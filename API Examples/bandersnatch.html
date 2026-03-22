@@ -507,9 +507,10 @@
         }
 
         /* Centre glyph */
-        scene.add(Object.assign(new THREE.Mesh(new THREE.CircleGeometry(1.0, 32),
-            new THREE.MeshBasicMaterial({ color: 0x440e00, side: THREE.DoubleSide })),
-            { rotation: new THREE.Euler(-Math.PI / 2, 0, 0), position: new THREE.Vector3(0, 0.02, 0) }));
+        var glyph = new THREE.Mesh(new THREE.CircleGeometry(1.0, 32),
+            new THREE.MeshBasicMaterial({ color: 0x440e00, side: THREE.DoubleSide }));
+        glyph.rotation.set(-Math.PI / 2, 0, 0); glyph.position.set(0, 0.02, 0);
+        scene.add(glyph);
 
         /* Pillars + torches */
         var pm = new THREE.MeshLambertMaterial({ color: 0x2a2218 });
@@ -557,12 +558,14 @@
                 var leg = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.65, 0.22), mm);
                 leg.position.set(ox, 0.33, 0); group.add(leg);
             });
-            group.add(Object.assign(new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.9, 0.46), mm), { position: new THREE.Vector3(0, 1.12, 0) }));
+            var torso = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.9, 0.46), mm);
+            torso.position.set(0, 1.12, 0); group.add(torso);
             [-0.52, 0.52].forEach(function (ox) {
                 var arm = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.65, 0.22), mm);
                 arm.position.set(ox, 1.1, 0); group.add(arm);
             });
-            group.add(Object.assign(new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.54, 0.54), mm), { position: new THREE.Vector3(0, 1.82, 0) }));
+            var head = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.54, 0.54), mm);
+            head.position.set(0, 1.82, 0); group.add(head);
             /* HP bar */
             var hbm = new THREE.MeshBasicMaterial({ color: 0x44cc44, side: THREE.DoubleSide });
             var hbar = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.1), hbm);
@@ -572,31 +575,38 @@
 
         } else if (entity.kind === 'npc') {
             var nm = mat(col, 0.2);
-            group.add(Object.assign(new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.45, 1.4, 10), nm), { position: new THREE.Vector3(0, 0.7, 0) }));
-            group.add(Object.assign(new THREE.Mesh(new THREE.SphereGeometry(0.32, 12, 12), nm), { position: new THREE.Vector3(0, 1.72, 0) }));
+            var robe = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.45, 1.4, 10), nm);
+            robe.position.set(0, 0.7, 0); group.add(robe);
+            var nhead = new THREE.Mesh(new THREE.SphereGeometry(0.32, 12, 12), nm);
+            nhead.position.set(0, 1.72, 0); group.add(nhead);
             var staff = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 2.2, 6),
                 new THREE.MeshLambertMaterial({ color: 0x886633 }));
             staff.position.set(0.5, 1.1, 0); group.add(staff);
-            group.add(Object.assign(new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 10), new THREE.MeshBasicMaterial({ color: col })), { position: new THREE.Vector3(0.5, 2.22, 0) }));
+            var orb = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 10), new THREE.MeshBasicMaterial({ color: col }));
+            orb.position.set(0.5, 2.22, 0); group.add(orb);
             group.add(new THREE.PointLight(col, 0.4, 3.5));
 
         } else if (entity.kind === 'artifact') {
-            group.add(Object.assign(new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.65, 0.35, 10),
-                new THREE.MeshLambertMaterial({ color: 0x332a1e })), { position: new THREE.Vector3(0, 0.18, 0) }));
+            var pedestal = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.65, 0.35, 10),
+                new THREE.MeshLambertMaterial({ color: 0x332a1e }));
+            pedestal.position.set(0, 0.18, 0); group.add(pedestal);
             var gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.65), mat(col, 0.65));
             gem.position.y = 1.22; group.add(gem); group.userData.gem = gem;
-            group.add(Object.assign(new THREE.PointLight(col, entity.quality >= 3 ? 1.0 : 0.55, entity.quality >= 3 ? 7 : 4), { position: new THREE.Vector3(0, 1.22, 0) }));
+            var alight = new THREE.PointLight(col, entity.quality >= 3 ? 1.0 : 0.55, entity.quality >= 3 ? 7 : 4);
+            alight.position.set(0, 1.22, 0); group.add(alight);
 
         } else { /* portal */
-            group.add(Object.assign(new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.65, 0.3, 6),
-                new THREE.MeshLambertMaterial({ color: 0x220a40 })), { position: new THREE.Vector3(0, 0.15, 0) }));
+            var base = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.65, 0.3, 6),
+                new THREE.MeshLambertMaterial({ color: 0x220a40 }));
+            base.position.set(0, 0.15, 0); group.add(base);
             var torus = new THREE.Mesh(new THREE.TorusGeometry(1.1, 0.14, 10, 40),
                 new THREE.MeshBasicMaterial({ color: col }));
             torus.position.y = 1.4; group.add(torus); group.userData.torus = torus;
             var disk = new THREE.Mesh(new THREE.CircleGeometry(0.9, 32),
                 new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.28, side: THREE.DoubleSide }));
             disk.position.y = 1.4; group.add(disk); group.userData.disk = disk;
-            group.add(Object.assign(new THREE.PointLight(col, 0.9, 6), { position: new THREE.Vector3(0, 1.4, 0) }));
+            var plight = new THREE.PointLight(col, 0.9, 6);
+            plight.position.set(0, 1.4, 0); group.add(plight);
         }
 
         scene.add(group);
