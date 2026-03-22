@@ -220,6 +220,7 @@
     }
     .badge-object { background: #6200ea; color: white; }
     .badge-profile { background: #03dac6; color: #121212; }
+    .badge-message { background: #ff9800; color: #121212; }
     /* ── Message sender header ───────────────────────────────────────── */
     .msg-sender {
       display: flex;
@@ -412,6 +413,13 @@
         <label><input type="checkbox" id="chkProfiles" checked> Profiles</label>
         <label><input type="checkbox" id="chkMessages" checked> Messages</label>
       </div>
+      <span style="color:#555;font-size:0.8em;align-self:center;">|</span>
+      <div class="type-checkboxes">
+        <label><input type="checkbox" id="chkBTC" checked> BTC</label>
+        <label><input type="checkbox" id="chkLTC" checked> LTC</label>
+        <label><input type="checkbox" id="chkDOG" checked> DOG</label>
+        <label><input type="checkbox" id="chkMZC" checked> MZC</label>
+      </div>
       <button id="searchBtn" onclick="performSearch()">Search</button>
       <button class="url-help-btn" onclick="openUrlBuilder()" title="URL Builder — generate a shareable search link">?</button>
     </div>
@@ -444,6 +452,19 @@
       <div class="ub-checkbox-row">
         <input type="checkbox" id="ubMessages" checked />
         <label for="ubMessages">Messages</label>
+      </div>
+      <div class="ub-checkbox-row" style="margin-top:4px;">
+        <input type="checkbox" id="ubBTC" checked />
+        <label for="ubBTC">BTC</label>
+        &nbsp;
+        <input type="checkbox" id="ubLTC" checked />
+        <label for="ubLTC">LTC</label>
+        &nbsp;
+        <input type="checkbox" id="ubDOG" checked />
+        <label for="ubDOG">DOG</label>
+        &nbsp;
+        <input type="checkbox" id="ubMZC" checked />
+        <label for="ubMZC">MZC</label>
       </div>
       <div class="ub-actions">
         <button class="ub-btn-generate" onclick="generateUrlBuilder()">Generate URL</button>
@@ -865,13 +886,12 @@
       return card;
     };
 
-    const renderMessageCard = async (normalized, mainnet, signal) => {
+    const renderMessageCard = async (normalized, mainnet, signal, blockchain) => {
       const { cleanMessage, attachments, links } = await parseMessage(normalized.message, mainnet, signal);
       const fromProfile = await fetchProfileByAddress(normalized.fromAddress, mainnet, signal);
       const fromName = fromProfile
         ? (fromProfile.DisplayName || fromProfile.URN || abbreviateAddress(normalized.fromAddress))
         : abbreviateAddress(normalized.fromAddress);
-      const fromAbbrev = abbreviateAddress(normalized.fromAddress);
 
       // Sender avatar
       const senderImageUrl = fromProfile ? getImageUrl(fromProfile.Image, fromProfile.URN) : fallbackImage;
@@ -885,6 +905,11 @@
 
       const card = document.createElement('div');
       card.className = 'message-card';
+
+      // Type + blockchain badge row
+      const badgeDiv = document.createElement('div');
+      badgeDiv.innerHTML = `<span class="result-card-badge badge-message">Message</span><span style="font-size:0.65em;color:#888;">${escapeHtml(blockchain || '')}</span>`;
+      card.appendChild(badgeDiv);
 
       // Sender header
       const senderDiv = document.createElement('div');
@@ -1030,6 +1055,16 @@
           items.push({ type: 'message', data: normalized, blockchain: result.Blockchain || result.blockchain || '' });
         }
 
+        // Filter by selected blockchain checkboxes
+        const allowedChains = new Set(
+          ['BTC', 'LTC', 'DOG', 'MZC'].filter(c => document.getElementById(`chk${c}`).checked)
+        );
+        if (allowedChains.size < 4) {
+          items.splice(0, items.length, ...items.filter(
+            item => allowedChains.has((item.blockchain || '').toUpperCase())
+          ));
+        }
+
         // Sort by date descending (newest first); items without a date go to the end
         items.sort((a, b) => {
           const da = getItemDate(a).getTime();
@@ -1059,7 +1094,7 @@
             } else if (item.type === 'profile') {
               feed.appendChild(renderProfileCard(item.raw, item.blockchain));
             } else if (item.type === 'message') {
-              const card = await renderMessageCard(item.data, mainnet, signal);
+              const card = await renderMessageCard(item.data, mainnet, signal, item.blockchain);
               if (state.currentSearchId !== searchId) break;
               feed.appendChild(card);
             }
@@ -1106,6 +1141,15 @@
       if (profiles !== null) document.getElementById('chkProfiles').checked = profiles === 'true';
       if (messages !== null) document.getElementById('chkMessages').checked = messages === 'true';
 
+      const btc = getQueryParam('btc');
+      const ltc = getQueryParam('ltc');
+      const dog = getQueryParam('dog');
+      const mzc = getQueryParam('mzc');
+      if (btc !== null) document.getElementById('chkBTC').checked = btc === 'true';
+      if (ltc !== null) document.getElementById('chkLTC').checked = ltc === 'true';
+      if (dog !== null) document.getElementById('chkDOG').checked = dog === 'true';
+      if (mzc !== null) document.getElementById('chkMZC').checked = mzc === 'true';
+
       if (search) {
         document.getElementById('searchInput').value = search;
         performSearch();
@@ -1123,6 +1167,10 @@
       document.getElementById('ubObjects').checked = document.getElementById('chkObjects').checked;
       document.getElementById('ubProfiles').checked = document.getElementById('chkProfiles').checked;
       document.getElementById('ubMessages').checked = document.getElementById('chkMessages').checked;
+      document.getElementById('ubBTC').checked = document.getElementById('chkBTC').checked;
+      document.getElementById('ubLTC').checked = document.getElementById('chkLTC').checked;
+      document.getElementById('ubDOG').checked = document.getElementById('chkDOG').checked;
+      document.getElementById('ubMZC').checked = document.getElementById('chkMZC').checked;
       document.getElementById('ubOutput').textContent = '';
       document.getElementById('urlBuilderOverlay').style.display = 'flex';
     }
@@ -1143,6 +1191,10 @@
       params.set('objects', String(objects));
       params.set('profiles', String(profiles));
       params.set('messages', String(messages));
+      params.set('btc', String(document.getElementById('ubBTC').checked));
+      params.set('ltc', String(document.getElementById('ubLTC').checked));
+      params.set('dog', String(document.getElementById('ubDOG').checked));
+      params.set('mzc', String(document.getElementById('ubMZC').checked));
       const url = 'search.html?' + params.toString();
       document.getElementById('ubOutput').textContent = url;
       return url;
