@@ -703,7 +703,8 @@
     // The Root JSON uses fields like "Signed By", "Output", "Message", "Block Date"
     const normalizeRoot = (root) => {
       if (!root || typeof root !== 'object') return null;
-      const msg = root['Message'] ?? root.Message ?? '';
+      const rawMsg = root['Message'] ?? root.Message ?? '';
+      const msg = Array.isArray(rawMsg) ? rawMsg.join('\n') : (rawMsg != null ? String(rawMsg) : '');
       const signedBy = root['Signed By'] ?? root.SignedBy ?? '';
       const blockDate = root['Block Date'] ?? root.BlockDate ?? '';
       const txId = root['Transaction Id'] ?? root.TransactionId ?? root['Transaction ID'] ?? '';
