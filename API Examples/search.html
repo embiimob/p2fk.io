@@ -1,0 +1,1218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sup!? Search</title>
+  <style>
+    html { overscroll-behavior: none; }
+    body {
+      background: #121212;
+      color: #e0e0e0;
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+      overscroll-behavior: none;
+    }
+    .container {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      align-items: center;
+      padding: 10px 15px;
+      box-sizing: border-box;
+      padding-top: 80px;
+    }
+    /* ── Search bar ──────────────────────────────────────────────────── */
+    .search-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      background: #121212;
+      z-index: 1000;
+      padding: 8px 15px;
+      border-bottom: 1px solid #2a2a2a;
+    }
+    .search-bar input[type="text"] {
+      padding: 8px;
+      background: #1e1e1e;
+      border: 1px solid #333;
+      color: #e0e0e0;
+      border-radius: 5px;
+      flex: 1 1 200px;
+      max-width: 280px;
+    }
+    .search-bar input[type="text"]:disabled { opacity: 0.6; }
+    .search-bar label {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      flex: 0 0 auto;
+      font-size: 0.9em;
+    }
+    .type-checkboxes {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+      flex: 0 0 auto;
+    }
+    .type-checkboxes label {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 0.85em;
+      color: #bb86fc;
+    }
+    #searchBtn {
+      padding: 8px 15px;
+      background: #6200ea;
+      border: none;
+      color: white;
+      border-radius: 5px;
+      cursor: pointer;
+      flex: 0 0 auto;
+      min-width: 90px;
+    }
+    #searchBtn:hover:not(:disabled) { background: #7c4dff; }
+    #searchBtn:disabled { background: #444; opacity: 0.7; }
+    .url-help-btn {
+      width: 28px;
+      height: 28px;
+      min-width: 28px;
+      border-radius: 50%;
+      background: #6200ea;
+      color: white;
+      border: none;
+      cursor: pointer;
+      font-size: 0.9em;
+      font-weight: bold;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      padding: 0;
+    }
+    .url-help-btn:hover { background: #7c4dff; }
+    /* ── Feed ────────────────────────────────────────────────────────── */
+    .feed {
+      width: 100%;
+      max-width: 600px;
+    }
+    /* ── Message card (same as socials.html) ─────────────────────────── */
+    .message-card {
+      background: #1e1e1e;
+      padding: 12px;
+      border-radius: 5px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+      margin-bottom: 15px;
+    }
+    .message-card p {
+      margin: 5px 0;
+      font-size: 0.9em;
+      color: #e0e0e0;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .message-meta {
+      color: #b0b0b0;
+      font-size: 0.75em;
+      margin-top: 8px;
+    }
+    .message-meta .urn-link {
+      color: #bb86fc;
+      cursor: pointer;
+      text-decoration: underline;
+    }
+    .message-meta .urn-link:hover { color: #7c4dff; }
+    .keyword-link {
+      color: #bb86fc;
+      cursor: pointer;
+      text-decoration: underline;
+    }
+    .keyword-link:hover { color: #7c4dff; }
+    /* ── Object / Profile compact cards ─────────────────────────────── */
+    .result-card {
+      background: #1e1e1e;
+      border-radius: 8px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+      margin-bottom: 15px;
+      display: flex;
+      align-items: stretch;
+      overflow: hidden;
+      cursor: pointer;
+      transition: transform 0.15s;
+      text-decoration: none;
+      color: inherit;
+    }
+    .result-card:hover { transform: translateY(-2px); }
+    .result-card-img {
+      width: 90px;
+      min-width: 90px;
+      height: 90px;
+      object-fit: cover;
+      display: block;
+      flex-shrink: 0;
+      background: #333;
+    }
+    .result-card-img-placeholder {
+      width: 90px;
+      min-width: 90px;
+      height: 90px;
+      background: #333;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.75em;
+      color: #888;
+      flex-shrink: 0;
+    }
+    .result-card-body {
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 4px;
+      overflow: hidden;
+    }
+    .result-card-title {
+      margin: 0;
+      color: #bb86fc;
+      font-size: 0.95em;
+      font-weight: bold;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .result-card-sub {
+      margin: 0;
+      font-size: 0.78em;
+      color: #b0b0b0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .result-card-bio {
+      margin: 0;
+      font-size: 0.78em;
+      color: #9e9e9e;
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+    }
+    .result-card-badge {
+      display: inline-block;
+      font-size: 0.65em;
+      padding: 1px 5px;
+      border-radius: 3px;
+      margin-right: 4px;
+      font-weight: bold;
+      letter-spacing: 0.03em;
+    }
+    .badge-object { background: #6200ea; color: white; }
+    .badge-profile { background: #03dac6; color: #121212; }
+    .badge-message { background: #ff9800; color: #121212; }
+    /* ── Message sender header ───────────────────────────────────────── */
+    .msg-sender {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+    .msg-sender-img {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      object-fit: cover;
+      background: #333;
+      flex-shrink: 0;
+    }
+    .msg-sender-name {
+      font-size: 0.85em;
+      font-weight: bold;
+      color: #bb86fc;
+    }
+    /* ── Attachments (from socials.html) ─────────────────────────────── */
+    .message-attachments {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 8px;
+    }
+    .message-attachments img,
+    .message-attachments video {
+      max-width: 100%;
+      height: 300px;
+      object-fit: cover;
+      border-radius: 5px;
+      background: #333;
+    }
+    .message-attachments audio { width: 100%; height: 40px; }
+    .message-attachments .media-error {
+      width: 100%;
+      height: 300px;
+      background: #333;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #e0e0e0;
+      font-size: 0.85em;
+      border-radius: 5px;
+      text-align: center;
+    }
+    .message-attachments .media-placeholder {
+      width: 100%;
+      height: 300px;
+      background: #333;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #e0e0e0;
+      font-size: 0.85em;
+      border-radius: 5px;
+      border: 1px dashed #bb86fc;
+    }
+    .message-attachments .pdf-viewer {
+      width: 100%;
+      height: 500px;
+      border: none;
+      border-radius: 5px;
+      background: #1e1e1e;
+      display: block;
+    }
+    .message-attachments .video-embed {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      border: none;
+      border-radius: 5px;
+      background: #1e1e1e;
+      display: block;
+    }
+    .message-attachments .file-card {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 14px 16px;
+      background: #1e1e1e;
+      border: 1px solid #333;
+      border-radius: 8px;
+      color: #e0e0e0;
+      text-decoration: none;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .message-attachments .file-card:hover { border-color: #bb86fc; background: #252525; }
+    .file-card-icon { font-size: 2em; line-height: 1; flex-shrink: 0; width: 44px; text-align: center; }
+    .file-card-info { flex: 1; min-width: 0; }
+    .file-card-name { font-size: 0.9em; font-weight: bold; color: #e0e0e0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .file-card-meta { font-size: 0.75em; color: #888; margin-top: 3px; }
+    .file-card-download {
+      flex-shrink: 0;
+      padding: 7px 14px;
+      background: #7c4dff;
+      color: #fff;
+      border-radius: 5px;
+      font-size: 0.8em;
+      text-decoration: none;
+      white-space: nowrap;
+      transition: background 0.2s;
+    }
+    .file-card-download:hover { background: #bb86fc; color: #121212; }
+    /* ── Misc ────────────────────────────────────────────────────────── */
+    .urn-link { color: #bb86fc; cursor: pointer; text-decoration: underline; }
+    .urn-link:hover { color: #7c4dff; }
+    .loading, .error { text-align: center; padding: 15px; color: #b0b0b0; width: 100%; max-width: 600px; }
+    .error { color: #cf6679; }
+    .result-count { color: #b0b0b0; font-size: 0.8em; margin-bottom: 10px; width: 100%; max-width: 600px; }
+    /* ── URL Builder Modal ───────────────────────────────────────────── */
+    .url-builder-overlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.7);
+      z-index: 5000;
+      justify-content: center;
+      align-items: center;
+    }
+    .url-builder-modal {
+      background: #1e1e1e;
+      padding: 20px;
+      border-radius: 8px;
+      max-width: 480px;
+      width: 90%;
+      position: relative;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+      color: #e0e0e0;
+    }
+    .url-builder-modal h3 { color: #bb86fc; margin: 0 0 15px 0; }
+    .url-builder-modal .ub-field-label { display: block; margin-bottom: 4px; font-size: 0.85em; color: #b0b0b0; }
+    .url-builder-modal input[type="text"] {
+      width: 100%; padding: 7px;
+      background: #333; border: 1px solid #444; color: #e0e0e0;
+      border-radius: 5px; box-sizing: border-box; margin-bottom: 12px;
+    }
+    .url-builder-modal .ub-checkbox-row {
+      display: flex; align-items: center; gap: 6px; margin-bottom: 10px; font-size: 0.9em;
+    }
+    .url-builder-modal .ub-output {
+      font-family: monospace; font-size: 0.85em;
+      background: #121212; border: 1px solid #444; color: #03dac6;
+      padding: 8px; border-radius: 5px; word-break: break-all;
+      margin: 10px 0; min-height: 36px;
+    }
+    .url-builder-modal .ub-actions {
+      display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px;
+    }
+    .url-builder-modal .ub-actions button {
+      padding: 7px 14px; border: none; border-radius: 5px; cursor: pointer; font-size: 0.9em;
+    }
+    .ub-btn-generate { background: #6200ea; color: white; }
+    .ub-btn-generate:hover { background: #7c4dff; }
+    .ub-btn-copy { background: #333; color: #e0e0e0; }
+    .ub-btn-copy:hover { background: #444; }
+    .ub-btn-go { background: #03dac6; color: #121212; }
+    .ub-btn-go:hover { background: #00b0a0; }
+    .url-builder-close {
+      position: absolute; top: 8px; right: 8px;
+      background: #cf6679; color: white; border: none;
+      padding: 4px 8px; border-radius: 5px; cursor: pointer;
+    }
+    .url-builder-close:hover { background: #e57373; }
+    .ub-example { font-size: 0.75em; color: #b0b0b0; margin-top: 10px; }
+    .ub-example code { color: #bb86fc; }
+    /* ── Scrollbar ───────────────────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: #1a1a1a; }
+    ::-webkit-scrollbar-thumb { background: #5600ca; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #bb86fc; }
+    @media (max-width: 600px) {
+      .message-attachments img,
+      .message-attachments video,
+      .message-attachments .media-placeholder,
+      .message-attachments .media-error { height: 200px; }
+      .message-attachments .pdf-viewer { height: 300px; }
+      .result-card-img, .result-card-img-placeholder { width: 70px; min-width: 70px; height: 70px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="search-bar">
+      <input type="text" id="searchInput" placeholder="Enter search text…">
+      <label><input type="checkbox" id="mainnetToggle"> Mainnet</label>
+      <div class="type-checkboxes">
+        <label><input type="checkbox" id="chkObjects" checked> Objects</label>
+        <label><input type="checkbox" id="chkProfiles" checked> Profiles</label>
+        <label><input type="checkbox" id="chkMessages" checked> Messages</label>
+      </div>
+      <span style="color:#555;font-size:0.8em;align-self:center;">|</span>
+      <div class="type-checkboxes">
+        <label><input type="checkbox" id="chkBTC" checked> BTC</label>
+        <label><input type="checkbox" id="chkLTC" checked> LTC</label>
+        <label><input type="checkbox" id="chkDOG" checked> DOG</label>
+        <label><input type="checkbox" id="chkMZC" checked> MZC</label>
+      </div>
+      <button id="searchBtn" onclick="performSearch()">Search</button>
+      <button class="url-help-btn" onclick="openUrlBuilder()" title="URL Builder — generate a shareable search link">?</button>
+    </div>
+
+    <div id="resultCount" class="result-count" style="display:none;"></div>
+    <div id="feed" class="feed"></div>
+    <div id="loading" class="loading" style="display:none;">Searching…</div>
+    <div id="error" class="error" style="display:none;"></div>
+  </div>
+
+  <!-- URL Builder Modal -->
+  <div id="urlBuilderOverlay" class="url-builder-overlay">
+    <div class="url-builder-modal">
+      <button class="url-builder-close" onclick="closeUrlBuilder()">X</button>
+      <h3>🔗 URL Builder</h3>
+      <label class="ub-field-label" for="ubSearch">Search</label>
+      <input type="text" id="ubSearch" placeholder="e.g., bitcoin art" />
+      <div class="ub-checkbox-row">
+        <input type="checkbox" id="ubMainnet" />
+        <label for="ubMainnet">Mainnet</label>
+      </div>
+      <div class="ub-checkbox-row">
+        <input type="checkbox" id="ubObjects" checked />
+        <label for="ubObjects">Objects</label>
+      </div>
+      <div class="ub-checkbox-row">
+        <input type="checkbox" id="ubProfiles" checked />
+        <label for="ubProfiles">Profiles</label>
+      </div>
+      <div class="ub-checkbox-row">
+        <input type="checkbox" id="ubMessages" checked />
+        <label for="ubMessages">Messages</label>
+      </div>
+      <div class="ub-checkbox-row" style="margin-top:4px;">
+        <input type="checkbox" id="ubBTC" checked />
+        <label for="ubBTC">BTC</label>
+        &nbsp;
+        <input type="checkbox" id="ubLTC" checked />
+        <label for="ubLTC">LTC</label>
+        &nbsp;
+        <input type="checkbox" id="ubDOG" checked />
+        <label for="ubDOG">DOG</label>
+        &nbsp;
+        <input type="checkbox" id="ubMZC" checked />
+        <label for="ubMZC">MZC</label>
+      </div>
+      <div class="ub-actions">
+        <button class="ub-btn-generate" onclick="generateUrlBuilder()">Generate URL</button>
+        <button class="ub-btn-copy" onclick="copyUrlBuilder()">Copy</button>
+        <button class="ub-btn-go" onclick="goUrlBuilder()">Go</button>
+      </div>
+      <div class="ub-output" id="ubOutput"></div>
+      <p class="ub-example">Example: <code>search.html?search=bitcoin+art&amp;mainnet=true&amp;objects=true&amp;profiles=true&amp;messages=true</code></p>
+    </div>
+  </div>
+
+  <script>
+    const BASE_URL = 'https://p2fk.io';
+
+    const state = {
+      isSearching: false,
+      currentSearchId: null,
+      abortController: null,
+      imageCache: new Map(),
+      keywordCache: new Map()
+    };
+
+    const MAX_CACHE_SIZE = 100;
+
+    const fallbackImage = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='90' height='90'><rect width='100%' height='100%' fill='%23333'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='white' font-size='11'>No Image</text></svg>";
+
+    // ── Session profile cache ────────────────────────────────────────────
+    const getCachedProfile = (address) => {
+      const cached = sessionStorage.getItem(`profile_${address}`);
+      return cached ? JSON.parse(cached) : null;
+    };
+    const cacheProfile = (address, profile) =>
+      sessionStorage.setItem(`profile_${address}`, JSON.stringify(profile));
+
+    // ── Image cache helpers ──────────────────────────────────────────────
+    const cacheImage = (url, resolved) => {
+      if (state.imageCache.size >= MAX_CACHE_SIZE) {
+        const first = state.imageCache.keys().next().value;
+        state.imageCache.delete(first);
+      }
+      state.imageCache.set(url, resolved);
+    };
+
+    // ── URN utilities ────────────────────────────────────────────────────
+    const resolveUrnPath = (urn) => {
+      if (!urn) return '';
+      urn = urn.replace(/\\/g, '/').replace(/\s+/g, '');
+      const parts = urn.split(':').pop().split('/');
+      return /^(BTC|LTC|DOG|MZC):/i.test(urn) || /^[A-Za-z0-9]+\/.+/.test(urn)
+        ? `https://bitfossil.org/${parts[0]}/${parts[1] || ''}`
+        : '';
+    };
+
+    const getImageUrl = (image, urn) => {
+      const normalize = (input) =>
+        typeof input === 'string' ? input.replace(/\\/g, '/').replace(/\s+/g, '').trim() : null;
+      const resolve = (input) => {
+        if (!input) return null;
+        const value = normalize(input);
+        const lower = value.toLowerCase();
+        try {
+          const parsedUrl = new URL(value);
+          if (parsedUrl.protocol === 'file:') return null;
+          if (['https:', 'data:'].includes(parsedUrl.protocol)) {
+            return value
+              .replace(/^http:\/\/bitfossil\.com\//i, 'https://bitfossil.org/')
+              .replace(/^http:/i, 'https:');
+          }
+        } catch (e) { /* not a URL */ }
+        if (lower.startsWith('ipfs') || lower.startsWith('ipfs:')) {
+          const hashMatch = value.match(/ipfs[:/]*([a-zA-Z0-9]+)/i);
+          if (hashMatch) return `https://ipfs.io/ipfs/${hashMatch[1]}`;
+          return null;
+        }
+        if (/^(BTC|LTC|DOG|MZC):[0-9a-fA-F]{64}$/i.test(value)) return null;
+        return /^(BTC|LTC|DOG|MZC):/i.test(value) || /^[A-Za-z0-9]+\/.+/.test(value)
+          ? resolveUrnPath(value)
+          : null;
+      };
+      return resolve(image) || resolve(urn) || fallbackImage;
+    };
+
+    const loadImageWithTimeout = async (url, timeout = 15000) => {
+      if (state.imageCache.has(url)) return state.imageCache.get(url);
+      if (url === fallbackImage) return url;
+      const gateways = [
+        'https://ipfs.io/ipfs/',
+        'https://dweb.link/ipfs/',
+        'https://cloudflare-ipfs.com/ipfs/'
+      ];
+      let currentUrl = url;
+      try {
+        const parsed = new URL(url);
+        if (parsed.protocol === 'file:') { cacheImage(url, fallbackImage); return fallbackImage; }
+        if (parsed.protocol === 'ipfs:') {
+          const hash = url.replace(/^ipfs[:/]+/i, '').split('/')[0];
+          currentUrl = `${gateways[0]}${hash}`;
+        }
+      } catch (e) {
+        const hm = url.match(/ipfs[:/]*([a-zA-Z0-9]+)/i);
+        if (hm) currentUrl = `${gateways[0]}${hm[1]}`;
+        else { cacheImage(url, fallbackImage); return fallbackImage; }
+      }
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const gatewayUrl = (currentUrl.includes('ipfs.io') || currentUrl.includes('dweb.link') || currentUrl.includes('cloudflare-ipfs.com'))
+          ? currentUrl.replace(/https:\/\/[^/]+\/ipfs\//, gateways[attempt % gateways.length])
+          : currentUrl;
+        try {
+          const img = new Image();
+          if (!gatewayUrl.includes('bitfossil.org')) img.crossOrigin = 'Anonymous';
+          const result = await new Promise((resolve, reject) => {
+            const timer = setTimeout(() => reject(new Error('Timeout')), timeout);
+            img.onload = () => { clearTimeout(timer); cacheImage(url, gatewayUrl); resolve(gatewayUrl); };
+            img.onerror = () => { clearTimeout(timer); reject(new Error('Error loading image')); };
+            img.src = gatewayUrl;
+          });
+          return result;
+        } catch (err) {
+          if (attempt === 2) { cacheImage(url, fallbackImage); return fallbackImage; }
+          await new Promise(r => setTimeout(r, 1000));
+        }
+      }
+      return fallbackImage;
+    };
+
+    // ── API helpers ──────────────────────────────────────────────────────
+    const fetchAPI = async (url, errorMsg, signal, timeout = 15000) => {
+      const ctrl = new AbortController();
+      const timerId = setTimeout(() => ctrl.abort(), timeout);
+      try {
+        const res = await fetch(url, { signal: signal || ctrl.signal });
+        clearTimeout(timerId);
+        if (!res.ok) throw new Error(errorMsg);
+        return res.json();
+      } catch (err) {
+        clearTimeout(timerId);
+        if (err.name === 'AbortError') return null;
+        throw err;
+      }
+    };
+
+    const fetchProfileByAddress = async (address, mainnet, signal) => {
+      if (!address || typeof address !== 'string' ||
+          !(/^[a-zA-Z0-9]{26,35}$/.test(address.trim()) || /^(bc1|tb1)[a-z0-9]{39,59}$/.test(address.trim()))) {
+        return null;
+      }
+      const cached = getCachedProfile(address);
+      if (cached) return cached;
+      try {
+        const profile = await fetchAPI(
+          `${BASE_URL}/GetProfileByAddress/${encodeURIComponent(address)}?mainnet=${mainnet}`,
+          `Profile not found for address: ${address}`,
+          signal
+        );
+        if (profile) cacheProfile(address, profile);
+        return profile;
+      } catch (e) {
+        if (e.name !== 'AbortError') console.warn(`fetchProfileByAddress error for ${address}:`, e.message);
+        return null;
+      }
+    };
+
+    // ── String utilities ─────────────────────────────────────────────────
+    const abbreviateAddress = (addr) => addr ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : '';
+
+    const escapeHtml = (str) => String(str)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
+    const formatDate = (dateStr) => {
+      if (!dateStr || dateStr === 'N/A') return 'N/A';
+      try {
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return dateStr;
+        return d.toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+      } catch { return dateStr; }
+    };
+
+    const getFileCardIcon = (ext) => {
+      if (/^(zip|tar|gz|bz2|xz|rar|7z|tgz)$/.test(ext)) return '📦';
+      if (/^(doc|docx|odt|rtf)$/.test(ext)) return '📝';
+      if (/^(xls|xlsx|ods|csv)$/.test(ext)) return '📊';
+      if (/^(ppt|pptx|odp)$/.test(ext)) return '📋';
+      if (/^(txt|log|md)$/.test(ext)) return '📃';
+      if (/^(exe|dmg|apk|deb|rpm|msi)$/.test(ext)) return '⚙️';
+      if (/^(json|xml|yaml|yml|toml|ini|cfg)$/.test(ext)) return '🔧';
+      if (/^(js|ts|py|java|c|cpp|cs|go|rs|php|rb|sh)$/.test(ext)) return '💻';
+      if (!ext) return '🔗';
+      return '📎';
+    };
+
+    const formatBytes = (bytes) => {
+      const n = Number(bytes);
+      if (!Number.isFinite(n) || n < 0) return null;
+      if (n === 0) return '0 B';
+      const mb = n / (1048576), kb = n / 1024;
+      return mb >= 1 ? `${mb.toFixed(1)} MB` : kb >= 1 ? `${kb.toFixed(1)} KB` : `${n} B`;
+    };
+
+    const fetchFileSize = async (url, sizeEl) => {
+      try {
+        const res = await fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(8000) });
+        const len = res.headers.get('content-length');
+        sizeEl.textContent = len ? (formatBytes(parseInt(len, 10)) || 'Size unknown') : 'Size unknown';
+      } catch { sizeEl.textContent = 'Size unavailable'; }
+    };
+
+    // ── Message parsing (from socials.html) ─────────────────────────────
+    const parseMessage = async (messageText, mainnet, signal) => {
+      const attachments = [];
+      const links = [];
+      const urnRegex = /@([A-Za-z0-9]+(?:\/[A-Za-z0-9]+)?)/g;
+      const keywordRegex = /#([\w]+)/g;
+      let cleanMessage = messageText.replace(/<<[^>]+>>/g, '').trim();
+      const attachmentMatches = messageText.match(/<<[^>]+>>/g) || [];
+      attachmentMatches.forEach((match) => {
+        const content = match.slice(2, -2).replace(/\s+/g, '').trim();
+        if (content.match(/^-?\d+$/) || content.match(/#[\w\s#]+/) || content.match(/^#[\w\s]+$/)) return;
+        if (/^https?:\/\//i.test(content)) links.push(content);
+        else attachments.push(content);
+      });
+      const parsedAttachments = attachments.map((attach) => {
+        const parts = attach.split(/[/\\]/);
+        const hash = parts[0].replace(/^IPFS:/i, '').trim();
+        const filename = parts[1] || hash;
+        return { hash, filename };
+      });
+      const parsedLinks = links.map(url => ({ url }));
+      const matches = [...cleanMessage.matchAll(urnRegex)];
+      for (const match of matches) {
+        const urn = match[1];
+        if (!/^[a-zA-Z0-9]{26,35}$/.test(urn) && !/^[a-zA-Z0-9]+\/[a-zA-Z0-9]+$/.test(urn)) continue;
+        const profile = await fetchProfileByAddress(urn, mainnet, signal);
+        if (!profile) continue;
+        const displayName = profile.DisplayName || profile.URN || urn;
+        cleanMessage = cleanMessage.replace(match[0], createUrnLink(displayName, urn, mainnet));
+      }
+      const keywordMatches = [...cleanMessage.matchAll(keywordRegex)];
+      for (const match of keywordMatches) {
+        const keyword = match[1];
+        cleanMessage = cleanMessage.replace(
+          `#${keyword}`,
+          `<span class="keyword-link" data-keyword="${escapeHtml(keyword)}" data-mainnet="${mainnet}">#${escapeHtml(keyword)}</span>`
+        );
+      }
+      return { cleanMessage, attachments: parsedAttachments, links: parsedLinks };
+    };
+
+    const createUrnLink = (displayText, address, mainnet) => {
+      if (!displayText) return '';
+      const safeText = escapeHtml(displayText);
+      const safeAddr = escapeHtml(address);
+      return `<span class="urn-link" data-urn="${safeAddr}" data-mainnet="${mainnet}">${safeText}</span>`;
+    };
+
+    // ── Root/message normalisation ───────────────────────────────────────
+    // The Root JSON uses fields like "Signed By", "Output", "Message", "Block Date"
+    const normalizeRoot = (root) => {
+      if (!root || typeof root !== 'object') return null;
+      const rawMsg = root['Message'] ?? root.Message ?? '';
+      const msg = Array.isArray(rawMsg) ? rawMsg.join('\n') : (rawMsg != null ? String(rawMsg) : '');
+      const signedBy = root['Signed By'] ?? root.SignedBy ?? '';
+      const blockDate = root['Block Date'] ?? root.BlockDate ?? '';
+      const txId = root['Transaction Id'] ?? root.TransactionId ?? root['Transaction ID'] ?? '';
+      // Output is an object keyed by address
+      const outputObj = root['Output'] ?? root.Output ?? {};
+      const outputAddresses = Object.keys(outputObj);
+      // Recipients: all but the last address, limited to 2 from the end
+      const numOut = outputAddresses.length;
+      const toAddresses = numOut > 1
+        ? outputAddresses.slice(Math.max(0, numOut - 3), numOut - 1)
+        : [];
+      return { message: msg, fromAddress: signedBy, toAddresses, blockDate, txId };
+    };
+
+    // ── Lazy-loading observer ────────────────────────────────────────────
+    const lazyLoadObserver = new IntersectionObserver((entries, obs) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          const el = entry.target;
+          if (el.tagName === 'SOURCE') {
+            el.src = el.dataset.src;
+            el.parentElement.load();
+            el.parentElement.style.display = 'block';
+          }
+          obs.unobserve(el);
+        }
+      });
+    }, { rootMargin: '100px' });
+
+    // ── Render helpers ───────────────────────────────────────────────────
+    const renderAttachments = (container, attachments, links) => {
+      const audioMimeTypes = { mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', flac: 'audio/flac' };
+      const videoMimeTypes = { mp4: 'video/mp4', webm: 'video/webm', avi: 'video/avi', mov: 'video/quicktime' };
+      const imageElements = [];
+
+      for (const { hash, filename } of attachments) {
+        const isTxid = /^[0-9a-f]{64}$/i.test(hash);
+        const url = isTxid
+          ? `https://bitfossil.org/${hash}/${encodeURIComponent(filename)}`
+          : `https://ipfs.io/ipfs/${hash}`;
+        const ext = (filename.match(/\.([^.]+)$/) || [])[1]?.toLowerCase() || '';
+        const isImage = /^(jpg|jpeg|png|gif|webp|bmp|svg|tiff|tif|ico|avif)$/.test(ext);
+        const isAudio = /^(mp3|wav|ogg|flac)$/.test(ext);
+        const isVideo = /^(mp4|webm|avi|mov)$/.test(ext);
+        const isPDF = ext === 'pdf';
+        const el = document.createElement('div');
+        if (isImage) {
+          el.innerHTML = `<img class="media-placeholder" src="${fallbackImage}" alt="Attachment" style="display:block;">`;
+          imageElements.push({ img: el.querySelector('img'), url });
+        } else if (isAudio) {
+          el.innerHTML = `<audio controls style="display:none;"><source data-src="${url}" type="${audioMimeTypes[ext] || 'audio/wav'}">Audio not supported.</audio>`;
+          const src = el.querySelector('source');
+          if (src.getBoundingClientRect().top <= window.innerHeight) { src.src = url; src.parentElement.load(); src.parentElement.style.display = 'block'; }
+          else lazyLoadObserver.observe(src);
+        } else if (isVideo) {
+          el.innerHTML = `<video controls style="display:none;"><source data-src="${url}" type="${videoMimeTypes[ext] || 'video/mp4'}">Video not supported.</video>`;
+          const src = el.querySelector('source');
+          if (src.getBoundingClientRect().top <= window.innerHeight) { src.src = url; src.parentElement.load(); src.parentElement.style.display = 'block'; }
+          else lazyLoadObserver.observe(src);
+        } else if (isPDF) {
+          el.innerHTML = `<iframe class="pdf-viewer" src="${url}" title="${escapeHtml(filename)}"></iframe>`;
+        } else {
+          const icon = getFileCardIcon(ext);
+          const typeLabel = ext ? ext.toUpperCase() + ' File' : 'File';
+          const safeName = escapeHtml(filename);
+          el.innerHTML = `<div class="file-card"><div class="file-card-icon">${icon}</div><div class="file-card-info"><div class="file-card-name" title="${safeName}">${safeName}</div><div class="file-card-meta"><span>${escapeHtml(typeLabel)}</span> &middot; <span class="file-card-size">Fetching size...</span></div></div><a class="file-card-download" href="${url}" target="_blank" rel="noopener noreferrer">Download</a></div>`;
+          fetchFileSize(url, el.querySelector('.file-card-size'));
+        }
+        container.appendChild(el);
+      }
+
+      for (const { url } of links) {
+        const ext = (url.match(/\.([^./?#]+)(?:[?#].*)?$/) || [])[1]?.toLowerCase() || '';
+        const isImage = /^(jpg|jpeg|png|gif|webp|bmp|svg|avif)$/.test(ext);
+        const ytMatch = url.match(/(?:youtube\.com\/watch\?(?:[^#]*&)?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+        const el = document.createElement('div');
+        if (ytMatch) {
+          el.innerHTML = `<iframe class="video-embed" src="https://www.youtube.com/embed/${ytMatch[1]}" title="YouTube video" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`;
+        } else if (isImage) {
+          el.innerHTML = `<img class="media-placeholder" src="${fallbackImage}" alt="Image" style="display:block;">`;
+          imageElements.push({ img: el.querySelector('img'), url });
+        } else {
+          const icon = ext === 'pdf' ? '📄' : getFileCardIcon(ext);
+          const typeLabel = ext ? ext.toUpperCase() + ' File' : 'Link';
+          let displayName = url;
+          try { const u = new URL(url); displayName = u.hostname + (u.pathname !== '/' ? u.pathname : ''); } catch { /* ignore */ }
+          const safeName = escapeHtml(displayName);
+          const safeUrl = escapeHtml(url);
+          el.innerHTML = `<div class="file-card"><div class="file-card-icon">${icon}</div><div class="file-card-info"><div class="file-card-name" title="${safeUrl}">${safeName}</div><div class="file-card-meta"><span>${escapeHtml(typeLabel)}</span> &middot; <span class="file-card-size">Fetching size...</span></div></div><a class="file-card-download" href="${safeUrl}" target="_blank" rel="noopener noreferrer">Open</a></div>`;
+          fetchFileSize(url, el.querySelector('.file-card-size'));
+        }
+        container.appendChild(el);
+      }
+
+      // Resolve images async
+      for (const { img, url } of imageElements) {
+        loadImageWithTimeout(url).then(resolved => {
+          img.src = resolved;
+          img.classList.remove('media-placeholder');
+        }).catch(() => { img.src = fallbackImage; });
+      }
+    };
+
+    const renderObjectCard = (obj, blockchain) => {
+      const imageUrl = getImageUrl(obj.Image, obj.URN);
+      const name = escapeHtml(obj.Name || 'Unnamed Object');
+      const date = formatDate(obj.CreatedDate);
+      const card = document.createElement('a');
+      card.className = 'result-card';
+      const objectAddress = Object.keys(obj.Creators || {})[0] || '';
+      card.href = `objects.html?urn=${encodeURIComponent(objectAddress)}&mainnet=${document.getElementById('mainnetToggle').checked}`;
+      card.target = '_blank';
+      card.rel = 'noopener noreferrer';
+      const imgEl = document.createElement('img');
+      imgEl.className = 'result-card-img';
+      imgEl.src = fallbackImage;
+      imgEl.alt = obj.Name || 'Object';
+      loadImageWithTimeout(imageUrl).then(url => { imgEl.src = url; }).catch(() => {});
+      const body = document.createElement('div');
+      body.className = 'result-card-body';
+      body.innerHTML = `
+        <div><span class="result-card-badge badge-object">Object</span><span style="font-size:0.65em;color:#888;">${escapeHtml(blockchain || '')}</span></div>
+        <p class="result-card-title">${name}</p>
+        <p class="result-card-sub">${obj.Description ? escapeHtml(obj.Description.substring(0, 80) + (obj.Description.length > 80 ? '…' : '')) : ''}</p>
+        <p class="result-card-sub">${date !== 'N/A' ? date : ''}</p>
+      `;
+      card.appendChild(imgEl);
+      card.appendChild(body);
+      return card;
+    };
+
+    const renderProfileCard = (profile, blockchain) => {
+      const imageUrl = getImageUrl(profile.Image, profile.URN);
+      const name = escapeHtml(profile.DisplayName || profile.URN || 'Unknown');
+      const bio = profile.Bio ? escapeHtml(profile.Bio.substring(0, 100) + (profile.Bio.length > 100 ? '…' : '')) : '';
+      const date = formatDate(profile.CreatedDate);
+      const urn = profile.URN || '';
+      const card = document.createElement('a');
+      card.className = 'result-card';
+      card.href = `socials.html?urn=${encodeURIComponent(urn)}&mainnet=${document.getElementById('mainnetToggle').checked}`;
+      card.target = '_blank';
+      card.rel = 'noopener noreferrer';
+      const imgEl = document.createElement('img');
+      imgEl.className = 'result-card-img';
+      imgEl.src = fallbackImage;
+      imgEl.alt = profile.DisplayName || 'Profile';
+      loadImageWithTimeout(imageUrl).then(url => { imgEl.src = url; }).catch(() => {});
+      const body = document.createElement('div');
+      body.className = 'result-card-body';
+      body.innerHTML = `
+        <div><span class="result-card-badge badge-profile">Profile</span><span style="font-size:0.65em;color:#888;">${escapeHtml(blockchain || '')}</span></div>
+        <p class="result-card-title">${name}</p>
+        ${bio ? `<p class="result-card-bio">${bio}</p>` : ''}
+        <p class="result-card-sub">${date !== 'N/A' ? date : ''}</p>
+      `;
+      card.appendChild(imgEl);
+      card.appendChild(body);
+      return card;
+    };
+
+    const renderMessageCard = async (normalized, mainnet, signal, blockchain) => {
+      const { cleanMessage, attachments, links } = await parseMessage(normalized.message, mainnet, signal);
+      const fromProfile = await fetchProfileByAddress(normalized.fromAddress, mainnet, signal);
+      const fromName = fromProfile
+        ? (fromProfile.DisplayName || fromProfile.URN || abbreviateAddress(normalized.fromAddress))
+        : abbreviateAddress(normalized.fromAddress);
+
+      // Sender avatar
+      const senderImageUrl = fromProfile ? getImageUrl(fromProfile.Image, fromProfile.URN) : fallbackImage;
+
+      // To addresses
+      const toLinks = await Promise.all(normalized.toAddresses.map(async (addr) => {
+        const p = await fetchProfileByAddress(addr, mainnet, signal);
+        const label = p ? (p.DisplayName || p.URN || abbreviateAddress(addr)) : abbreviateAddress(addr);
+        return createUrnLink(label, addr, mainnet);
+      }));
+
+      const card = document.createElement('div');
+      card.className = 'message-card';
+
+      // Type + blockchain badge row
+      const badgeDiv = document.createElement('div');
+      badgeDiv.innerHTML = `<span class="result-card-badge badge-message">Message</span><span style="font-size:0.65em;color:#888;">${escapeHtml(blockchain || '')}</span>`;
+      card.appendChild(badgeDiv);
+
+      // Sender header
+      const senderDiv = document.createElement('div');
+      senderDiv.className = 'msg-sender';
+      const senderImg = document.createElement('img');
+      senderImg.className = 'msg-sender-img';
+      senderImg.src = fallbackImage;
+      senderImg.alt = fromName;
+      loadImageWithTimeout(senderImageUrl).then(url => { senderImg.src = url; }).catch(() => {});
+      const senderName = document.createElement('span');
+      senderName.className = 'msg-sender-name';
+      senderName.innerHTML = createUrnLink(fromName, normalized.fromAddress, mainnet);
+      senderDiv.appendChild(senderImg);
+      senderDiv.appendChild(senderName);
+      card.appendChild(senderDiv);
+
+      // Message body
+      const msgP = document.createElement('p');
+      msgP.innerHTML = cleanMessage || 'No message content';
+      card.appendChild(msgP);
+
+      // Attachments
+      const attachDiv = document.createElement('div');
+      attachDiv.className = 'message-attachments';
+      renderAttachments(attachDiv, attachments, links);
+      card.appendChild(attachDiv);
+
+      // Meta
+      const metaDiv = document.createElement('div');
+      metaDiv.className = 'message-meta';
+      const toStr = toLinks.length ? ` | To: ${toLinks.join(', ')}` : '';
+      metaDiv.innerHTML = `From: ${createUrnLink(fromName, normalized.fromAddress, mainnet)}${toStr} | Date: ${escapeHtml(normalized.blockDate)}`;
+      card.appendChild(metaDiv);
+
+      // Click handler for URN/keyword links
+      card.addEventListener('click', (event) => {
+        const urnEl = event.target.closest('.urn-link');
+        const kwEl = event.target.closest('.keyword-link');
+        if (urnEl) {
+          event.preventDefault();
+          const urn = urnEl.getAttribute('data-urn');
+          const mn = urnEl.getAttribute('data-mainnet') === 'true';
+          window.open(`socials.html?urn=${encodeURIComponent(urn)}&mainnet=${mn}`, '_blank');
+        } else if (kwEl) {
+          event.preventDefault();
+          const kw = kwEl.getAttribute('data-keyword');
+          const mn = kwEl.getAttribute('data-mainnet') === 'true';
+          window.open(`socials.html?urn=${encodeURIComponent('#' + kw)}&mainnet=${mn}`, '_blank');
+        }
+      });
+
+      return card;
+    };
+
+    // ── Date extraction for sorting ──────────────────────────────────────
+    const getItemDate = (item) => {
+      if (item.type === 'message') return new Date(item.data.blockDate || 0);
+      if (item.type === 'object') return new Date(item.raw.CreatedDate || 0);
+      if (item.type === 'profile') return new Date(item.raw.CreatedDate || 0);
+      return new Date(0);
+    };
+
+    // ── Main search function ─────────────────────────────────────────────
+    const performSearch = async () => {
+      if (state.isSearching) return;
+      state.isSearching = true;
+
+      if (state.abortController) state.abortController.abort();
+      state.abortController = new AbortController();
+      const searchId = Date.now() + Math.random().toString(36).slice(2);
+      state.currentSearchId = searchId;
+
+      const signal = state.abortController.signal;
+      const searchText = document.getElementById('searchInput').value.trim();
+      const mainnet = document.getElementById('mainnetToggle').checked;
+      const wantObjects = document.getElementById('chkObjects').checked;
+      const wantProfiles = document.getElementById('chkProfiles').checked;
+      const wantMessages = document.getElementById('chkMessages').checked;
+
+      if (!searchText) {
+        showError('Please enter a search term.');
+        state.isSearching = false;
+        return;
+      }
+      if (!wantObjects && !wantProfiles && !wantMessages) {
+        showError('Please select at least one result type (Objects, Profiles, or Messages).');
+        state.isSearching = false;
+        return;
+      }
+
+      const $btn = document.getElementById('searchBtn');
+      const $input = document.getElementById('searchInput');
+      $btn.disabled = true;
+      $btn.textContent = 'Searching…';
+      $input.disabled = true;
+
+      document.getElementById('feed').innerHTML = '';
+      document.getElementById('resultCount').style.display = 'none';
+      document.getElementById('error').style.display = 'none';
+      document.getElementById('loading').style.display = 'block';
+
+      const params = `searchString=${encodeURIComponent(searchText)}&qty=20&skip=0`;
+
+      try {
+        // Fetch all selected types in parallel
+        const [objectResults, profileResults, rootResults] = await Promise.all([
+          wantObjects
+            ? fetchAPI(`${BASE_URL}/GetKnownObjectsBySearchString?${params}`, 'Object search failed', signal)
+              .catch(() => [])
+            : Promise.resolve([]),
+          wantProfiles
+            ? fetchAPI(`${BASE_URL}/GetKnownProfilesBySearchString?${params}`, 'Profile search failed', signal)
+              .catch(() => [])
+            : Promise.resolve([]),
+          wantMessages
+            ? fetchAPI(`${BASE_URL}/GetKnownRootsBySearchString?${params}`, 'Message search failed', signal)
+              .catch(() => [])
+            : Promise.resolve([])
+        ]);
+
+        if (state.currentSearchId !== searchId) return;
+
+        // Normalise into a unified list
+        const items = [];
+
+        for (const result of (objectResults || [])) {
+          const obj = result.Object || result.object;
+          if (!obj) continue;
+          items.push({ type: 'object', raw: obj, blockchain: result.Blockchain || result.blockchain || '' });
+        }
+
+        for (const result of (profileResults || [])) {
+          const profile = result.Profile || result.profile;
+          if (!profile) continue;
+          items.push({ type: 'profile', raw: profile, blockchain: result.Blockchain || result.blockchain || '' });
+        }
+
+        for (const result of (rootResults || [])) {
+          const root = result.Root || result.root;
+          if (!root) continue;
+          const normalized = normalizeRoot(root);
+          if (!normalized) continue;
+          items.push({ type: 'message', data: normalized, blockchain: result.Blockchain || result.blockchain || '' });
+        }
+
+        // Filter by selected blockchain checkboxes
+        const allowedChains = new Set(
+          ['BTC', 'LTC', 'DOG', 'MZC'].filter(c => document.getElementById(`chk${c}`).checked)
+        );
+        if (allowedChains.size < 4) {
+          items.splice(0, items.length, ...items.filter(
+            item => allowedChains.has((item.blockchain || '').toUpperCase())
+          ));
+        }
+
+        // Sort by date descending (newest first); items without a date go to the end
+        items.sort((a, b) => {
+          const da = getItemDate(a).getTime();
+          const db = getItemDate(b).getTime();
+          // If both are epoch 0 (no valid date), maintain original order
+          if (da === 0 && db === 0) return 0;
+          if (da === 0) return 1;
+          if (db === 0) return -1;
+          return db - da;
+        });
+
+        document.getElementById('loading').style.display = 'none';
+
+        if (items.length === 0) {
+          document.getElementById('feed').innerHTML = '<div class="loading">No results found.</div>';
+          document.getElementById('resultCount').style.display = 'none';
+        } else {
+          const countEl = document.getElementById('resultCount');
+          countEl.textContent = `${items.length} result${items.length === 1 ? '' : 's'} found`;
+          countEl.style.display = 'block';
+
+          const feed = document.getElementById('feed');
+          for (const item of items) {
+            if (state.currentSearchId !== searchId) break;
+            if (item.type === 'object') {
+              feed.appendChild(renderObjectCard(item.raw, item.blockchain));
+            } else if (item.type === 'profile') {
+              feed.appendChild(renderProfileCard(item.raw, item.blockchain));
+            } else if (item.type === 'message') {
+              const card = await renderMessageCard(item.data, mainnet, signal, item.blockchain);
+              if (state.currentSearchId !== searchId) break;
+              feed.appendChild(card);
+            }
+          }
+        }
+      } catch (err) {
+        if (err.name === 'AbortError') return;
+        showError('Search failed: ' + err.message);
+        document.getElementById('loading').style.display = 'none';
+      } finally {
+        if (state.currentSearchId === searchId) {
+          state.currentSearchId = null;
+          state.abortController = null;
+        }
+        state.isSearching = false;
+        $btn.disabled = false;
+        $btn.textContent = 'Search';
+        $input.disabled = false;
+      }
+    };
+
+    // ── Error display ────────────────────────────────────────────────────
+    const showError = (msg) => {
+      const el = document.getElementById('error');
+      el.textContent = msg;
+      el.style.display = 'block';
+      setTimeout(() => { el.style.display = 'none'; }, 6000);
+    };
+
+    // ── URL parameters ───────────────────────────────────────────────────
+    const getQueryParam = (name) => new URLSearchParams(window.location.search).get(name);
+
+    window.addEventListener('load', () => {
+      const search = getQueryParam('search');
+      const mainnet = getQueryParam('mainnet') === 'true';
+      const objects = getQueryParam('objects');
+      const profiles = getQueryParam('profiles');
+      const messages = getQueryParam('messages');
+
+      if (mainnet) {
+        document.getElementById('mainnetToggle').checked = true;
+      }
+      if (objects !== null) document.getElementById('chkObjects').checked = objects === 'true';
+      if (profiles !== null) document.getElementById('chkProfiles').checked = profiles === 'true';
+      if (messages !== null) document.getElementById('chkMessages').checked = messages === 'true';
+
+      const btc = getQueryParam('btc');
+      const ltc = getQueryParam('ltc');
+      const dog = getQueryParam('dog');
+      const mzc = getQueryParam('mzc');
+      if (btc !== null) document.getElementById('chkBTC').checked = btc === 'true';
+      if (ltc !== null) document.getElementById('chkLTC').checked = ltc === 'true';
+      if (dog !== null) document.getElementById('chkDOG').checked = dog === 'true';
+      if (mzc !== null) document.getElementById('chkMZC').checked = mzc === 'true';
+
+      if (search) {
+        document.getElementById('searchInput').value = search;
+        performSearch();
+      }
+    });
+
+    document.getElementById('searchInput').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') performSearch();
+    });
+
+    // ── URL Builder ──────────────────────────────────────────────────────
+    function openUrlBuilder() {
+      document.getElementById('ubSearch').value = document.getElementById('searchInput').value;
+      document.getElementById('ubMainnet').checked = document.getElementById('mainnetToggle').checked;
+      document.getElementById('ubObjects').checked = document.getElementById('chkObjects').checked;
+      document.getElementById('ubProfiles').checked = document.getElementById('chkProfiles').checked;
+      document.getElementById('ubMessages').checked = document.getElementById('chkMessages').checked;
+      document.getElementById('ubBTC').checked = document.getElementById('chkBTC').checked;
+      document.getElementById('ubLTC').checked = document.getElementById('chkLTC').checked;
+      document.getElementById('ubDOG').checked = document.getElementById('chkDOG').checked;
+      document.getElementById('ubMZC').checked = document.getElementById('chkMZC').checked;
+      document.getElementById('ubOutput').textContent = '';
+      document.getElementById('urlBuilderOverlay').style.display = 'flex';
+    }
+
+    function closeUrlBuilder() {
+      document.getElementById('urlBuilderOverlay').style.display = 'none';
+    }
+
+    function generateUrlBuilder() {
+      const search = document.getElementById('ubSearch').value.trim();
+      const mainnet = document.getElementById('ubMainnet').checked;
+      const objects = document.getElementById('ubObjects').checked;
+      const profiles = document.getElementById('ubProfiles').checked;
+      const messages = document.getElementById('ubMessages').checked;
+      const params = new URLSearchParams();
+      if (search) params.set('search', search);
+      if (mainnet) params.set('mainnet', 'true');
+      params.set('objects', String(objects));
+      params.set('profiles', String(profiles));
+      params.set('messages', String(messages));
+      params.set('btc', String(document.getElementById('ubBTC').checked));
+      params.set('ltc', String(document.getElementById('ubLTC').checked));
+      params.set('dog', String(document.getElementById('ubDOG').checked));
+      params.set('mzc', String(document.getElementById('ubMZC').checked));
+      const url = 'search.html?' + params.toString();
+      document.getElementById('ubOutput').textContent = url;
+      return url;
+    }
+
+    function copyUrlBuilder() {
+      const url = document.getElementById('ubOutput').textContent;
+      if (url) navigator.clipboard.writeText(url).catch(() => {});
+    }
+
+    function goUrlBuilder() {
+      const url = generateUrlBuilder();
+      if (url) window.location.href = url;
+    }
+
+    document.getElementById('urlBuilderOverlay').addEventListener('click', (e) => {
+      if (e.target.id === 'urlBuilderOverlay') closeUrlBuilder();
+    });
+  </script>
+</body>
+</html>
