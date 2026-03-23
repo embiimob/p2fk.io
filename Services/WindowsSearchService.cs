@@ -427,16 +427,35 @@ namespace P2FK.IO.Services
         private static string DetectFirstOutputAddress(JsonElement root)
         {
             if (root.ValueKind != JsonValueKind.Object) return "Unknown";
-            if (!root.TryGetProperty("Output", out var output)) return "Unknown";
-            if (output.ValueKind != JsonValueKind.Object) return "Unknown";
 
-            // Iterate all Output keys; skip any that are not recognised blockchain addresses
-            // (e.g. OP_RETURN entries or metadata keys) and return the first match found.
-            foreach (var prop in output.EnumerateObject())
+            // 1. Try Output keys first (object keyed by address → amount)
+            if (root.TryGetProperty("Output", out var output) && output.ValueKind == JsonValueKind.Object)
             {
-                string detected = DetectBlockchain(prop.Name);
+                foreach (var prop in output.EnumerateObject())
+                {
+                    string detected = DetectBlockchain(prop.Name);
+                    if (detected != "Unknown")
+                        return detected;
+                }
+            }
+
+            // 2. Fall back to SignedBy (single address string)
+            if (root.TryGetProperty("SignedBy", out var signedBy) && signedBy.ValueKind == JsonValueKind.String)
+            {
+                string detected = DetectBlockchain(signedBy.GetString() ?? "");
                 if (detected != "Unknown")
                     return detected;
+            }
+
+            // 3. Fall back to Keyword keys (object keyed by address → value)
+            if (root.TryGetProperty("Keyword", out var keyword) && keyword.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var prop in keyword.EnumerateObject())
+                {
+                    string detected = DetectBlockchain(prop.Name);
+                    if (detected != "Unknown")
+                        return detected;
+                }
             }
 
             return "Unknown";
