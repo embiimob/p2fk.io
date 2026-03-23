@@ -109,12 +109,14 @@ namespace P2FK.IO.Services
             // Use a forward-slash SCOPE URI as required by Windows Search; escape any single quotes
             string scopeUri = "file:///" + _rootPath.Replace('\\', '/').Replace("'", "''");
 
+            // When a search string is present, search all files in the scope (not just ROOT.json)
+            // so that PDFs, HTML, and other files in root/{txId}/ folders are also matched.
+            // The transaction ID is then extracted from the matched file path to locate ROOT.json.
             string sql = hasSearch
                 ? $"""
                     SELECT System.ItemPathDisplay, System.DateModified
                     FROM SystemIndex
                     WHERE SCOPE='{scopeUri}'
-                      AND System.FileName = 'ROOT.json'
                       AND FREETEXT('{sanitized}')
                     ORDER BY System.DateModified DESC
                     """
@@ -128,10 +130,10 @@ namespace P2FK.IO.Services
 
             var rows = await Task.Run(() => ExecuteSearchQuery(sql));
 
-            // If Windows Search returned nothing (index not ready or JSON not yet indexed),
+            // If Windows Search returned nothing (index not ready or files not yet indexed),
             // fall back to a direct filesystem scan so results are available immediately.
             if (rows.Count == 0)
-                rows = await FallbackScanAsync("ROOT.json", sanitized);
+                rows = await FallbackScanAsync(hasSearch ? "*" : "ROOT.json", sanitized);
 
             // Deduplicate by transaction ID, keeping the newest-modified row per txid
             var txMap = new Dictionary<string, SearchRow>(StringComparer.OrdinalIgnoreCase);
@@ -190,12 +192,14 @@ namespace P2FK.IO.Services
 
             string scopeUri = "file:///" + _rootPath.Replace('\\', '/').Replace("'", "''");
 
+            // When a search string is present, search all files in the scope (not just OBJ.json)
+            // so that PDFs, HTML, and other files in root/{address}/ folders are also matched.
+            // The address is extracted from the matched file path to locate OBJ.json.
             string sql = hasSearch
                 ? $"""
                     SELECT System.ItemPathDisplay, System.DateModified
                     FROM SystemIndex
                     WHERE SCOPE='{scopeUri}'
-                      AND System.FileName = 'OBJ.json'
                       AND FREETEXT('{sanitized}')
                     ORDER BY System.DateModified DESC
                     """
@@ -209,15 +213,16 @@ namespace P2FK.IO.Services
 
             var rows = await Task.Run(() => ExecuteSearchQuery(sql));
 
-            // If Windows Search returned nothing (index not ready or JSON not yet indexed),
+            // If Windows Search returned nothing (index not ready or files not yet indexed),
             // fall back to a direct filesystem scan so results are available immediately.
             if (rows.Count == 0)
-                rows = await FallbackScanAsync("OBJ.json", sanitized);
+                rows = await FallbackScanAsync(hasSearch ? "*" : "OBJ.json", sanitized);
 
-            // Deduplicate by file path
+            // Deduplicate by address (parent folder) so multiple file hits from the same
+            // folder are collapsed to one entry, keeping the newest-modified file per address.
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var ordered = rows
-                .Where(r => seen.Add(r.Path))
+                .Where(r => seen.Add(ExtractAddressFromPath(r.Path) ?? r.Path))
                 .OrderByDescending(r => r.Modified)
                 .ToList();
 
@@ -235,9 +240,12 @@ namespace P2FK.IO.Services
 
                 if (skipped < skip) { skipped++; continue; }
 
-                if (!File.Exists(row.Path)) continue;
+                // Always load OBJ.json from the address folder, regardless of which file
+                // was matched by the search (e.g. a PDF or HTML file in the same folder).
+                string objJsonPath = Path.Combine(_rootPath, address, "OBJ.json");
+                if (!File.Exists(objJsonPath)) continue;
 
-                var obj = await ReadJsonAsync<JsonElement?>(row.Path);
+                var obj = await ReadJsonAsync<JsonElement?>(objJsonPath);
                 if (obj == null) continue;
 
                 results.Add(new SearchResultObject
@@ -266,12 +274,14 @@ namespace P2FK.IO.Services
 
             string scopeUri = "file:///" + _rootPath.Replace('\\', '/').Replace("'", "''");
 
+            // When a search string is present, search all files in the scope (not just GetProfileByAddress.json)
+            // so that PDFs, HTML, and other files in root/{address}/ folders are also matched.
+            // The address is extracted from the matched file path to locate GetProfileByAddress.json.
             string sql = hasSearch
                 ? $"""
                     SELECT System.ItemPathDisplay, System.DateModified
                     FROM SystemIndex
                     WHERE SCOPE='{scopeUri}'
-                      AND System.FileName = 'GetProfileByAddress.json'
                       AND FREETEXT('{sanitized}')
                     ORDER BY System.DateModified DESC
                     """
@@ -285,14 +295,16 @@ namespace P2FK.IO.Services
 
             var rows = await Task.Run(() => ExecuteSearchQuery(sql));
 
-            // If Windows Search returned nothing (index not ready or JSON not yet indexed),
+            // If Windows Search returned nothing (index not ready or files not yet indexed),
             // fall back to a direct filesystem scan so results are available immediately.
             if (rows.Count == 0)
-                rows = await FallbackScanAsync("GetProfileByAddress.json", sanitized);
+                rows = await FallbackScanAsync(hasSearch ? "*" : "GetProfileByAddress.json", sanitized);
 
+            // Deduplicate by address (parent folder) so multiple file hits from the same
+            // folder are collapsed to one entry, keeping the newest-modified file per address.
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var ordered = rows
-                .Where(r => seen.Add(r.Path))
+                .Where(r => seen.Add(ExtractAddressFromPath(r.Path) ?? r.Path))
                 .OrderByDescending(r => r.Modified)
                 .ToList();
 
@@ -310,9 +322,12 @@ namespace P2FK.IO.Services
 
                 if (skipped < skip) { skipped++; continue; }
 
-                if (!File.Exists(row.Path)) continue;
+                // Always load GetProfileByAddress.json from the address folder, regardless of
+                // which file was matched by the search (e.g. a PDF or HTML file in the same folder).
+                string profileJsonPath = Path.Combine(_rootPath, address, "GetProfileByAddress.json");
+                if (!File.Exists(profileJsonPath)) continue;
 
-                var profile = await ReadJsonAsync<JsonElement?>(row.Path);
+                var profile = await ReadJsonAsync<JsonElement?>(profileJsonPath);
                 if (profile == null) continue;
 
                 results.Add(new SearchResultProfile
@@ -329,12 +344,12 @@ namespace P2FK.IO.Services
         // ── Fallback filesystem scan ───────────────────────────────────────────
 
         /// <summary>
-        /// Scans the <c>root</c> directory tree for files named
-        /// <paramref name="fileName"/> whose content contains
-        /// <paramref name="searchString"/> (case-insensitive).
+        /// Scans the <c>root</c> directory tree for files matching
+        /// <paramref name="fileName"/> (use <c>"*"</c> to search all file types)
+        /// whose content contains <paramref name="searchString"/> (case-insensitive).
         /// When <paramref name="searchString"/> is empty or whitespace all matching
         /// files are returned without a content check.
-        /// Used when Windows Search has not yet indexed the JSON files.
+        /// Used when Windows Search has not yet indexed the files.
         /// </summary>
         private Task<List<SearchRow>> FallbackScanAsync(string fileName, string searchString)
         {
@@ -412,11 +427,36 @@ namespace P2FK.IO.Services
         private static string DetectFirstOutputAddress(JsonElement root)
         {
             if (root.ValueKind != JsonValueKind.Object) return "Unknown";
-            if (!root.TryGetProperty("Output", out var output)) return "Unknown";
-            if (output.ValueKind != JsonValueKind.Object) return "Unknown";
 
-            foreach (var prop in output.EnumerateObject())
-                return DetectBlockchain(prop.Name);
+            // 1. Try Output keys first (object keyed by address → amount)
+            if (root.TryGetProperty("Output", out var output) && output.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var prop in output.EnumerateObject())
+                {
+                    string detected = DetectBlockchain(prop.Name);
+                    if (detected != "Unknown")
+                        return detected;
+                }
+            }
+
+            // 2. Fall back to SignedBy (single address string)
+            if (root.TryGetProperty("SignedBy", out var signedBy) && signedBy.ValueKind == JsonValueKind.String)
+            {
+                string detected = DetectBlockchain(signedBy.GetString() ?? "");
+                if (detected != "Unknown")
+                    return detected;
+            }
+
+            // 3. Fall back to Keyword keys (object keyed by address → value)
+            if (root.TryGetProperty("Keyword", out var keyword) && keyword.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var prop in keyword.EnumerateObject())
+                {
+                    string detected = DetectBlockchain(prop.Name);
+                    if (detected != "Unknown")
+                        return detected;
+                }
+            }
 
             return "Unknown";
         }
