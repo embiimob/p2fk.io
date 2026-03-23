@@ -430,8 +430,14 @@ namespace P2FK.IO.Services
             if (!root.TryGetProperty("Output", out var output)) return "Unknown";
             if (output.ValueKind != JsonValueKind.Object) return "Unknown";
 
+            // Iterate all Output keys; skip any that are not recognised blockchain addresses
+            // (e.g. OP_RETURN entries or metadata keys) and return the first match found.
             foreach (var prop in output.EnumerateObject())
-                return DetectBlockchain(prop.Name);
+            {
+                string detected = DetectBlockchain(prop.Name);
+                if (detected != "Unknown")
+                    return detected;
+            }
 
             return "Unknown";
         }
