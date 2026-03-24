@@ -1052,12 +1052,16 @@
         for (const result of (objectResults || [])) {
           const obj = result.Object || result.object;
           if (!obj) continue;
+          // Skip unnamed/blank objects — they have no meaningful display name
+          if (!obj.Name) continue;
           items.push({ type: 'object', raw: obj, blockchain: result.Blockchain || result.blockchain || '' });
         }
 
         for (const result of (profileResults || [])) {
           const profile = result.Profile || result.profile;
           if (!profile) continue;
+          // Skip unknown profiles — they have neither a display name nor a URN
+          if (!profile.DisplayName && !profile.URN) continue;
           items.push({ type: 'profile', raw: profile, blockchain: result.Blockchain || result.blockchain || '' });
         }
 
