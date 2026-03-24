@@ -12,6 +12,7 @@ namespace P2FK.IO.Services
     {
         private readonly string _rootPath;
         private readonly IMemoryCache _cache;
+        private readonly Wrapper _wrapper;
         private static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(60);
         private static readonly Regex TxIdRegex = new Regex(@"[0-9a-fA-F]{64}", RegexOptions.Compiled);
         private const int MaxSearchLength = 2048;
@@ -20,6 +21,7 @@ namespace P2FK.IO.Services
         {
             _cache = cache;
             _rootPath = wrapper.RootPath;
+            _wrapper = wrapper;
         }
 
         // ── Blockchain detection ───────────────────────────────────────────────
@@ -163,6 +165,15 @@ namespace P2FK.IO.Services
                 if (rootObj == null) continue;
 
                 string detectedBlockchain = DetectFirstOutputAddress(rootObj.Value);
+
+                // If Block Date is absent from the cached ROOT.json for a sidechain transaction,
+                // fetch fresh data directly from the blockchain node so callers receive correct dates.
+                if (IsSidechain(detectedBlockchain) && !HasBlockDate(rootObj.Value))
+                {
+                    var liveRoot = await FetchRootFromBlockchainAsync(txId, detectedBlockchain);
+                    if (liveRoot != null)
+                        rootObj = liveRoot;
+                }
 
                 if (skipped < skip) { skipped++; continue; }
 
@@ -341,6 +352,70 @@ namespace P2FK.IO.Services
             return results;
         }
 
+        // ── Sidechain date enrichment ──────────────────────────────────────────
+
+        /// <summary>Returns true when the blockchain is one of the supported sidechains.</summary>
+        private static bool IsSidechain(string blockchain) =>
+            blockchain is "LTC" or "DOG" or "MZC";
+
+        /// <summary>
+        /// Returns true when the ROOT JSON element contains a non-empty "Block Date"
+        /// (either spaced or camel-case form).
+        /// </summary>
+        private static bool HasBlockDate(JsonElement root)
+        {
+            if (root.TryGetProperty("Block Date", out var bd1) &&
+                bd1.ValueKind == JsonValueKind.String &&
+                !string.IsNullOrEmpty(bd1.GetString()))
+                return true;
+
+            if (root.TryGetProperty("BlockDate", out var bd2) &&
+                bd2.ValueKind == JsonValueKind.String &&
+                !string.IsNullOrEmpty(bd2.GetString()))
+                return true;
+
+            return false;
+        }
+
+        /// <summary>
+        /// Queries the specified sidechain blockchain node for a root by its transaction ID.
+        /// Returns null if the call fails or returns unusable data.
+        /// </summary>
+        private async Task<JsonElement?> FetchRootFromBlockchainAsync(string txId, string blockchain)
+        {
+            string? cliPath = blockchain switch
+            {
+                "LTC" => _wrapper.LTCCLIPath,
+                "DOG" => _wrapper.DOGCLIPath,
+                "MZC" => _wrapper.MZCCLIPath,
+                _ => null
+            };
+
+            string? arguments = blockchain switch
+            {
+                "LTC" => $"--versionbyte {_wrapper.LTCVersionByte} --getrootbytransactionid --password {_wrapper.LTCRPCPassword} --url {_wrapper.LTCRPCURL} --username {_wrapper.LTCRPCUser} --tid {txId}",
+                "DOG" => $"--versionbyte {_wrapper.DOGVersionByte} --getrootbytransactionid --password {_wrapper.DOGRPCPassword} --url {_wrapper.DOGRPCURL} --username {_wrapper.DOGRPCUser} --tid {txId}",
+                "MZC" => $"--versionbyte {_wrapper.MZCVersionByte} --getrootbytransactionid --password {_wrapper.MZCRPCPassword} --url {_wrapper.MZCRPCURL} --username {_wrapper.MZCRPCUser} --tid {txId}",
+                _ => null
+            };
+
+            if (cliPath == null || arguments == null) return null;
+
+            try
+            {
+                string result = await _wrapper.RunCommandAsync(cliPath, arguments);
+                var element = JsonSerializer.Deserialize<JsonElement?>(result);
+                // Only accept a well-formed JSON object; error strings, arrays, or nulls are discarded
+                return element.HasValue && element.Value.ValueKind == JsonValueKind.Object
+                    ? element
+                    : null;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
         // ── Fallback filesystem scan ───────────────────────────────────────────
 
         /// <summary>
@@ -439,7 +514,14 @@ namespace P2FK.IO.Services
                 }
             }
 
-            // 2. Fall back to SignedBy (single address string)
+            // 2. Fall back to "Signed By" (spaced) or "SignedBy" (camel) – ROOT.json may use either form
+            if (root.TryGetProperty("Signed By", out var signedBySpaced) && signedBySpaced.ValueKind == JsonValueKind.String)
+            {
+                string detected = DetectBlockchain(signedBySpaced.GetString() ?? "");
+                if (detected != "Unknown")
+                    return detected;
+            }
+
             if (root.TryGetProperty("SignedBy", out var signedBy) && signedBy.ValueKind == JsonValueKind.String)
             {
                 string detected = DetectBlockchain(signedBy.GetString() ?? "");
