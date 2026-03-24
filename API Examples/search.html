@@ -1052,13 +1052,13 @@
         for (const result of (objectResults || [])) {
           const obj = result.Object || result.object;
           if (!obj) continue;
-          items.push({ type: 'object', raw: obj, blockchain: result.Blockchain || result.blockchain || '' });
+          items.push({ type: 'object', raw: obj, blockchain: result.Blockchain || result.blockchain || 'BTC' });
         }
 
         for (const result of (profileResults || [])) {
           const profile = result.Profile || result.profile;
           if (!profile) continue;
-          items.push({ type: 'profile', raw: profile, blockchain: result.Blockchain || result.blockchain || '' });
+          items.push({ type: 'profile', raw: profile, blockchain: result.Blockchain || result.blockchain || 'BTC' });
         }
 
         for (const result of (rootResults || [])) {
@@ -1066,7 +1066,7 @@
           if (!root) continue;
           const normalized = normalizeRoot(root);
           if (!normalized) continue;
-          items.push({ type: 'message', data: normalized, blockchain: result.Blockchain || result.blockchain || '' });
+          items.push({ type: 'message', data: normalized, blockchain: result.Blockchain || result.blockchain || 'BTC' });
         }
 
         // Filter by selected blockchain checkboxes
@@ -1076,11 +1076,9 @@
         if (document.getElementById('chkLTC').checked) allowedChains.add('LTC');
         if (document.getElementById('chkDOG').checked) allowedChains.add('DOG');
         if (document.getElementById('chkMZC').checked) allowedChains.add('MZC');
-        if (allowedChains.size < 5) {
-          items.splice(0, items.length, ...items.filter(
-            item => allowedChains.has((item.blockchain || '').toUpperCase())
-          ));
-        }
+        items.splice(0, items.length, ...items.filter(
+          item => allowedChains.has((item.blockchain || 'BTC').toUpperCase())
+        ));
 
         // Sort by date descending (newest first); items without a date go to the end
         items.sort((a, b) => {
