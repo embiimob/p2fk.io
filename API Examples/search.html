@@ -1052,13 +1052,13 @@
         for (const result of (objectResults || [])) {
           const obj = result.Object || result.object;
           if (!obj) continue;
-          items.push({ type: 'object', raw: obj, blockchain: result.Blockchain || result.blockchain || 'BTC' });
+          items.push({ type: 'object', raw: obj, blockchain: result.Blockchain || result.blockchain || '' });
         }
 
         for (const result of (profileResults || [])) {
           const profile = result.Profile || result.profile;
           if (!profile) continue;
-          items.push({ type: 'profile', raw: profile, blockchain: result.Blockchain || result.blockchain || 'BTC' });
+          items.push({ type: 'profile', raw: profile, blockchain: result.Blockchain || result.blockchain || '' });
         }
 
         for (const result of (rootResults || [])) {
@@ -1066,7 +1066,7 @@
           if (!root) continue;
           const normalized = normalizeRoot(root);
           if (!normalized) continue;
-          items.push({ type: 'message', data: normalized, blockchain: result.Blockchain || result.blockchain || 'BTC' });
+          items.push({ type: 'message', data: normalized, blockchain: result.Blockchain || result.blockchain || '' });
         }
 
         // Filter by selected blockchain checkboxes
@@ -1076,9 +1076,13 @@
         if (document.getElementById('chkLTC').checked) allowedChains.add('LTC');
         if (document.getElementById('chkDOG').checked) allowedChains.add('DOG');
         if (document.getElementById('chkMZC').checked) allowedChains.add('MZC');
-        items.splice(0, items.length, ...items.filter(
-          item => allowedChains.has((item.blockchain || 'BTC').toUpperCase())
-        ));
+        items.splice(0, items.length, ...items.filter(item => {
+          const chain = (item.blockchain || '').toUpperCase();
+          // The API does not always populate Blockchain for Bitcoin-based networks (BTC/TBTC).
+          // Treat empty blockchain as matching whenever BTC or TBTC is selected.
+          if (!chain) return allowedChains.has('BTC') || allowedChains.has('TBTC');
+          return allowedChains.has(chain);
+        }));
 
         // Sort by date descending (newest first); items without a date go to the end
         items.sort((a, b) => {
