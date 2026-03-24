@@ -407,7 +407,6 @@
   <div class="container">
     <div class="search-bar">
       <input type="text" id="searchInput" placeholder="Enter search text…">
-      <label><input type="checkbox" id="mainnetToggle"> Mainnet</label>
       <div class="type-checkboxes">
         <label><input type="checkbox" id="chkObjects" checked> Objects</label>
         <label><input type="checkbox" id="chkProfiles" checked> Profiles</label>
@@ -415,7 +414,8 @@
       </div>
       <span style="color:#555;font-size:0.8em;align-self:center;">|</span>
       <div class="type-checkboxes">
-        <label><input type="checkbox" id="chkBTC" checked> BTC</label>
+        <label><input type="checkbox" id="chkBitcoin" checked> BTC</label>
+        <label><input type="checkbox" id="chkTestnet3" checked> TBTC</label>
         <label><input type="checkbox" id="chkLTC" checked> LTC</label>
         <label><input type="checkbox" id="chkDOG" checked> DOG</label>
         <label><input type="checkbox" id="chkMZC" checked> MZC</label>
@@ -438,10 +438,6 @@
       <label class="ub-field-label" for="ubSearch">Search</label>
       <input type="text" id="ubSearch" placeholder="e.g., bitcoin art" />
       <div class="ub-checkbox-row">
-        <input type="checkbox" id="ubMainnet" />
-        <label for="ubMainnet">Mainnet</label>
-      </div>
-      <div class="ub-checkbox-row">
         <input type="checkbox" id="ubObjects" checked />
         <label for="ubObjects">Objects</label>
       </div>
@@ -454,8 +450,11 @@
         <label for="ubMessages">Messages</label>
       </div>
       <div class="ub-checkbox-row" style="margin-top:4px;">
-        <input type="checkbox" id="ubBTC" checked />
-        <label for="ubBTC">BTC</label>
+        <input type="checkbox" id="ubBitcoin" checked />
+        <label for="ubBitcoin">BTC</label>
+        &nbsp;
+        <input type="checkbox" id="ubTestnet3" checked />
+        <label for="ubTestnet3">TBTC</label>
         &nbsp;
         <input type="checkbox" id="ubLTC" checked />
         <label for="ubLTC">LTC</label>
@@ -472,7 +471,7 @@
         <button class="ub-btn-go" onclick="goUrlBuilder()">Go</button>
       </div>
       <div class="ub-output" id="ubOutput"></div>
-      <p class="ub-example">Example: <code>search.html?search=bitcoin+art&amp;mainnet=true&amp;objects=true&amp;profiles=true&amp;messages=true</code></p>
+      <p class="ub-example">Example: <code>search.html?search=bitcoin+art&amp;objects=true&amp;profiles=true&amp;messages=true</code></p>
     </div>
   </div>
 
@@ -700,24 +699,24 @@
         const profile = await fetchProfileByAddress(urn, mainnet, signal);
         if (!profile) continue;
         const displayName = profile.DisplayName || profile.URN || urn;
-        cleanMessage = cleanMessage.replace(match[0], createUrnLink(displayName, urn, mainnet));
+        cleanMessage = cleanMessage.replace(match[0], createUrnLink(displayName, urn));
       }
       const keywordMatches = [...cleanMessage.matchAll(keywordRegex)];
       for (const match of keywordMatches) {
         const keyword = match[1];
         cleanMessage = cleanMessage.replace(
           `#${keyword}`,
-          `<span class="keyword-link" data-keyword="${escapeHtml(keyword)}" data-mainnet="${mainnet}">#${escapeHtml(keyword)}</span>`
+          `<span class="keyword-link" data-keyword="${escapeHtml(keyword)}">#${escapeHtml(keyword)}</span>`
         );
       }
       return { cleanMessage, attachments: parsedAttachments, links: parsedLinks };
     };
 
-    const createUrnLink = (displayText, address, mainnet) => {
+    const createUrnLink = (displayText, address) => {
       if (!displayText) return '';
       const safeText = escapeHtml(displayText);
       const safeAddr = escapeHtml(address);
-      return `<span class="urn-link" data-urn="${safeAddr}" data-mainnet="${mainnet}">${safeText}</span>`;
+      return `<span class="urn-link" data-urn="${safeAddr}">${safeText}</span>`;
     };
 
     // ── Root/message normalisation ───────────────────────────────────────
@@ -737,7 +736,12 @@
       const toAddresses = numOut > 1
         ? outputAddresses.slice(Math.max(0, numOut - 3), numOut - 1)
         : [];
-      return { message: msg, fromAddress: signedBy, toAddresses, blockDate, txId };
+      // Extract File field — object keyed by filename with byte-size values e.g. {"photo.jpg": 462}
+      const rawFile = root['File'] ?? root.File ?? null;
+      const files = (rawFile && typeof rawFile === 'object' && !Array.isArray(rawFile))
+        ? Object.keys(rawFile).filter(f => f && f !== 'SIG')
+        : [];
+      return { message: msg, fromAddress: signedBy, toAddresses, blockDate, txId, files };
     };
 
     // ── Lazy-loading observer ────────────────────────────────────────────
@@ -836,7 +840,9 @@
       const card = document.createElement('a');
       card.className = 'result-card';
       const objectAddress = Object.keys(obj.Creators || {})[0] || '';
-      card.href = `objects.html?urn=${encodeURIComponent(objectAddress)}&mainnet=${document.getElementById('mainnetToggle').checked}`;
+      const chainUpper = (blockchain || '').toUpperCase();
+      const mainnet = (chainUpper === 'BTC-TESTNET' ? 'TBTC' : chainUpper) !== 'TBTC';
+      card.href = `objects.html?urn=${encodeURIComponent(objectAddress)}&mainnet=${mainnet}`;
       card.target = '_blank';
       card.rel = 'noopener noreferrer';
       const imgEl = document.createElement('img');
@@ -865,7 +871,9 @@
       const urn = profile.URN || '';
       const card = document.createElement('a');
       card.className = 'result-card';
-      card.href = `socials.html?urn=${encodeURIComponent(urn)}&mainnet=${document.getElementById('mainnetToggle').checked}`;
+      const chainUpper = (blockchain || '').toUpperCase();
+      const mainnet = (chainUpper === 'BTC-TESTNET' ? 'TBTC' : chainUpper) !== 'TBTC';
+      card.href = `socials.html?urn=${encodeURIComponent(urn)}&mainnet=${mainnet}`;
       card.target = '_blank';
       card.rel = 'noopener noreferrer';
       const imgEl = document.createElement('img');
@@ -886,8 +894,20 @@
       return card;
     };
 
-    const renderMessageCard = async (normalized, mainnet, signal, blockchain) => {
+    const renderMessageCard = async (normalized, signal, blockchain) => {
+      const chainUpper = (blockchain || '').toUpperCase();
+      const mainnet = (chainUpper === 'BTC-TESTNET' ? 'TBTC' : chainUpper) !== 'TBTC';
       const { cleanMessage, attachments, links } = await parseMessage(normalized.message, mainnet, signal);
+
+      // Append File-field attachments using the root's transaction ID
+      if (normalized.txId && normalized.files && normalized.files.length > 0) {
+        for (const filename of normalized.files) {
+          if (filename && typeof filename === 'string') {
+            attachments.push({ hash: normalized.txId, filename });
+          }
+        }
+      }
+
       const fromProfile = await fetchProfileByAddress(normalized.fromAddress, mainnet, signal);
       const fromName = fromProfile
         ? (fromProfile.DisplayName || fromProfile.URN || abbreviateAddress(normalized.fromAddress))
@@ -900,7 +920,7 @@
       const toLinks = await Promise.all(normalized.toAddresses.map(async (addr) => {
         const p = await fetchProfileByAddress(addr, mainnet, signal);
         const label = p ? (p.DisplayName || p.URN || abbreviateAddress(addr)) : abbreviateAddress(addr);
-        return createUrnLink(label, addr, mainnet);
+        return createUrnLink(label, addr);
       }));
 
       const card = document.createElement('div');
@@ -921,7 +941,7 @@
       loadImageWithTimeout(senderImageUrl).then(url => { senderImg.src = url; }).catch(() => {});
       const senderName = document.createElement('span');
       senderName.className = 'msg-sender-name';
-      senderName.innerHTML = createUrnLink(fromName, normalized.fromAddress, mainnet);
+      senderName.innerHTML = createUrnLink(fromName, normalized.fromAddress);
       senderDiv.appendChild(senderImg);
       senderDiv.appendChild(senderName);
       card.appendChild(senderDiv);
@@ -941,7 +961,7 @@
       const metaDiv = document.createElement('div');
       metaDiv.className = 'message-meta';
       const toStr = toLinks.length ? ` | To: ${toLinks.join(', ')}` : '';
-      metaDiv.innerHTML = `From: ${createUrnLink(fromName, normalized.fromAddress, mainnet)}${toStr} | Date: ${escapeHtml(normalized.blockDate)}`;
+      metaDiv.innerHTML = `From: ${createUrnLink(fromName, normalized.fromAddress)}${toStr} | Date: ${escapeHtml(normalized.blockDate)}`;
       card.appendChild(metaDiv);
 
       // Click handler for URN/keyword links
@@ -951,13 +971,11 @@
         if (urnEl) {
           event.preventDefault();
           const urn = urnEl.getAttribute('data-urn');
-          const mn = urnEl.getAttribute('data-mainnet') === 'true';
-          window.open(`socials.html?urn=${encodeURIComponent(urn)}&mainnet=${mn}`, '_blank');
+          window.open(`socials.html?urn=${encodeURIComponent(urn)}&mainnet=${mainnet}`, '_blank');
         } else if (kwEl) {
           event.preventDefault();
           const kw = kwEl.getAttribute('data-keyword');
-          const mn = kwEl.getAttribute('data-mainnet') === 'true';
-          window.open(`socials.html?urn=${encodeURIComponent('#' + kw)}&mainnet=${mn}`, '_blank');
+          window.open(`socials.html?urn=${encodeURIComponent('#' + kw)}&mainnet=${mainnet}`, '_blank');
         }
       });
 
@@ -984,7 +1002,6 @@
 
       const signal = state.abortController.signal;
       const searchText = document.getElementById('searchInput').value.trim();
-      const mainnet = document.getElementById('mainnetToggle').checked;
       const wantObjects = document.getElementById('chkObjects').checked;
       const wantProfiles = document.getElementById('chkProfiles').checked;
       const wantMessages = document.getElementById('chkMessages').checked;
@@ -1038,12 +1055,16 @@
         for (const result of (objectResults || [])) {
           const obj = result.Object || result.object;
           if (!obj) continue;
+          // Skip unnamed/blank objects — they have no meaningful display name
+          if (!obj.Name) continue;
           items.push({ type: 'object', raw: obj, blockchain: result.Blockchain || result.blockchain || '' });
         }
 
         for (const result of (profileResults || [])) {
           const profile = result.Profile || result.profile;
           if (!profile) continue;
+          // Skip unknown profiles — they have neither a display name nor a URN
+          if (!profile.DisplayName && !profile.URN) continue;
           items.push({ type: 'profile', raw: profile, blockchain: result.Blockchain || result.blockchain || '' });
         }
 
@@ -1056,14 +1077,21 @@
         }
 
         // Filter by selected blockchain checkboxes
-        const allowedChains = new Set(
-          ['BTC', 'LTC', 'DOG', 'MZC'].filter(c => document.getElementById(`chk${c}`).checked)
-        );
-        if (allowedChains.size < 4) {
-          items.splice(0, items.length, ...items.filter(
-            item => allowedChains.has((item.blockchain || '').toUpperCase())
-          ));
-        }
+        const allowedChains = new Set();
+        if (document.getElementById('chkBitcoin').checked) allowedChains.add('BTC');
+        if (document.getElementById('chkTestnet3').checked) allowedChains.add('TBTC');
+        if (document.getElementById('chkLTC').checked) allowedChains.add('LTC');
+        if (document.getElementById('chkDOG').checked) allowedChains.add('DOG');
+        if (document.getElementById('chkMZC').checked) allowedChains.add('MZC');
+        items.splice(0, items.length, ...items.filter(item => {
+          const chain = (item.blockchain || '').toUpperCase();
+          // The API does not always populate Blockchain for Bitcoin-based networks (BTC/TBTC).
+          // Treat empty blockchain as matching whenever BTC or TBTC is selected.
+          if (!chain) return allowedChains.has('BTC') || allowedChains.has('TBTC');
+          // The API returns "BTC-testnet" for testnet results; normalise to TBTC for the check.
+          const normalised = (chain === 'BTC-TESTNET') ? 'TBTC' : chain;
+          return allowedChains.has(normalised);
+        }));
 
         // Sort by date descending (newest first); items without a date go to the end
         items.sort((a, b) => {
@@ -1094,7 +1122,7 @@
             } else if (item.type === 'profile') {
               feed.appendChild(renderProfileCard(item.raw, item.blockchain));
             } else if (item.type === 'message') {
-              const card = await renderMessageCard(item.data, mainnet, signal, item.blockchain);
+              const card = await renderMessageCard(item.data, signal, item.blockchain);
               if (state.currentSearchId !== searchId) break;
               feed.appendChild(card);
             }
@@ -1129,23 +1157,21 @@
 
     window.addEventListener('load', () => {
       const search = getQueryParam('search');
-      const mainnet = getQueryParam('mainnet') === 'true';
       const objects = getQueryParam('objects');
       const profiles = getQueryParam('profiles');
       const messages = getQueryParam('messages');
 
-      if (mainnet) {
-        document.getElementById('mainnetToggle').checked = true;
-      }
       if (objects !== null) document.getElementById('chkObjects').checked = objects === 'true';
       if (profiles !== null) document.getElementById('chkProfiles').checked = profiles === 'true';
       if (messages !== null) document.getElementById('chkMessages').checked = messages === 'true';
 
-      const btc = getQueryParam('btc');
+      const bitcoin = getQueryParam('bitcoin');
+      const testnet3 = getQueryParam('testnet3');
       const ltc = getQueryParam('ltc');
       const dog = getQueryParam('dog');
       const mzc = getQueryParam('mzc');
-      if (btc !== null) document.getElementById('chkBTC').checked = btc === 'true';
+      if (bitcoin !== null) document.getElementById('chkBitcoin').checked = bitcoin === 'true';
+      if (testnet3 !== null) document.getElementById('chkTestnet3').checked = testnet3 === 'true';
       if (ltc !== null) document.getElementById('chkLTC').checked = ltc === 'true';
       if (dog !== null) document.getElementById('chkDOG').checked = dog === 'true';
       if (mzc !== null) document.getElementById('chkMZC').checked = mzc === 'true';
@@ -1163,11 +1189,11 @@
     // ── URL Builder ──────────────────────────────────────────────────────
     function openUrlBuilder() {
       document.getElementById('ubSearch').value = document.getElementById('searchInput').value;
-      document.getElementById('ubMainnet').checked = document.getElementById('mainnetToggle').checked;
       document.getElementById('ubObjects').checked = document.getElementById('chkObjects').checked;
       document.getElementById('ubProfiles').checked = document.getElementById('chkProfiles').checked;
       document.getElementById('ubMessages').checked = document.getElementById('chkMessages').checked;
-      document.getElementById('ubBTC').checked = document.getElementById('chkBTC').checked;
+      document.getElementById('ubBitcoin').checked = document.getElementById('chkBitcoin').checked;
+      document.getElementById('ubTestnet3').checked = document.getElementById('chkTestnet3').checked;
       document.getElementById('ubLTC').checked = document.getElementById('chkLTC').checked;
       document.getElementById('ubDOG').checked = document.getElementById('chkDOG').checked;
       document.getElementById('ubMZC').checked = document.getElementById('chkMZC').checked;
@@ -1181,17 +1207,16 @@
 
     function generateUrlBuilder() {
       const search = document.getElementById('ubSearch').value.trim();
-      const mainnet = document.getElementById('ubMainnet').checked;
       const objects = document.getElementById('ubObjects').checked;
       const profiles = document.getElementById('ubProfiles').checked;
       const messages = document.getElementById('ubMessages').checked;
       const params = new URLSearchParams();
       if (search) params.set('search', search);
-      if (mainnet) params.set('mainnet', 'true');
       params.set('objects', String(objects));
       params.set('profiles', String(profiles));
       params.set('messages', String(messages));
-      params.set('btc', String(document.getElementById('ubBTC').checked));
+      params.set('bitcoin', String(document.getElementById('ubBitcoin').checked));
+      params.set('testnet3', String(document.getElementById('ubTestnet3').checked));
       params.set('ltc', String(document.getElementById('ubLTC').checked));
       params.set('dog', String(document.getElementById('ubDOG').checked));
       params.set('mzc', String(document.getElementById('ubMZC').checked));
