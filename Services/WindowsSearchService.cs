@@ -166,9 +166,11 @@ namespace P2FK.IO.Services
 
                 string detectedBlockchain = DetectFirstOutputAddress(rootObj.Value);
 
-                // If Block Date is absent from the cached ROOT.json for a sidechain transaction,
-                // fetch fresh data directly from the blockchain node so callers receive correct dates.
-                if (IsSidechain(detectedBlockchain) && !HasBlockDate(rootObj.Value))
+                // If Block Date is absent from the cached ROOT.json, fetch fresh data directly from the
+                // blockchain node so callers receive the correct date. ROOT.json files written by the
+                // bulk --getrootsbyaddress CLI command may lack Block Date; --getrootbytransactionid
+                // always includes it.
+                if (IsKnownBlockchain(detectedBlockchain) && !HasBlockDate(rootObj.Value))
                 {
                     var liveRoot = await FetchRootFromBlockchainAsync(txId, detectedBlockchain);
                     if (liveRoot != null)
@@ -352,11 +354,14 @@ namespace P2FK.IO.Services
             return results;
         }
 
-        // ── Sidechain date enrichment ──────────────────────────────────────────
+        // ── Block Date enrichment ──────────────────────────────────────────────
 
-        /// <summary>Returns true when the blockchain is one of the supported sidechains.</summary>
-        private static bool IsSidechain(string blockchain) =>
-            blockchain is "LTC" or "DOG" or "MZC";
+        /// <summary>
+        /// Returns true when the blockchain identifier is one we can query via the CLI.
+        /// "Unknown" roots are skipped because there is no node to call.
+        /// </summary>
+        private static bool IsKnownBlockchain(string blockchain) =>
+            blockchain is "BTC" or "BTC-testnet" or "LTC" or "DOG" or "MZC";
 
         /// <summary>
         /// Returns true when the ROOT JSON element contains a non-empty "Block Date"
@@ -378,25 +383,30 @@ namespace P2FK.IO.Services
         }
 
         /// <summary>
-        /// Queries the specified sidechain blockchain node for a root by its transaction ID.
+        /// Queries the appropriate blockchain node for a root by its transaction ID,
+        /// using the same CLI arguments as <see cref="Controllers.GetRootByTransactionIDController"/>.
         /// Returns null if the call fails or returns unusable data.
         /// </summary>
         private async Task<JsonElement?> FetchRootFromBlockchainAsync(string txId, string blockchain)
         {
             string? cliPath = blockchain switch
             {
-                "LTC" => _wrapper.LTCCLIPath,
-                "DOG" => _wrapper.DOGCLIPath,
-                "MZC" => _wrapper.MZCCLIPath,
-                _ => null
+                "BTC"         => _wrapper.ProdCLIPath,
+                "BTC-testnet" => _wrapper.TestCLIPath,
+                "LTC"         => _wrapper.LTCCLIPath,
+                "DOG"         => _wrapper.DOGCLIPath,
+                "MZC"         => _wrapper.MZCCLIPath,
+                _             => null
             };
 
             string? arguments = blockchain switch
             {
-                "LTC" => $"--versionbyte {_wrapper.LTCVersionByte} --getrootbytransactionid --password {_wrapper.LTCRPCPassword} --url {_wrapper.LTCRPCURL} --username {_wrapper.LTCRPCUser} --tid {txId}",
-                "DOG" => $"--versionbyte {_wrapper.DOGVersionByte} --getrootbytransactionid --password {_wrapper.DOGRPCPassword} --url {_wrapper.DOGRPCURL} --username {_wrapper.DOGRPCUser} --tid {txId}",
-                "MZC" => $"--versionbyte {_wrapper.MZCVersionByte} --getrootbytransactionid --password {_wrapper.MZCRPCPassword} --url {_wrapper.MZCRPCURL} --username {_wrapper.MZCRPCUser} --tid {txId}",
-                _ => null
+                "BTC"         => $"--versionbyte {_wrapper.ProdVersionByte} --getrootbytransactionid --password {_wrapper.ProdRPCPassword} --url {_wrapper.ProdRPCURL} --username {_wrapper.ProdRPCUser} --tid {txId}",
+                "BTC-testnet" => $"--versionbyte {_wrapper.TestVersionByte} --getrootbytransactionid --password {_wrapper.TestRPCPassword} --url {_wrapper.TestRPCURL} --username {_wrapper.TestRPCUser} --tid {txId}",
+                "LTC"         => $"--versionbyte {_wrapper.LTCVersionByte} --getrootbytransactionid --password {_wrapper.LTCRPCPassword} --url {_wrapper.LTCRPCURL} --username {_wrapper.LTCRPCUser} --tid {txId}",
+                "DOG"         => $"--versionbyte {_wrapper.DOGVersionByte} --getrootbytransactionid --password {_wrapper.DOGRPCPassword} --url {_wrapper.DOGRPCURL} --username {_wrapper.DOGRPCUser} --tid {txId}",
+                "MZC"         => $"--versionbyte {_wrapper.MZCVersionByte} --getrootbytransactionid --password {_wrapper.MZCRPCPassword} --url {_wrapper.MZCRPCURL} --username {_wrapper.MZCRPCUser} --tid {txId}",
+                _             => null
             };
 
             if (cliPath == null || arguments == null) return null;
