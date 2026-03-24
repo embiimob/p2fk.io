@@ -840,7 +840,8 @@
       const card = document.createElement('a');
       card.className = 'result-card';
       const objectAddress = Object.keys(obj.Creators || {})[0] || '';
-      const mainnet = (blockchain || '').toUpperCase() !== 'TBTC';
+      const chainUpper = (blockchain || '').toUpperCase();
+      const mainnet = (chainUpper === 'BTC-TESTNET' ? 'TBTC' : chainUpper) !== 'TBTC';
       card.href = `objects.html?urn=${encodeURIComponent(objectAddress)}&mainnet=${mainnet}`;
       card.target = '_blank';
       card.rel = 'noopener noreferrer';
@@ -870,7 +871,8 @@
       const urn = profile.URN || '';
       const card = document.createElement('a');
       card.className = 'result-card';
-      const mainnet = (blockchain || '').toUpperCase() !== 'TBTC';
+      const chainUpper = (blockchain || '').toUpperCase();
+      const mainnet = (chainUpper === 'BTC-TESTNET' ? 'TBTC' : chainUpper) !== 'TBTC';
       card.href = `socials.html?urn=${encodeURIComponent(urn)}&mainnet=${mainnet}`;
       card.target = '_blank';
       card.rel = 'noopener noreferrer';
@@ -893,7 +895,8 @@
     };
 
     const renderMessageCard = async (normalized, signal, blockchain) => {
-      const mainnet = (blockchain || '').toUpperCase() !== 'TBTC';
+      const chainUpper = (blockchain || '').toUpperCase();
+      const mainnet = (chainUpper === 'BTC-TESTNET' ? 'TBTC' : chainUpper) !== 'TBTC';
       const { cleanMessage, attachments, links } = await parseMessage(normalized.message, mainnet, signal);
 
       // Append File-field attachments using the root's transaction ID
