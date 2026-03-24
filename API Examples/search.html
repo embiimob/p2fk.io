@@ -736,9 +736,11 @@
       const toAddresses = numOut > 1
         ? outputAddresses.slice(Math.max(0, numOut - 3), numOut - 1)
         : [];
-      // Extract File field (single string or array of strings)
+      // Extract File field — object keyed by filename with byte-size values e.g. {"photo.jpg": 462}
       const rawFile = root['File'] ?? root.File ?? null;
-      const files = rawFile == null ? [] : (Array.isArray(rawFile) ? rawFile : [rawFile]);
+      const files = (rawFile && typeof rawFile === 'object' && !Array.isArray(rawFile))
+        ? Object.keys(rawFile).filter(f => f && f !== 'SIG')
+        : [];
       return { message: msg, fromAddress: signedBy, toAddresses, blockDate, txId, files };
     };
 
