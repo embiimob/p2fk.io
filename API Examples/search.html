@@ -1081,7 +1081,9 @@
           // The API does not always populate Blockchain for Bitcoin-based networks (BTC/TBTC).
           // Treat empty blockchain as matching whenever BTC or TBTC is selected.
           if (!chain) return allowedChains.has('BTC') || allowedChains.has('TBTC');
-          return allowedChains.has(chain);
+          // The API returns "BTC-testnet" for testnet results; normalise to TBTC for the check.
+          const normalised = (chain === 'BTC-TESTNET') ? 'TBTC' : chain;
+          return allowedChains.has(normalised);
         }));
 
         // Sort by date descending (newest first); items without a date go to the end
