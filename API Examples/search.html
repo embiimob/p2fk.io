@@ -389,6 +389,24 @@
     .ub-example { font-size: 0.75em; color: #b0b0b0; margin-top: 10px; }
     .ub-example code { color: #bb86fc; }
     /* ── Scrollbar ───────────────────────────────────────────────────── */
+    /* ── TxID copy & date-refresh controls ──────────────────────────── */
+    .txid-copy {
+      color: #bb86fc;
+      cursor: pointer;
+      font-family: monospace;
+      font-size: 0.88em;
+      user-select: none;
+      white-space: nowrap;
+    }
+    .txid-copy:hover { color: #7c4dff; }
+    .refresh-date {
+      color: #ff9800;
+      cursor: pointer;
+      font-size: 0.85em;
+      user-select: none;
+    }
+    .refresh-date:hover { opacity: 0.75; }
+    /* ── Scrollbar ───────────────────────────────────────────────────── */
     ::-webkit-scrollbar { width: 5px; }
     ::-webkit-scrollbar-track { background: #1a1a1a; }
     ::-webkit-scrollbar-thumb { background: #5600ca; border-radius: 3px; }
@@ -641,6 +659,9 @@
         return d.toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
       } catch { return dateStr; }
     };
+
+    // Returns true when a block date is the default/unset sentinel (0001-01-01T00:00:00…)
+    const isNullDate = (dateStr) => !dateStr || String(dateStr).startsWith('0001-01-01');
 
     const getFileCardIcon = (ext) => {
       if (/^(zip|tar|gz|bz2|xz|rar|7z|tgz)$/.test(ext)) return '📦';
@@ -961,13 +982,35 @@
       const metaDiv = document.createElement('div');
       metaDiv.className = 'message-meta';
       const toStr = toLinks.length ? ` | To: ${toLinks.join(', ')}` : '';
-      metaDiv.innerHTML = `From: ${createUrnLink(fromName, normalized.fromAddress)}${toStr} | Date: ${escapeHtml(normalized.blockDate)}`;
+
+      // Determine the correct API params for GetRootByTransactionID
+      const apiIsTestnet = !mainnet;
+      const validApiChains = ['BTC', 'LTC', 'DOG', 'MZC'];
+      const apiChain = apiIsTestnet ? 'BTC' : (validApiChains.includes(chainUpper) ? chainUpper : 'BTC');
+
+      // Date display — show Refresh link when block date is the unset sentinel
+      const nullDate = isNullDate(normalized.blockDate);
+      const refreshAttr = normalized.txId
+        ? ` <span class="refresh-date" data-txid="${escapeHtml(normalized.txId)}" data-apichain="${escapeHtml(apiChain)}" data-mainnet="${!apiIsTestnet}" title="Fetch confirmed block date from the chain">🔄 Refresh Date</span>`
+        : '';
+      const dateHtml = nullDate
+        ? `<span class="msg-date">Unknown</span>${refreshAttr}`
+        : `<span class="msg-date">${escapeHtml(normalized.blockDate)}</span>`;
+
+      // TxID copy button
+      const txidHtml = normalized.txId
+        ? ` | <span class="txid-copy" data-txid="${escapeHtml(normalized.txId)}" title="Copy transaction ID">📋 ${escapeHtml(normalized.txId.slice(0, 8))}…</span>`
+        : '';
+
+      metaDiv.innerHTML = `From: ${createUrnLink(fromName, normalized.fromAddress)}${toStr} | Date: ${dateHtml}${txidHtml}`;
       card.appendChild(metaDiv);
 
-      // Click handler for URN/keyword links
-      card.addEventListener('click', (event) => {
+      // Click handler for URN/keyword links, TxID copy, and date refresh
+      card.addEventListener('click', async (event) => {
         const urnEl = event.target.closest('.urn-link');
         const kwEl = event.target.closest('.keyword-link');
+        const copyEl = event.target.closest('.txid-copy');
+        const refreshEl = event.target.closest('.refresh-date');
         if (urnEl) {
           event.preventDefault();
           const urn = urnEl.getAttribute('data-urn');
@@ -976,6 +1019,51 @@
           event.preventDefault();
           const kw = kwEl.getAttribute('data-keyword');
           window.open(`socials.html?urn=${encodeURIComponent('#' + kw)}&mainnet=${mainnet}`, '_blank');
+        } else if (copyEl) {
+          event.preventDefault();
+          event.stopPropagation();
+          const txid = copyEl.getAttribute('data-txid');
+          try {
+            await navigator.clipboard.writeText(txid);
+          } catch {
+            const ta = document.createElement('textarea');
+            ta.value = txid;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+          }
+          const prev = copyEl.innerHTML;
+          copyEl.textContent = '✅ Copied!';
+          setTimeout(() => { copyEl.innerHTML = prev; }, 2000);
+        } else if (refreshEl) {
+          event.preventDefault();
+          event.stopPropagation();
+          const txid = refreshEl.getAttribute('data-txid');
+          if (!txid) return;
+          const apiChainParam = refreshEl.getAttribute('data-apichain') || 'BTC';
+          const mainnetParam = refreshEl.getAttribute('data-mainnet') === 'true';
+          refreshEl.textContent = '⏳ Fetching…';
+          refreshEl.style.pointerEvents = 'none';
+          try {
+            const url = `${BASE_URL}/GetRootByTransactionID/${encodeURIComponent(txid)}?mainnet=${mainnetParam}&blockchain=${apiChainParam}`;
+            const result = await fetchAPI(url, 'Fetch failed', null);
+            const root = Array.isArray(result) ? result[0] : result;
+            const newDate = (root && typeof root === 'object') ? (root['Block Date'] ?? root.BlockDate ?? '') : '';
+            if (newDate && !isNullDate(newDate)) {
+              const dateEl = metaDiv.querySelector('.msg-date');
+              if (dateEl) dateEl.textContent = newDate;
+              refreshEl.remove();
+            } else {
+              refreshEl.textContent = '❌ Not confirmed yet';
+              setTimeout(() => { refreshEl.textContent = '🔄 Refresh Date'; refreshEl.style.pointerEvents = ''; }, 3000);
+            }
+          } catch {
+            refreshEl.textContent = '❌ Error';
+            setTimeout(() => { refreshEl.textContent = '🔄 Refresh Date'; refreshEl.style.pointerEvents = ''; }, 3000);
+          }
         }
       });
 
