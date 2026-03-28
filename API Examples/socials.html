@@ -1185,11 +1185,11 @@
                         : `https://ipfs.io/ipfs/${hash}`;
                     const ext = (filename.match(/\.([^.]+)$/) || [])[1]?.toLowerCase() || "";
                     const isImage = /^(jpg|jpeg|png|gif|webp|bmp|svg|tiff|tif|ico|avif)$/.test(ext);
-                    const isAudio = /^(mp3|wav|ogg|flac)$/.test(ext);
-                    const isVideo = /^(mp4|webm|avi|mov)$/.test(ext);
+                    const isAudio = /^(mp3|wav|ogg|flac|webm|aac|m4a|opus|weba|aiff|aif)$/.test(ext);
+                    const isVideo = /^(mp4|avi|mov)$/.test(ext);
                     const isPDF = ext === "pdf";
-                    const audioMimeTypes = { mp3: "audio/mpeg", wav: "audio/wav", ogg: "audio/ogg", flac: "audio/flac" };
-                    const videoMimeTypes = { mp4: "video/mp4", webm: "video/webm", avi: "video/avi", mov: "video/quicktime" };
+                    const audioMimeTypes = { mp3: "audio/mpeg", wav: "audio/wav", ogg: "audio/ogg", flac: "audio/flac", webm: "audio/webm", aac: "audio/aac", m4a: "audio/mp4", opus: "audio/opus", weba: "audio/webm", aiff: "audio/aiff", aif: "audio/aiff" };
+                    const videoMimeTypes = { mp4: "video/mp4", avi: "video/x-msvideo", mov: "video/quicktime" };
                     if (isImage) {
                         mediaElement.innerHTML = `<img class="media-placeholder" src="${state.fallbackImage}" alt="Attachment" style="display: block;">`;
                         const img = mediaElement.querySelector("img");
