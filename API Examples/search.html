@@ -802,10 +802,8 @@
           imageElements.push({ img: el.querySelector('img'), url });
         } else if (isAudio) {
           el.innerHTML = `<audio controls style="display:none;"><source data-src="${url}" type="${audioMimeTypes[ext] || 'audio/wav'}">Audio not supported.</audio>`;
-          lazyLoadObserver.observe(el.querySelector('source'));
         } else if (isVideo) {
           el.innerHTML = `<video controls style="display:none;"><source data-src="${url}" type="${videoMimeTypes[ext] || 'video/mp4'}">Video not supported.</video>`;
-          lazyLoadObserver.observe(el.querySelector('source'));
         } else if (isPDF) {
           el.innerHTML = `<iframe class="pdf-viewer" src="${url}" title="${escapeHtml(filename)}"></iframe>`;
         } else {
@@ -1209,6 +1207,19 @@
               const card = await renderMessageCard(item.data, signal, item.blockchain);
               if (state.currentSearchId !== searchId) break;
               feed.appendChild(card);
+              // Initialize media sources now that elements are in the live DOM, so
+              // getBoundingClientRect() is accurate and load() won't be reset on insertion.
+              card.querySelectorAll('source[data-src]').forEach(source => {
+                const mediaEl = source.parentElement;
+                const rect = mediaEl.getBoundingClientRect();
+                if (rect.bottom >= 0 && rect.top <= window.innerHeight) {
+                  source.src = source.dataset.src;
+                  mediaEl.load();
+                  mediaEl.style.display = 'block';
+                } else {
+                  lazyLoadObserver.observe(source);
+                }
+              });
             }
           }
         }
