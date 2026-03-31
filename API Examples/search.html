@@ -497,7 +497,7 @@
   <script>
     const BASE_URL = 'https://p2fk.io';
 
-    const BATCH_SIZE = 20;           // results requested from the API per type×chain per fetch
+    const API_FETCH_BATCH_SIZE = 20;  // results requested from the API per type×chain per fetch
     const DISPLAY_BATCH_SIZE = 20;   // max total items rendered per batch (across all types and chains)
     const MAX_PER_CHAIN = 1000; // max rendered cards per blockchain; fetching continues past this to find minority chains
 
@@ -550,7 +550,7 @@
         const [type] = key.split(':', 2);
         const p = state.pagination[key];
         return fetchAPI(
-          `${BASE_URL}/${endpointForType(type)}?searchString=${encodeURIComponent(state.lastSearchText)}&qty=${BATCH_SIZE}&skip=${p.skip}&${p.params}`,
+          `${BASE_URL}/${endpointForType(type)}?searchString=${encodeURIComponent(state.lastSearchText)}&qty=${API_FETCH_BATCH_SIZE}&skip=${p.skip}&${p.params}`,
           `${type} search failed`, signal
         ).catch(() => []);
       }));
@@ -559,7 +559,7 @@
       pending.forEach(([key], i) => {
         const len = (rawResults[i] || []).length;
         state.pagination[key].skip += len;
-        if (len < BATCH_SIZE) state.pagination[key].exhausted = true;
+        if (len < API_FETCH_BATCH_SIZE) state.pagination[key].exhausted = true;
       });
 
       // Fan results out into per-type arrays for appendResultItems
@@ -1275,7 +1275,7 @@
       let rendered = 0;
       for (const item of items) {
         if (state.currentSearchId !== searchId) break;
-        if (rendered >= DISPLAY_BATCH_SIZE) break; // stop after 20 total items regardless of type or chain
+        if (rendered >= DISPLAY_BATCH_SIZE) break; // stop after DISPLAY_BATCH_SIZE total items regardless of type or chain
         const chainKey = normalizeChain(item.blockchain);
         if ((state.chainCounts[chainKey] || 0) >= MAX_PER_CHAIN) continue; // discard — this chain is saturated
         state.chainCounts[chainKey] = (state.chainCounts[chainKey] || 0) + 1;

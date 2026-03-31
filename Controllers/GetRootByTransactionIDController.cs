@@ -40,31 +40,31 @@ namespace P2FK.IO.Controllers
                 {
                     arguments = "--versionbyte " + _wrapper.LTCVersionByte + " --getrootbytransactionid --password " + _wrapper.LTCRPCPassword + " --url " + _wrapper.LTCRPCURL + " --username " + _wrapper.LTCRPCUser + " --tid " + id;
                     if (verbose) { arguments = arguments + " --verbose"; }
-                    result = await _wrapper.RunCommandAsync(_wrapper.LTCCLIPath, arguments, HttpContext.RequestAborted);
+                    result = await _wrapper.RunCommandAsync(_wrapper.LTCCLIPath, arguments, CancellationToken.None);
                 }
                 else if (blockchain == "DOG")
                 {
                     arguments = "--versionbyte " + _wrapper.DOGVersionByte + " --getrootbytransactionid --password " + _wrapper.DOGRPCPassword + " --url " + _wrapper.DOGRPCURL + " --username " + _wrapper.DOGRPCUser + " --tid " + id;
                     if (verbose) { arguments = arguments + " --verbose"; }
-                    result = await _wrapper.RunCommandAsync(_wrapper.DOGCLIPath, arguments, HttpContext.RequestAborted);
+                    result = await _wrapper.RunCommandAsync(_wrapper.DOGCLIPath, arguments, CancellationToken.None);
                 }
                 else if (blockchain == "MZC")
                 {
                     arguments = "--versionbyte " + _wrapper.MZCVersionByte + " --getrootbytransactionid --password " + _wrapper.MZCRPCPassword + " --url " + _wrapper.MZCRPCURL + " --username " + _wrapper.MZCRPCUser + " --tid " + id;
                     if (verbose) { arguments = arguments + " --verbose"; }
-                    result = await _wrapper.RunCommandAsync(_wrapper.MZCCLIPath, arguments, HttpContext.RequestAborted);
+                    result = await _wrapper.RunCommandAsync(_wrapper.MZCCLIPath, arguments, CancellationToken.None);
                 }
                 else if (mainnet)
                 {
                     arguments = "--versionbyte " + _wrapper.ProdVersionByte + " --getrootbytransactionid --password " + _wrapper.ProdRPCPassword + " --url " + _wrapper.ProdRPCURL + " --username " + _wrapper.ProdRPCUser +" --tid " + id;
                     if (verbose) { arguments = arguments + " --verbose"; }
-                    result = await _wrapper.RunCommandAsync(_wrapper.ProdCLIPath, arguments, HttpContext.RequestAborted);
+                    result = await _wrapper.RunCommandAsync(_wrapper.ProdCLIPath, arguments, CancellationToken.None);
                 }
                 else
                 {
                     arguments = "--versionbyte " + _wrapper.TestVersionByte + " --getrootbytransactionid --password " + _wrapper.TestRPCPassword + " --url " + _wrapper.TestRPCURL + " --username " + _wrapper.TestRPCUser + " --tid " + id;
                     if (verbose) { arguments = arguments + " --verbose"; }
-                    result = await _wrapper.RunCommandAsync(_wrapper.TestCLIPath, arguments, HttpContext.RequestAborted);
+                    result = await _wrapper.RunCommandAsync(_wrapper.TestCLIPath, arguments, CancellationToken.None);
                 }
 
                 return Content(result, "application/json");
