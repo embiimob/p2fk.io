@@ -1308,11 +1308,23 @@
       if (document.getElementById('ubObjects').checked) params.set('objects', 'true');
       if (document.getElementById('ubProfiles').checked) params.set('profiles', 'true');
       if (!document.getElementById('ubMessages').checked) params.set('messages', 'false');
-      if (document.getElementById('ubBitcoin').checked) params.set('bitcoin', 'true');
-      // testnet3 is the default — never include it in the URL
-      if (document.getElementById('ubLTC').checked) params.set('ltc', 'true');
-      if (document.getElementById('ubDOG').checked) params.set('dog', 'true');
-      if (document.getElementById('ubMZC').checked) params.set('mzc', 'true');
+      const t3 = document.getElementById('ubTestnet3').checked;
+      const btc = document.getElementById('ubBitcoin').checked;
+      const ltc = document.getElementById('ubLTC').checked;
+      const dog = document.getElementById('ubDOG').checked;
+      const mzc = document.getElementById('ubMZC').checked;
+      const otherBlockchain = btc || ltc || dog || mzc;
+      if (btc) params.set('bitcoin', 'true');
+      if (ltc) params.set('ltc', 'true');
+      if (dog) params.set('dog', 'true');
+      if (mzc) params.set('mzc', 'true');
+      // testnet3 rules:
+      //   other blockchains enabled + t3 checked  → include testnet3=true
+      //   other blockchains enabled + t3 unchecked → omit (just list the other chains)
+      //   no other blockchain    + t3 unchecked  → include testnet3=false (server ignores, falls back to default)
+      //   no other blockchain    + t3 checked    → omit (it's the default)
+      if (otherBlockchain && t3) params.set('testnet3', 'true');
+      if (!otherBlockchain && !t3) params.set('testnet3', 'false');
       const url = 'search.html?' + params.toString();
       document.getElementById('ubOutput').textContent = url;
       return url;
