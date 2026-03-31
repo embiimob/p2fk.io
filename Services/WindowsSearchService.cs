@@ -274,8 +274,6 @@ namespace P2FK.IO.Services
 
                 string detectedBlockchain = DetectBlockchain(address);
 
-                if (skipped < skip) { skipped++; continue; }
-
                 // Always load OBJ.json from the address folder, regardless of which file
                 // was matched by the search (e.g. a PDF or HTML file in the same folder).
                 string objJsonPath = Path.Combine(_rootPath, address, "OBJ.json");
@@ -284,9 +282,13 @@ namespace P2FK.IO.Services
                 var obj = await ReadJsonAsync<JsonElement?>(objJsonPath);
                 if (obj == null) continue;
 
-                // Skip objects where URN is null or missing
-                if (!obj.Value.TryGetProperty("URN", out var objUrn) || objUrn.ValueKind == JsonValueKind.Null)
+                // Skip objects where URN is null, missing, or empty
+                if (!obj.Value.TryGetProperty("URN", out var objUrn) ||
+                    objUrn.ValueKind == JsonValueKind.Null ||
+                    (objUrn.ValueKind == JsonValueKind.String && string.IsNullOrWhiteSpace(objUrn.GetString())))
                     continue;
+
+                if (skipped < skip) { skipped++; continue; }
 
                 results.Add(new SearchResultObject
                 {
@@ -376,8 +378,6 @@ namespace P2FK.IO.Services
 
                 string detectedBlockchain = DetectBlockchain(address);
 
-                if (skipped < skip) { skipped++; continue; }
-
                 // Always load GetProfileByAddress.json from the address folder, regardless of
                 // which file was matched by the search (e.g. a PDF or HTML file in the same folder).
                 string profileJsonPath = Path.Combine(_rootPath, address, "GetProfileByAddress.json");
@@ -386,9 +386,13 @@ namespace P2FK.IO.Services
                 var profile = await ReadJsonAsync<JsonElement?>(profileJsonPath);
                 if (profile == null) continue;
 
-                // Skip profiles where URN is null or missing
-                if (!profile.Value.TryGetProperty("URN", out var profileUrn) || profileUrn.ValueKind == JsonValueKind.Null)
+                // Skip profiles where URN is null, missing, or empty
+                if (!profile.Value.TryGetProperty("URN", out var profileUrn) ||
+                    profileUrn.ValueKind == JsonValueKind.Null ||
+                    (profileUrn.ValueKind == JsonValueKind.String && string.IsNullOrWhiteSpace(profileUrn.GetString())))
                     continue;
+
+                if (skipped < skip) { skipped++; continue; }
 
                 results.Add(new SearchResultProfile
                 {
