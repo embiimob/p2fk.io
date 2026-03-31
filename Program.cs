@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Http.Timeouts;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Microsoft.Extensions.FileProviders;
 using Microsoft.OpenApi.Models;
 using Swashbuckle.AspNetCore.SwaggerUI;
 using System.Runtime.Versioning;
@@ -10,6 +11,11 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddSingleton<P2FK.IO.Wrapper>();
 builder.Services.AddMemoryCache();
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(policy =>
+        policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
+});
 if (OperatingSystem.IsWindows())
     builder.Services.AddSingleton<P2FK.IO.Services.WindowsSearchService>();
 
@@ -29,6 +35,17 @@ builder.WebHost.ConfigureKestrel(kestrel =>
 
 var app = builder.Build();
 
+// Serve on-chain files from the root folder at /root/{txid}/{filename}
+var wrapper = app.Services.GetRequiredService<P2FK.IO.Wrapper>();
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(wrapper.RootPath),
+    RequestPath = "/root",
+    ServeUnknownFileTypes = true,
+    DefaultContentType = "application/octet-stream"
+});
+
+app.UseCors();
 app.UseSwagger();
 app.UseStaticFiles();
 app.UseRequestTimeouts();

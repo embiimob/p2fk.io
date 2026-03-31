@@ -600,7 +600,7 @@
       urn = urn.replace(/\\/g, '/').replace(/\s+/g, '');
       const parts = urn.split(':').pop().split('/');
       return /^(BTC|LTC|DOG|MZC):/i.test(urn) || /^[A-Za-z0-9]+\/.+/.test(urn)
-        ? `https://bitfossil.org/${parts[0]}/${parts[1] || ''}`
+        ? `https://p2fk.io/root/${parts[0]}/${parts[1] || ''}`
         : '';
     };
 
@@ -616,7 +616,8 @@
           if (parsedUrl.protocol === 'file:') return null;
           if (['https:', 'data:'].includes(parsedUrl.protocol)) {
             return value
-              .replace(/^http:\/\/bitfossil\.com\//i, 'https://bitfossil.org/')
+              .replace(/^http:\/\/bitfossil\.com\//i, 'https://p2fk.io/root/')
+              .replace(/^https?:\/\/bitfossil\.org\//i, 'https://p2fk.io/root/')
               .replace(/^http:/i, 'https:');
           }
         } catch (e) { /* not a URL */ }
@@ -660,7 +661,7 @@
           : currentUrl;
         try {
           const img = new Image();
-          if (!gatewayUrl.includes('bitfossil.org')) img.crossOrigin = 'Anonymous';
+          if (!gatewayUrl.includes('p2fk.io/root')) img.crossOrigin = 'Anonymous';
           const result = await new Promise((resolve, reject) => {
             const timer = setTimeout(() => reject(new Error('Timeout')), timeout);
             img.onload = () => { clearTimeout(timer); cacheImage(url, gatewayUrl); resolve(gatewayUrl); };
@@ -867,7 +868,7 @@
       for (const { hash, filename } of attachments) {
         const isTxid = /^[0-9a-f]{64}$/i.test(hash);
         const url = isTxid
-          ? `https://bitfossil.org/${hash}/${encodeURIComponent(filename)}`
+          ? `https://p2fk.io/root/${hash}/${encodeURIComponent(filename)}`
           : `https://ipfs.io/ipfs/${hash}`;
         const ext = (filename.match(/\.([^.]+)$/) || [])[1]?.toLowerCase() || '';
         const isImage = /^(jpg|jpeg|png|gif|webp|bmp|svg|tiff|tif|ico|avif)$/.test(ext);
