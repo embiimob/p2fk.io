@@ -14,7 +14,7 @@ builder.Services.AddMemoryCache();
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
-        policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
+        policy.SetIsOriginAllowed(origin => true).AllowAnyMethod().AllowAnyHeader());
 });
 if (OperatingSystem.IsWindows())
     builder.Services.AddSingleton<P2FK.IO.Services.WindowsSearchService>();
@@ -35,6 +35,8 @@ builder.WebHost.ConfigureKestrel(kestrel =>
 
 var app = builder.Build();
 
+app.UseCors();
+
 // Serve on-chain files from the root folder at /root/{txid}/{filename}
 var wrapper = app.Services.GetRequiredService<P2FK.IO.Wrapper>();
 app.UseStaticFiles(new StaticFileOptions
@@ -45,7 +47,6 @@ app.UseStaticFiles(new StaticFileOptions
     DefaultContentType = "application/octet-stream"
 });
 
-app.UseCors();
 app.UseSwagger();
 app.UseStaticFiles();
 app.UseRequestTimeouts();
