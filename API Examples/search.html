@@ -497,7 +497,8 @@
   <script>
     const BASE_URL = 'https://p2fk.io';
 
-    const BATCH_SIZE = 100;
+    const BATCH_SIZE = 20;           // results requested from the API per type×chain per fetch
+    const DISPLAY_BATCH_SIZE = 20;   // max total items rendered per batch (across all types and chains)
     const MAX_PER_CHAIN = 1000; // max rendered cards per blockchain; fetching continues past this to find minority chains
 
     // Maps chain checkbox IDs to: key (used as pagination/display name) and
@@ -656,7 +657,7 @@
       return resolve(image) || resolve(urn) || fallbackImage;
     };
 
-    const loadImageWithTimeout = async (url, timeout = 15000) => {
+    const loadImageWithTimeout = async (url, timeout = 120000) => {
       if (state.imageCache.has(url)) return state.imageCache.get(url);
       if (url === fallbackImage) return url;
       const gateways = [
@@ -1274,6 +1275,7 @@
       let rendered = 0;
       for (const item of items) {
         if (state.currentSearchId !== searchId) break;
+        if (rendered >= DISPLAY_BATCH_SIZE) break; // stop after 20 total items regardless of type or chain
         const chainKey = normalizeChain(item.blockchain);
         if ((state.chainCounts[chainKey] || 0) >= MAX_PER_CHAIN) continue; // discard — this chain is saturated
         state.chainCounts[chainKey] = (state.chainCounts[chainKey] || 0) + 1;
