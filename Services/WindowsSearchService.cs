@@ -177,6 +177,10 @@ namespace P2FK.IO.Services
                 var rootObj = await ReadJsonAsync<JsonElement?>(rootJsonPath);
                 if (rootObj == null) continue;
 
+                // Skip roots where Output is null or missing
+                if (!rootObj.Value.TryGetProperty("Output", out var rootOutput) || rootOutput.ValueKind == JsonValueKind.Null)
+                    continue;
+
                 string detectedBlockchain = DetectFirstOutputAddress(rootObj.Value);
 
                 if (skipped < skip) { skipped++; continue; }
@@ -278,6 +282,10 @@ namespace P2FK.IO.Services
                 var obj = await ReadJsonAsync<JsonElement?>(objJsonPath);
                 if (obj == null) continue;
 
+                // Skip objects where URN is null or missing
+                if (!obj.Value.TryGetProperty("URN", out var objUrn) || objUrn.ValueKind == JsonValueKind.Null)
+                    continue;
+
                 results.Add(new SearchResultObject
                 {
                     Blockchain = detectedBlockchain,
@@ -374,6 +382,10 @@ namespace P2FK.IO.Services
 
                 var profile = await ReadJsonAsync<JsonElement?>(profileJsonPath);
                 if (profile == null) continue;
+
+                // Skip profiles where URN is null or missing
+                if (!profile.Value.TryGetProperty("URN", out var profileUrn) || profileUrn.ValueKind == JsonValueKind.Null)
+                    continue;
 
                 results.Add(new SearchResultProfile
                 {
