@@ -103,8 +103,11 @@ namespace P2FK.IO.Services
             if (_cache.TryGetValue(cacheKey, out List<SearchResultRoot>? cached) && cached != null)
                 return cached;
 
-            string sanitized = Sanitize(searchString ?? "");
-            bool hasSearch = !string.IsNullOrWhiteSpace(sanitized);
+            // Detect wildcard "*" before sanitisation strips the asterisk
+            bool isWildcard = (searchString ?? "").Trim() == "*";
+
+            string sanitized = isWildcard ? string.Empty : Sanitize(searchString ?? "");
+            bool hasSearch = !isWildcard && !string.IsNullOrWhiteSpace(sanitized);
 
             // Use a forward-slash SCOPE URI as required by Windows Search; escape any single quotes
             string scopeUri = "file:///" + _rootPath.Replace('\\', '/').Replace("'", "''");
@@ -112,7 +115,17 @@ namespace P2FK.IO.Services
             // When a search string is present, search all files in the scope (not just ROOT.json)
             // so that PDFs, HTML, and other files in root/{txId}/ folders are also matched.
             // The transaction ID is then extracted from the matched file path to locate ROOT.json.
-            string sql = hasSearch
+            //
+            // When the wildcard "*" is used, return all files in scope ordered by newest
+            // modified date so the caller sees a stream of the latest built-to-disk files.
+            string sql = isWildcard
+                ? $"""
+                    SELECT System.ItemPathDisplay, System.DateModified
+                    FROM SystemIndex
+                    WHERE SCOPE='{scopeUri}'
+                    ORDER BY System.DateModified DESC
+                    """
+                : hasSearch
                 ? $"""
                     SELECT System.ItemPathDisplay, System.DateModified
                     FROM SystemIndex
@@ -133,7 +146,9 @@ namespace P2FK.IO.Services
             // If Windows Search returned nothing (index not ready or files not yet indexed),
             // fall back to a direct filesystem scan so results are available immediately.
             if (rows.Count == 0)
-                rows = await FallbackScanAsync(hasSearch ? "*" : "ROOT.json", sanitized);
+                rows = await FallbackScanAsync(
+                    isWildcard || hasSearch ? "*" : "ROOT.json",
+                    isWildcard ? string.Empty : sanitized);
 
             // Deduplicate by transaction ID, keeping the newest-modified row per txid
             var txMap = new Dictionary<string, SearchRow>(StringComparer.OrdinalIgnoreCase);
@@ -187,15 +202,28 @@ namespace P2FK.IO.Services
             if (_cache.TryGetValue(cacheKey, out List<SearchResultObject>? cached) && cached != null)
                 return cached;
 
-            string sanitized = Sanitize(searchString ?? "");
-            bool hasSearch = !string.IsNullOrWhiteSpace(sanitized);
+            // Detect wildcard "*" before sanitisation strips the asterisk
+            bool isWildcard = (searchString ?? "").Trim() == "*";
+
+            string sanitized = isWildcard ? string.Empty : Sanitize(searchString ?? "");
+            bool hasSearch = !isWildcard && !string.IsNullOrWhiteSpace(sanitized);
 
             string scopeUri = "file:///" + _rootPath.Replace('\\', '/').Replace("'", "''");
 
             // When a search string is present, search all files in the scope (not just OBJ.json)
             // so that PDFs, HTML, and other files in root/{address}/ folders are also matched.
             // The address is extracted from the matched file path to locate OBJ.json.
-            string sql = hasSearch
+            //
+            // When the wildcard "*" is used, return all files in scope ordered by newest
+            // modified date so the caller sees a stream of the latest built-to-disk files.
+            string sql = isWildcard
+                ? $"""
+                    SELECT System.ItemPathDisplay, System.DateModified
+                    FROM SystemIndex
+                    WHERE SCOPE='{scopeUri}'
+                    ORDER BY System.DateModified DESC
+                    """
+                : hasSearch
                 ? $"""
                     SELECT System.ItemPathDisplay, System.DateModified
                     FROM SystemIndex
@@ -216,7 +244,9 @@ namespace P2FK.IO.Services
             // If Windows Search returned nothing (index not ready or files not yet indexed),
             // fall back to a direct filesystem scan so results are available immediately.
             if (rows.Count == 0)
-                rows = await FallbackScanAsync(hasSearch ? "*" : "OBJ.json", sanitized);
+                rows = await FallbackScanAsync(
+                    isWildcard || hasSearch ? "*" : "OBJ.json",
+                    isWildcard ? string.Empty : sanitized);
 
             // Deduplicate by address (parent folder) so multiple file hits from the same
             // folder are collapsed to one entry, keeping the newest-modified file per address.
@@ -269,15 +299,28 @@ namespace P2FK.IO.Services
             if (_cache.TryGetValue(cacheKey, out List<SearchResultProfile>? cached) && cached != null)
                 return cached;
 
-            string sanitized = Sanitize(searchString ?? "");
-            bool hasSearch = !string.IsNullOrWhiteSpace(sanitized);
+            // Detect wildcard "*" before sanitisation strips the asterisk
+            bool isWildcard = (searchString ?? "").Trim() == "*";
+
+            string sanitized = isWildcard ? string.Empty : Sanitize(searchString ?? "");
+            bool hasSearch = !isWildcard && !string.IsNullOrWhiteSpace(sanitized);
 
             string scopeUri = "file:///" + _rootPath.Replace('\\', '/').Replace("'", "''");
 
             // When a search string is present, search all files in the scope (not just GetProfileByAddress.json)
             // so that PDFs, HTML, and other files in root/{address}/ folders are also matched.
             // The address is extracted from the matched file path to locate GetProfileByAddress.json.
-            string sql = hasSearch
+            //
+            // When the wildcard "*" is used, return all files in scope ordered by newest
+            // modified date so the caller sees a stream of the latest built-to-disk files.
+            string sql = isWildcard
+                ? $"""
+                    SELECT System.ItemPathDisplay, System.DateModified
+                    FROM SystemIndex
+                    WHERE SCOPE='{scopeUri}'
+                    ORDER BY System.DateModified DESC
+                    """
+                : hasSearch
                 ? $"""
                     SELECT System.ItemPathDisplay, System.DateModified
                     FROM SystemIndex
@@ -298,7 +341,9 @@ namespace P2FK.IO.Services
             // If Windows Search returned nothing (index not ready or files not yet indexed),
             // fall back to a direct filesystem scan so results are available immediately.
             if (rows.Count == 0)
-                rows = await FallbackScanAsync(hasSearch ? "*" : "GetProfileByAddress.json", sanitized);
+                rows = await FallbackScanAsync(
+                    isWildcard || hasSearch ? "*" : "GetProfileByAddress.json",
+                    isWildcard ? string.Empty : sanitized);
 
             // Deduplicate by address (parent folder) so multiple file hits from the same
             // folder are collapsed to one entry, keeping the newest-modified file per address.
