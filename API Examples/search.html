@@ -520,6 +520,7 @@
       currentSearchId: null,
       abortController: null,
       imageCache: new Map(),
+      txidMeta: new Map(),
       keywordCache: new Map(),
       // Pagination state — reset on each new performSearch
       lastSearchText: '',
@@ -600,8 +601,29 @@
       urn = urn.replace(/\\/g, '/').replace(/\s+/g, '');
       const parts = urn.split(':').pop().split('/');
       return /^(BTC|LTC|DOG|MZC):/i.test(urn) || /^[A-Za-z0-9]+\/.+/.test(urn)
-        ? `https://bitfossil.org/${parts[0]}/${parts[1] || ''}`
+        ? `https://p2fk.io/root/${parts[0]}/${parts[1] || ''}`
         : '';
+    };
+
+    // Convert a search-result blockchain string to the {mainnet, blockchain} needed by warmRootCache
+    const chainToMeta = (blockchain) => {
+      const c = (blockchain || 'BTC').toUpperCase();
+      if (c === 'BTC-TESTNET' || c === 'TBTC') return { mainnet: false, blockchain: 'BTC' };
+      if (c === 'LTC' || c === 'DOG' || c === 'MZC') return { mainnet: true, blockchain: c };
+      return { mainnet: true, blockchain: 'BTC' };
+    };
+
+    const warmRootCache = async (txid, mainnet, blockchain) => {
+      if (!txid || !/^[0-9a-fA-F]{64}$/.test(txid)) return;
+      const chain = (blockchain || 'BTC').toUpperCase();
+      try {
+        const apiUrl = chain !== 'BTC'
+          ? `https://p2fk.io/GetRootByTransactionID/${txid}?blockchain=${encodeURIComponent(chain)}&verbose=false`
+          : `https://p2fk.io/GetRootByTransactionID/${txid}?mainnet=${!!mainnet}&verbose=false`;
+        await fetch(apiUrl);
+      } catch (e) {
+        console.warn(`warmRootCache failed for ${txid}:`, e.message);
+      }
     };
 
     const getImageUrl = (image, urn) => {
@@ -616,7 +638,8 @@
           if (parsedUrl.protocol === 'file:') return null;
           if (['https:', 'data:'].includes(parsedUrl.protocol)) {
             return value
-              .replace(/^http:\/\/bitfossil\.com\//i, 'https://bitfossil.org/')
+              .replace(/^http:\/\/bitfossil\.com\//i, 'https://p2fk.io/root/')
+              .replace(/^https?:\/\/bitfossil\.org\//i, 'https://p2fk.io/root/')
               .replace(/^http:/i, 'https:');
           }
         } catch (e) { /* not a URL */ }
@@ -654,13 +677,14 @@
         if (hm) currentUrl = `${gateways[0]}${hm[1]}`;
         else { cacheImage(url, fallbackImage); return fallbackImage; }
       }
+      let rootCacheWarmed = false;
       for (let attempt = 0; attempt < 3; attempt++) {
         const gatewayUrl = (currentUrl.includes('ipfs.io') || currentUrl.includes('dweb.link') || currentUrl.includes('cloudflare-ipfs.com'))
           ? currentUrl.replace(/https:\/\/[^/]+\/ipfs\//, gateways[attempt % gateways.length])
           : currentUrl;
         try {
           const img = new Image();
-          if (!gatewayUrl.includes('bitfossil.org')) img.crossOrigin = 'Anonymous';
+          if (!gatewayUrl.includes('p2fk.io/root')) img.crossOrigin = 'Anonymous';
           const result = await new Promise((resolve, reject) => {
             const timer = setTimeout(() => reject(new Error('Timeout')), timeout);
             img.onload = () => { clearTimeout(timer); cacheImage(url, gatewayUrl); resolve(gatewayUrl); };
@@ -669,6 +693,18 @@
           });
           return result;
         } catch (err) {
+          // On first failure of a p2fk.io/root URL, warm the server cache then retry
+          if (!rootCacheWarmed && url.includes('p2fk.io/root')) {
+            rootCacheWarmed = true;
+            const txidMatch = url.match(/\/root\/([0-9a-fA-F]{64})\//i);
+            if (txidMatch) {
+              const txid = txidMatch[1];
+              const { mainnet, blockchain } = state.txidMeta.get(txid) || { mainnet: true, blockchain: 'BTC' };
+              await warmRootCache(txid, mainnet, blockchain);
+              attempt--; // retry without counting as a used attempt
+              continue;
+            }
+          }
           if (attempt === 2) { cacheImage(url, fallbackImage); return fallbackImage; }
           await new Promise(r => setTimeout(r, 1000));
         }
@@ -859,7 +895,7 @@
     }, { rootMargin: '300px' });
 
     // ── Render helpers ───────────────────────────────────────────────────
-    const renderAttachments = (container, attachments, links) => {
+    const renderAttachments = (container, attachments, links, blockchain) => {
       const audioMimeTypes = { mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', flac: 'audio/flac', webm: 'audio/webm', aac: 'audio/aac', m4a: 'audio/mp4', opus: 'audio/opus', weba: 'audio/webm', aiff: 'audio/aiff', aif: 'audio/aiff' };
       const videoMimeTypes = { mp4: 'video/mp4', avi: 'video/x-msvideo', mov: 'video/quicktime' };
       const imageElements = [];
@@ -867,8 +903,9 @@
       for (const { hash, filename } of attachments) {
         const isTxid = /^[0-9a-f]{64}$/i.test(hash);
         const url = isTxid
-          ? `https://bitfossil.org/${hash}/${encodeURIComponent(filename)}`
+          ? `https://p2fk.io/root/${hash}/${encodeURIComponent(filename)}`
           : `https://ipfs.io/ipfs/${hash}`;
+        if (isTxid) state.txidMeta.set(hash, chainToMeta(blockchain));
         const ext = (filename.match(/\.([^.]+)$/) || [])[1]?.toLowerCase() || '';
         const isImage = /^(jpg|jpeg|png|gif|webp|bmp|svg|tiff|tif|ico|avif)$/.test(ext);
         const isAudio = /^(mp3|wav|ogg|flac|webm|aac|m4a|opus|weba|aiff|aif)$/.test(ext);
@@ -942,6 +979,8 @@
       imgEl.className = 'result-card-img';
       imgEl.src = fallbackImage;
       imgEl.alt = obj.Name || 'Object';
+      const txidFromObj = imageUrl.match(/\/root\/([0-9a-fA-F]{64})\//i)?.[1];
+      if (txidFromObj) state.txidMeta.set(txidFromObj, chainToMeta(blockchain));
       loadImageWithTimeout(imageUrl).then(url => { imgEl.src = url; }).catch(() => {});
       const body = document.createElement('div');
       body.className = 'result-card-body';
@@ -973,6 +1012,8 @@
       imgEl.className = 'result-card-img';
       imgEl.src = fallbackImage;
       imgEl.alt = profile.DisplayName || 'Profile';
+      const txidFromProfile = imageUrl.match(/\/root\/([0-9a-fA-F]{64})\//i)?.[1];
+      if (txidFromProfile) state.txidMeta.set(txidFromProfile, chainToMeta(blockchain));
       loadImageWithTimeout(imageUrl).then(url => { imgEl.src = url; }).catch(() => {});
       const body = document.createElement('div');
       body.className = 'result-card-body';
@@ -1032,6 +1073,9 @@
       senderImg.src = fallbackImage;
       senderImg.alt = fromName;
       loadImageWithTimeout(senderImageUrl).then(url => { senderImg.src = url; }).catch(() => {});
+      // Register txid context for warm-cache fallback
+      const senderTxid = senderImageUrl.match(/\/root\/([0-9a-fA-F]{64})\//i)?.[1];
+      if (senderTxid) state.txidMeta.set(senderTxid, chainToMeta(blockchain));
       const senderName = document.createElement('span');
       senderName.className = 'msg-sender-name';
       senderName.innerHTML = createUrnLink(fromName, normalized.fromAddress);
@@ -1047,7 +1091,7 @@
       // Attachments
       const attachDiv = document.createElement('div');
       attachDiv.className = 'message-attachments';
-      renderAttachments(attachDiv, attachments, links);
+      renderAttachments(attachDiv, attachments, links, blockchain);
       card.appendChild(attachDiv);
 
       // Meta
