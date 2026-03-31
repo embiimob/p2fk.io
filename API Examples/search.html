@@ -445,6 +445,7 @@
     <div id="resultCount" class="result-count" style="display:none;"></div>
     <div id="feed" class="feed"></div>
     <div id="loading" class="loading" style="display:none;">Searching…</div>
+    <div id="loadSentinel" role="presentation" aria-hidden="true"></div>
     <div id="error" class="error" style="display:none;"></div>
   </div>
 
@@ -496,12 +497,28 @@
   <script>
     const BASE_URL = 'https://p2fk.io';
 
+    const BATCH_SIZE = 100;
+    const MAX_PER_TYPE = 1000;
+
     const state = {
       isSearching: false,
+      isLoadingMore: false,
       currentSearchId: null,
       abortController: null,
       imageCache: new Map(),
-      keywordCache: new Map()
+      keywordCache: new Map(),
+      // Pagination state — reset on each new performSearch
+      lastSearchText: '',
+      lastWantObjects: false,
+      lastWantProfiles: false,
+      lastWantMessages: false,
+      skipObjects: 0,
+      skipProfiles: 0,
+      skipMessages: 0,
+      exhaustedObjects: true,
+      exhaustedProfiles: true,
+      exhaustedMessages: true,
+      totalDisplayed: 0,
     };
 
     const MAX_CACHE_SIZE = 100;
@@ -779,6 +796,10 @@
         }
       });
     }, { rootMargin: '100px' });
+
+    const scrollObserver = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting) loadMoreBatch();
+    }, { rootMargin: '300px' });
 
     // ── Render helpers ───────────────────────────────────────────────────
     const renderAttachments = (container, attachments, links) => {
@@ -1072,6 +1093,160 @@
       return new Date(0);
     };
 
+    // ── Render a batch of API results into the feed ───────────────────────
+    const appendResultItems = async (objectResults, profileResults, rootResults, searchId, signal) => {
+      const items = [];
+
+      for (const result of (objectResults || [])) {
+        const obj = result.Object || result.object;
+        if (!obj || !obj.Name) continue;
+        items.push({ type: 'object', raw: obj, blockchain: result.Blockchain || result.blockchain || '' });
+      }
+
+      for (const result of (profileResults || [])) {
+        const profile = result.Profile || result.profile;
+        if (!profile) continue;
+        if (!profile.DisplayName && !profile.URN) continue;
+        items.push({ type: 'profile', raw: profile, blockchain: result.Blockchain || result.blockchain || '' });
+      }
+
+      for (const result of (rootResults || [])) {
+        const root = result.Root || result.root;
+        if (!root) continue;
+        const normalized = normalizeRoot(root);
+        if (!normalized) continue;
+        items.push({ type: 'message', data: normalized, blockchain: result.Blockchain || result.blockchain || '' });
+      }
+
+      // Filter by selected blockchain checkboxes
+      const allowedChains = new Set();
+      if (document.getElementById('chkBitcoin').checked) allowedChains.add('BTC');
+      if (document.getElementById('chkTestnet3').checked) allowedChains.add('TBTC');
+      if (document.getElementById('chkLTC').checked) allowedChains.add('LTC');
+      if (document.getElementById('chkDOG').checked) allowedChains.add('DOG');
+      if (document.getElementById('chkMZC').checked) allowedChains.add('MZC');
+      const filtered = items.filter(item => {
+        const chain = (item.blockchain || '').toUpperCase();
+        if (!chain) return allowedChains.has('BTC') || allowedChains.has('TBTC');
+        const normalised = (chain === 'BTC-TESTNET') ? 'TBTC' : chain;
+        return allowedChains.has(normalised);
+      });
+
+      // Sort by date descending within this batch
+      filtered.sort((a, b) => {
+        const da = getItemDate(a).getTime();
+        const db = getItemDate(b).getTime();
+        if (da === 0 && db === 0) return 0;
+        if (da === 0) return 1;
+        if (db === 0) return -1;
+        return db - da;
+      });
+
+      const feed = document.getElementById('feed');
+      for (const item of filtered) {
+        if (state.currentSearchId !== searchId) break;
+        if (item.type === 'object') {
+          feed.appendChild(renderObjectCard(item.raw, item.blockchain));
+        } else if (item.type === 'profile') {
+          feed.appendChild(renderProfileCard(item.raw, item.blockchain));
+        } else if (item.type === 'message') {
+          const card = await renderMessageCard(item.data, signal, item.blockchain);
+          if (state.currentSearchId !== searchId) break;
+          feed.appendChild(card);
+          card.querySelectorAll('source[data-src]').forEach(source => {
+            const mediaEl = source.parentElement;
+            const rect = mediaEl.getBoundingClientRect();
+            if (rect.bottom >= 0 && rect.top <= window.innerHeight) {
+              source.src = source.dataset.src;
+              mediaEl.load();
+              mediaEl.style.display = 'block';
+            } else {
+              lazyLoadObserver.observe(source);
+            }
+          });
+        }
+      }
+
+      return filtered.length;
+    };
+
+    // ── Load the next page of results (infinite scroll) ───────────────────
+    const loadMoreBatch = async () => {
+      if (state.isLoadingMore || state.isSearching) return;
+      if (state.exhaustedObjects && state.exhaustedProfiles && state.exhaustedMessages) return;
+
+      const sentinelEl = document.getElementById('loadSentinel');
+      scrollObserver.unobserve(sentinelEl);
+
+      state.isLoadingMore = true;
+      const searchId = state.currentSearchId;
+      const signal = state.abortController?.signal;
+
+      const loadingEl = document.getElementById('loading');
+      loadingEl.textContent = 'Loading more…';
+      loadingEl.style.display = 'block';
+
+      try {
+        const [objectResults, profileResults, rootResults] = await Promise.all([
+          (!state.exhaustedObjects)
+            ? fetchAPI(
+                `${BASE_URL}/GetKnownObjectsBySearchString?searchString=${encodeURIComponent(state.lastSearchText)}&qty=${BATCH_SIZE}&skip=${state.skipObjects}`,
+                'Object search failed', signal
+              ).catch(() => [])
+            : Promise.resolve([]),
+          (!state.exhaustedProfiles)
+            ? fetchAPI(
+                `${BASE_URL}/GetKnownProfilesBySearchString?searchString=${encodeURIComponent(state.lastSearchText)}&qty=${BATCH_SIZE}&skip=${state.skipProfiles}`,
+                'Profile search failed', signal
+              ).catch(() => [])
+            : Promise.resolve([]),
+          (!state.exhaustedMessages)
+            ? fetchAPI(
+                `${BASE_URL}/GetKnownRootsBySearchString?searchString=${encodeURIComponent(state.lastSearchText)}&qty=${BATCH_SIZE}&skip=${state.skipMessages}`,
+                'Message search failed', signal
+              ).catch(() => [])
+            : Promise.resolve([])
+        ]);
+
+        if (state.currentSearchId !== searchId) return;
+
+        const objLen = (objectResults || []).length;
+        const profLen = (profileResults || []).length;
+        const rootLen = (rootResults || []).length;
+
+        if (!state.exhaustedObjects) {
+          state.skipObjects += objLen;
+          if (objLen < BATCH_SIZE || state.skipObjects >= MAX_PER_TYPE) state.exhaustedObjects = true;
+        }
+        if (!state.exhaustedProfiles) {
+          state.skipProfiles += profLen;
+          if (profLen < BATCH_SIZE || state.skipProfiles >= MAX_PER_TYPE) state.exhaustedProfiles = true;
+        }
+        if (!state.exhaustedMessages) {
+          state.skipMessages += rootLen;
+          if (rootLen < BATCH_SIZE || state.skipMessages >= MAX_PER_TYPE) state.exhaustedMessages = true;
+        }
+
+        const added = await appendResultItems(objectResults, profileResults, rootResults, searchId, signal);
+        if (state.currentSearchId !== searchId) return;
+
+        state.totalDisplayed += added;
+        const countEl = document.getElementById('resultCount');
+        countEl.textContent = `${state.totalDisplayed} result${state.totalDisplayed === 1 ? '' : 's'} loaded`;
+        countEl.style.display = 'block';
+      } catch (err) {
+        if (err.name !== 'AbortError') showError('Failed to load more results: ' + err.message);
+      } finally {
+        loadingEl.style.display = 'none';
+        loadingEl.textContent = 'Searching…';
+        state.isLoadingMore = false;
+        if (state.currentSearchId === searchId &&
+            (!state.exhaustedObjects || !state.exhaustedProfiles || !state.exhaustedMessages)) {
+          scrollObserver.observe(sentinelEl);
+        }
+      }
+    };
+
     // ── Main search function ─────────────────────────────────────────────
     const performSearch = async () => {
       if (state.isSearching) return;
@@ -1109,8 +1284,22 @@
       document.getElementById('resultCount').style.display = 'none';
       document.getElementById('error').style.display = 'none';
       document.getElementById('loading').style.display = 'block';
+      scrollObserver.unobserve(document.getElementById('loadSentinel'));
 
-      const params = `searchString=${encodeURIComponent(searchText)}&qty=20&skip=0`;
+      // Reset pagination state for this new search
+      state.lastSearchText = searchText;
+      state.lastWantObjects = wantObjects;
+      state.lastWantProfiles = wantProfiles;
+      state.lastWantMessages = wantMessages;
+      state.skipObjects = BATCH_SIZE;
+      state.skipProfiles = BATCH_SIZE;
+      state.skipMessages = BATCH_SIZE;
+      state.exhaustedObjects = !wantObjects;
+      state.exhaustedProfiles = !wantProfiles;
+      state.exhaustedMessages = !wantMessages;
+      state.totalDisplayed = 0;
+
+      const params = `searchString=${encodeURIComponent(searchText)}&qty=${BATCH_SIZE}&skip=0`;
 
       try {
         // Fetch all selected types in parallel
@@ -1131,96 +1320,35 @@
 
         if (state.currentSearchId !== searchId) return;
 
-        // Normalise into a unified list
-        const items = [];
+        // Update exhaustion flags based on whether the first batch was a full page
+        const objLen = (objectResults || []).length;
+        const profLen = (profileResults || []).length;
+        const rootLen = (rootResults || []).length;
 
-        for (const result of (objectResults || [])) {
-          const obj = result.Object || result.object;
-          if (!obj) continue;
-          // Skip unnamed/blank objects — they have no meaningful display name
-          if (!obj.Name) continue;
-          items.push({ type: 'object', raw: obj, blockchain: result.Blockchain || result.blockchain || '' });
-        }
-
-        for (const result of (profileResults || [])) {
-          const profile = result.Profile || result.profile;
-          if (!profile) continue;
-          // Skip unknown profiles — they have neither a display name nor a URN
-          if (!profile.DisplayName && !profile.URN) continue;
-          items.push({ type: 'profile', raw: profile, blockchain: result.Blockchain || result.blockchain || '' });
-        }
-
-        for (const result of (rootResults || [])) {
-          const root = result.Root || result.root;
-          if (!root) continue;
-          const normalized = normalizeRoot(root);
-          if (!normalized) continue;
-          items.push({ type: 'message', data: normalized, blockchain: result.Blockchain || result.blockchain || '' });
-        }
-
-        // Filter by selected blockchain checkboxes
-        const allowedChains = new Set();
-        if (document.getElementById('chkBitcoin').checked) allowedChains.add('BTC');
-        if (document.getElementById('chkTestnet3').checked) allowedChains.add('TBTC');
-        if (document.getElementById('chkLTC').checked) allowedChains.add('LTC');
-        if (document.getElementById('chkDOG').checked) allowedChains.add('DOG');
-        if (document.getElementById('chkMZC').checked) allowedChains.add('MZC');
-        items.splice(0, items.length, ...items.filter(item => {
-          const chain = (item.blockchain || '').toUpperCase();
-          // The API does not always populate Blockchain for Bitcoin-based networks (BTC/TBTC).
-          // Treat empty blockchain as matching whenever BTC or TBTC is selected.
-          if (!chain) return allowedChains.has('BTC') || allowedChains.has('TBTC');
-          // The API returns "BTC-testnet" for testnet results; normalise to TBTC for the check.
-          const normalised = (chain === 'BTC-TESTNET') ? 'TBTC' : chain;
-          return allowedChains.has(normalised);
-        }));
-
-        // Sort by date descending (newest first); items without a date go to the end
-        items.sort((a, b) => {
-          const da = getItemDate(a).getTime();
-          const db = getItemDate(b).getTime();
-          // If both are epoch 0 (no valid date), maintain original order
-          if (da === 0 && db === 0) return 0;
-          if (da === 0) return 1;
-          if (db === 0) return -1;
-          return db - da;
-        });
+        if (wantObjects && (objLen < BATCH_SIZE || state.skipObjects >= MAX_PER_TYPE))
+          state.exhaustedObjects = true;
+        if (wantProfiles && (profLen < BATCH_SIZE || state.skipProfiles >= MAX_PER_TYPE))
+          state.exhaustedProfiles = true;
+        if (wantMessages && (rootLen < BATCH_SIZE || state.skipMessages >= MAX_PER_TYPE))
+          state.exhaustedMessages = true;
 
         document.getElementById('loading').style.display = 'none';
 
-        if (items.length === 0) {
+        const added = await appendResultItems(objectResults, profileResults, rootResults, searchId, signal);
+        if (state.currentSearchId !== searchId) return;
+
+        state.totalDisplayed = added;
+
+        if (added === 0) {
           document.getElementById('feed').innerHTML = '<div class="loading">No results found.</div>';
           document.getElementById('resultCount').style.display = 'none';
         } else {
           const countEl = document.getElementById('resultCount');
-          countEl.textContent = `${items.length} result${items.length === 1 ? '' : 's'} found`;
+          countEl.textContent = `${state.totalDisplayed} result${state.totalDisplayed === 1 ? '' : 's'} found`;
           countEl.style.display = 'block';
-
-          const feed = document.getElementById('feed');
-          for (const item of items) {
-            if (state.currentSearchId !== searchId) break;
-            if (item.type === 'object') {
-              feed.appendChild(renderObjectCard(item.raw, item.blockchain));
-            } else if (item.type === 'profile') {
-              feed.appendChild(renderProfileCard(item.raw, item.blockchain));
-            } else if (item.type === 'message') {
-              const card = await renderMessageCard(item.data, signal, item.blockchain);
-              if (state.currentSearchId !== searchId) break;
-              feed.appendChild(card);
-              // Initialize media sources now that elements are in the live DOM, so
-              // getBoundingClientRect() is accurate and load() won't be reset on insertion.
-              card.querySelectorAll('source[data-src]').forEach(source => {
-                const mediaEl = source.parentElement;
-                const rect = mediaEl.getBoundingClientRect();
-                if (rect.bottom >= 0 && rect.top <= window.innerHeight) {
-                  source.src = source.dataset.src;
-                  mediaEl.load();
-                  mediaEl.style.display = 'block';
-                } else {
-                  lazyLoadObserver.observe(source);
-                }
-              });
-            }
+          // Activate infinite scroll if more pages may exist
+          if (!state.exhaustedObjects || !state.exhaustedProfiles || !state.exhaustedMessages) {
+            scrollObserver.observe(document.getElementById('loadSentinel'));
           }
         }
       } catch (err) {
@@ -1228,10 +1356,6 @@
         showError('Search failed: ' + err.message);
         document.getElementById('loading').style.display = 'none';
       } finally {
-        if (state.currentSearchId === searchId) {
-          state.currentSearchId = null;
-          state.abortController = null;
-        }
         state.isSearching = false;
         $btn.disabled = false;
         $btn.textContent = 'Search';
