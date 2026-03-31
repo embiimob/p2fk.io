@@ -426,17 +426,17 @@
     <div class="search-bar">
       <input type="text" id="searchInput" placeholder="Enter search text…">
       <div class="type-checkboxes">
-        <label><input type="checkbox" id="chkObjects" checked> Objects</label>
-        <label><input type="checkbox" id="chkProfiles" checked> Profiles</label>
+        <label><input type="checkbox" id="chkObjects"> Objects</label>
+        <label><input type="checkbox" id="chkProfiles"> Profiles</label>
         <label><input type="checkbox" id="chkMessages" checked> Messages</label>
       </div>
       <span style="color:#555;font-size:0.8em;align-self:center;">|</span>
       <div class="type-checkboxes">
-        <label><input type="checkbox" id="chkBitcoin" checked> BTC</label>
+        <label><input type="checkbox" id="chkBitcoin"> BTC</label>
         <label><input type="checkbox" id="chkTestnet3" checked> TBTC</label>
-        <label><input type="checkbox" id="chkLTC" checked> LTC</label>
-        <label><input type="checkbox" id="chkDOG" checked> DOG</label>
-        <label><input type="checkbox" id="chkMZC" checked> MZC</label>
+        <label><input type="checkbox" id="chkLTC"> LTC</label>
+        <label><input type="checkbox" id="chkDOG"> DOG</label>
+        <label><input type="checkbox" id="chkMZC"> MZC</label>
       </div>
       <button id="searchBtn" onclick="performSearch()">Search</button>
       <button class="url-help-btn" onclick="openUrlBuilder()" title="URL Builder — generate a shareable search link">?</button>
@@ -456,11 +456,11 @@
       <label class="ub-field-label" for="ubSearch">Search</label>
       <input type="text" id="ubSearch" placeholder="e.g., bitcoin art" />
       <div class="ub-checkbox-row">
-        <input type="checkbox" id="ubObjects" checked />
+        <input type="checkbox" id="ubObjects" />
         <label for="ubObjects">Objects</label>
       </div>
       <div class="ub-checkbox-row">
-        <input type="checkbox" id="ubProfiles" checked />
+        <input type="checkbox" id="ubProfiles" />
         <label for="ubProfiles">Profiles</label>
       </div>
       <div class="ub-checkbox-row">
@@ -468,19 +468,19 @@
         <label for="ubMessages">Messages</label>
       </div>
       <div class="ub-checkbox-row" style="margin-top:4px;">
-        <input type="checkbox" id="ubBitcoin" checked />
+        <input type="checkbox" id="ubBitcoin" />
         <label for="ubBitcoin">BTC</label>
         &nbsp;
         <input type="checkbox" id="ubTestnet3" checked />
         <label for="ubTestnet3">TBTC</label>
         &nbsp;
-        <input type="checkbox" id="ubLTC" checked />
+        <input type="checkbox" id="ubLTC" />
         <label for="ubLTC">LTC</label>
         &nbsp;
-        <input type="checkbox" id="ubDOG" checked />
+        <input type="checkbox" id="ubDOG" />
         <label for="ubDOG">DOG</label>
         &nbsp;
-        <input type="checkbox" id="ubMZC" checked />
+        <input type="checkbox" id="ubMZC" />
         <label for="ubMZC">MZC</label>
       </div>
       <div class="ub-actions">
@@ -489,7 +489,7 @@
         <button class="ub-btn-go" onclick="goUrlBuilder()">Go</button>
       </div>
       <div class="ub-output" id="ubOutput"></div>
-      <p class="ub-example">Example: <code>search.html?search=bitcoin+art&amp;objects=true&amp;profiles=true&amp;messages=true</code></p>
+      <p class="ub-example">Example: <code>search.html?search=bitcoin+art&amp;objects=true&amp;profiles=true</code></p>
     </div>
   </div>
 
@@ -1302,19 +1302,17 @@
 
     function generateUrlBuilder() {
       const search = document.getElementById('ubSearch').value.trim();
-      const objects = document.getElementById('ubObjects').checked;
-      const profiles = document.getElementById('ubProfiles').checked;
-      const messages = document.getElementById('ubMessages').checked;
       const params = new URLSearchParams();
       if (search) params.set('search', search);
-      params.set('objects', String(objects));
-      params.set('profiles', String(profiles));
-      params.set('messages', String(messages));
-      params.set('bitcoin', String(document.getElementById('ubBitcoin').checked));
-      params.set('testnet3', String(document.getElementById('ubTestnet3').checked));
-      params.set('ltc', String(document.getElementById('ubLTC').checked));
-      params.set('dog', String(document.getElementById('ubDOG').checked));
-      params.set('mzc', String(document.getElementById('ubMZC').checked));
+      // Only include additive (non-default) params; defaults are messages=true, testnet3=true
+      if (document.getElementById('ubObjects').checked) params.set('objects', 'true');
+      if (document.getElementById('ubProfiles').checked) params.set('profiles', 'true');
+      if (!document.getElementById('ubMessages').checked) params.set('messages', 'false');
+      if (document.getElementById('ubBitcoin').checked) params.set('bitcoin', 'true');
+      // testnet3 is the default — never include it in the URL
+      if (document.getElementById('ubLTC').checked) params.set('ltc', 'true');
+      if (document.getElementById('ubDOG').checked) params.set('dog', 'true');
+      if (document.getElementById('ubMZC').checked) params.set('mzc', 'true');
       const url = 'search.html?' + params.toString();
       document.getElementById('ubOutput').textContent = url;
       return url;
