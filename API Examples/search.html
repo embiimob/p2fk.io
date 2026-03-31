@@ -500,13 +500,18 @@
     const BATCH_SIZE = 100;
     const MAX_PER_CHAIN = 1000; // max rendered cards per blockchain; fetching continues past this to find minority chains
 
-    // Maps chain checkbox IDs to the blockchain string the API expects
-    const CHAIN_API_NAMES = {
-      chkBitcoin:  'BTC',
-      chkTestnet3: 'BTC-testnet',
-      chkLTC:      'LTC',
-      chkDOG:      'DOG',
-      chkMZC:      'MZC',
+    // Maps chain checkbox IDs to: key (used as pagination/display name) and
+    // params (the literal query string fragment appended to each API call).
+    // Matches the GetRootByTransactionID parameter convention:
+    //   BTC mainnet  → blockchain=BTC  (mainnet=true is the default, omitted)
+    //   BTC testnet  → mainnet=false   (blockchain defaults to BTC)
+    //   Altcoins     → blockchain=LTC / DOG / MZC
+    const CHAINS = {
+      chkBitcoin:  { key: 'BTC',  params: 'blockchain=BTC'  },
+      chkTestnet3: { key: 'TBTC', params: 'mainnet=false'   },
+      chkLTC:      { key: 'LTC',  params: 'blockchain=LTC'  },
+      chkDOG:      { key: 'DOG',  params: 'blockchain=DOG'  },
+      chkMZC:      { key: 'MZC',  params: 'blockchain=MZC'  },
     };
 
     const state = {
@@ -540,10 +545,10 @@
         return { objectResults: [], profileResults: [], rootResults: [] };
 
       const rawResults = await Promise.all(pending.map(([key]) => {
-        const [type, chain] = key.split(':', 2);
+        const [type] = key.split(':', 2);
         const p = state.pagination[key];
         return fetchAPI(
-          `${BASE_URL}/${endpointForType(type)}?searchString=${encodeURIComponent(state.lastSearchText)}&qty=${BATCH_SIZE}&skip=${p.skip}&blockchain=${encodeURIComponent(chain)}`,
+          `${BASE_URL}/${endpointForType(type)}?searchString=${encodeURIComponent(state.lastSearchText)}&qty=${BATCH_SIZE}&skip=${p.skip}&${p.params}`,
           `${type} search failed`, signal
         ).catch(() => []);
       }));
@@ -1341,15 +1346,15 @@
       scrollObserver.unobserve(document.getElementById('loadSentinel'));
 
       // Build per-chain×type pagination state from the currently checked blockchain boxes
-      const activeChains = Object.entries(CHAIN_API_NAMES)
+      const activeChains = Object.entries(CHAINS)
         .filter(([id]) => document.getElementById(id).checked)
-        .map(([, name]) => name);
+        .map(([, chain]) => chain);
 
       const pagination = {};
-      activeChains.forEach(chain => {
-        if (wantObjects)  pagination[`objects:${chain}`]  = { skip: 0, exhausted: false };
-        if (wantProfiles) pagination[`profiles:${chain}`] = { skip: 0, exhausted: false };
-        if (wantMessages) pagination[`messages:${chain}`] = { skip: 0, exhausted: false };
+      activeChains.forEach(({ key, params }) => {
+        if (wantObjects)  pagination[`objects:${key}`]  = { skip: 0, exhausted: false, params };
+        if (wantProfiles) pagination[`profiles:${key}`] = { skip: 0, exhausted: false, params };
+        if (wantMessages) pagination[`messages:${key}`] = { skip: 0, exhausted: false, params };
       });
 
       state.lastSearchText = searchText;
