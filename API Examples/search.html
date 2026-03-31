@@ -498,7 +498,7 @@
     const BASE_URL = 'https://p2fk.io';
 
     const BATCH_SIZE = 100;
-    const MAX_PER_TYPE = 1000;
+    const MAX_PER_CHAIN = 1000; // max rendered cards per blockchain; fetching continues past this to find minority chains
 
     const state = {
       isSearching: false,
@@ -519,6 +519,7 @@
       exhaustedProfiles: true,
       exhaustedMessages: true,
       totalDisplayed: 0,
+      chainCounts: {},  // rendered card count per chain key; reset on each new search
     };
 
     const MAX_CACHE_SIZE = 100;
@@ -1176,20 +1177,25 @@
       });
 
       const feed = document.getElementById('feed');
+      let rendered = 0;
       for (const item of items) {
         if (state.currentSearchId !== searchId) break;
+        const chainKey = normalizeChain(item.blockchain);
+        if ((state.chainCounts[chainKey] || 0) >= MAX_PER_CHAIN) continue; // discard — this chain is saturated
+        state.chainCounts[chainKey] = (state.chainCounts[chainKey] || 0) + 1;
+        rendered++;
         if (item.type === 'object') {
           const card = renderObjectCard(item.raw, item.blockchain);
-          card.dataset.chain = normalizeChain(item.blockchain);
+          card.dataset.chain = chainKey;
           feed.appendChild(card);
         } else if (item.type === 'profile') {
           const card = renderProfileCard(item.raw, item.blockchain);
-          card.dataset.chain = normalizeChain(item.blockchain);
+          card.dataset.chain = chainKey;
           feed.appendChild(card);
         } else if (item.type === 'message') {
           const card = await renderMessageCard(item.data, signal, item.blockchain);
           if (state.currentSearchId !== searchId) break;
-          card.dataset.chain = normalizeChain(item.blockchain);
+          card.dataset.chain = chainKey;
           feed.appendChild(card);
           card.querySelectorAll('source[data-src]').forEach(source => {
             const mediaEl = source.parentElement;
@@ -1205,7 +1211,7 @@
         }
       }
 
-      return items.length;
+      return rendered;
     };
 
     // ── Load the next page of results (infinite scroll) ───────────────────
@@ -1254,15 +1260,15 @@
 
         if (!state.exhaustedObjects) {
           state.skipObjects += objLen;
-          if (objLen < BATCH_SIZE || state.skipObjects >= MAX_PER_TYPE) state.exhaustedObjects = true;
+          if (objLen < BATCH_SIZE) state.exhaustedObjects = true;
         }
         if (!state.exhaustedProfiles) {
           state.skipProfiles += profLen;
-          if (profLen < BATCH_SIZE || state.skipProfiles >= MAX_PER_TYPE) state.exhaustedProfiles = true;
+          if (profLen < BATCH_SIZE) state.exhaustedProfiles = true;
         }
         if (!state.exhaustedMessages) {
           state.skipMessages += rootLen;
-          if (rootLen < BATCH_SIZE || state.skipMessages >= MAX_PER_TYPE) state.exhaustedMessages = true;
+          if (rootLen < BATCH_SIZE) state.exhaustedMessages = true;
         }
 
         const added = await appendResultItems(objectResults, profileResults, rootResults, searchId, signal);
@@ -1339,6 +1345,7 @@
       state.exhaustedProfiles = !wantProfiles;
       state.exhaustedMessages = !wantMessages;
       state.totalDisplayed = 0;
+      state.chainCounts = {};
 
       const params = `searchString=${encodeURIComponent(searchText)}&qty=${BATCH_SIZE}&skip=0`;
 
@@ -1366,11 +1373,11 @@
         const profLen = (profileResults || []).length;
         const rootLen = (rootResults || []).length;
 
-        if (wantObjects && (objLen < BATCH_SIZE || state.skipObjects >= MAX_PER_TYPE))
+        if (wantObjects && objLen < BATCH_SIZE)
           state.exhaustedObjects = true;
-        if (wantProfiles && (profLen < BATCH_SIZE || state.skipProfiles >= MAX_PER_TYPE))
+        if (wantProfiles && profLen < BATCH_SIZE)
           state.exhaustedProfiles = true;
-        if (wantMessages && (rootLen < BATCH_SIZE || state.skipMessages >= MAX_PER_TYPE))
+        if (wantMessages && rootLen < BATCH_SIZE)
           state.exhaustedMessages = true;
 
         document.getElementById('loading').style.display = 'none';
