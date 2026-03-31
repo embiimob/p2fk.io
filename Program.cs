@@ -11,11 +11,6 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddSingleton<P2FK.IO.Wrapper>();
 builder.Services.AddMemoryCache();
-builder.Services.AddCors(options =>
-{
-    options.AddDefaultPolicy(policy =>
-        policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
-});
 if (OperatingSystem.IsWindows())
     builder.Services.AddSingleton<P2FK.IO.Services.WindowsSearchService>();
 
@@ -45,7 +40,6 @@ app.UseStaticFiles(new StaticFileOptions
     DefaultContentType = "application/octet-stream"
 });
 
-app.UseCors();
 app.UseSwagger();
 app.UseStaticFiles();
 app.UseRequestTimeouts();
