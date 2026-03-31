@@ -500,6 +500,15 @@
     const BATCH_SIZE = 100;
     const MAX_PER_CHAIN = 1000; // max rendered cards per blockchain; fetching continues past this to find minority chains
 
+    // Maps chain checkbox IDs to the blockchain string the API expects
+    const CHAIN_API_NAMES = {
+      chkBitcoin:  'BTC',
+      chkTestnet3: 'BTC-testnet',
+      chkLTC:      'LTC',
+      chkDOG:      'DOG',
+      chkMZC:      'MZC',
+    };
+
     const state = {
       isSearching: false,
       isLoadingMore: false,
@@ -509,17 +518,54 @@
       keywordCache: new Map(),
       // Pagination state — reset on each new performSearch
       lastSearchText: '',
-      lastWantObjects: false,
-      lastWantProfiles: false,
-      lastWantMessages: false,
-      skipObjects: 0,
-      skipProfiles: 0,
-      skipMessages: 0,
-      exhaustedObjects: true,
-      exhaustedProfiles: true,
-      exhaustedMessages: true,
+      pagination: {},          // "type:apichain" → {skip, exhausted}
       totalDisplayed: 0,
       chainCounts: {},  // rendered card count per chain key; reset on each new search
+    };
+
+    // ── Pagination helpers ───────────────────────────────────────────────
+    const allExhausted  = () => Object.values(state.pagination).every(p => p.exhausted);
+    const anyMoreNeeded = () => Object.values(state.pagination).some(p => !p.exhausted);
+
+    const endpointForType = (type) =>
+      type === 'objects'  ? 'GetKnownObjectsBySearchString'  :
+      type === 'profiles' ? 'GetKnownProfilesBySearchString' :
+      'GetKnownRootsBySearchString';
+
+    // Fetch the next batch for every non-exhausted type:chain combo in parallel,
+    // update skip/exhausted counters, and return results split by type.
+    const fetchNextPage = async (signal) => {
+      const pending = Object.entries(state.pagination).filter(([, p]) => !p.exhausted);
+      if (pending.length === 0)
+        return { objectResults: [], profileResults: [], rootResults: [] };
+
+      const rawResults = await Promise.all(pending.map(([key]) => {
+        const [type, chain] = key.split(':', 2);
+        const p = state.pagination[key];
+        return fetchAPI(
+          `${BASE_URL}/${endpointForType(type)}?searchString=${encodeURIComponent(state.lastSearchText)}&qty=${BATCH_SIZE}&skip=${p.skip}&blockchain=${encodeURIComponent(chain)}`,
+          `${type} search failed`, signal
+        ).catch(() => []);
+      }));
+
+      // Update pagination state
+      pending.forEach(([key], i) => {
+        const len = (rawResults[i] || []).length;
+        state.pagination[key].skip += len;
+        if (len < BATCH_SIZE) state.pagination[key].exhausted = true;
+      });
+
+      // Fan results out into per-type arrays for appendResultItems
+      const objectResults = [], profileResults = [], rootResults = [];
+      pending.forEach(([key], i) => {
+        const [type] = key.split(':', 2);
+        const res = rawResults[i] || [];
+        if (type === 'objects') objectResults.push(...res);
+        else if (type === 'profiles') profileResults.push(...res);
+        else rootResults.push(...res);
+      });
+
+      return { objectResults, profileResults, rootResults };
     };
 
     const MAX_CACHE_SIZE = 100;
@@ -1134,8 +1180,7 @@
 
       // When a checkbox change hides everything, auto-load the next page to look for matches
       if (visible === 0) {
-        const moreNeeded = !state.exhaustedObjects || !state.exhaustedProfiles || !state.exhaustedMessages;
-        if (moreNeeded && !state.isLoadingMore && !state.isSearching) {
+        if (anyMoreNeeded() && !state.isLoadingMore && !state.isSearching) {
           setTimeout(() => loadMoreBatch(), 0);
         }
       }
@@ -1217,7 +1262,7 @@
     // ── Load the next page of results (infinite scroll) ───────────────────
     const loadMoreBatch = async () => {
       if (state.isLoadingMore || state.isSearching) return;
-      if (state.exhaustedObjects && state.exhaustedProfiles && state.exhaustedMessages) return;
+      if (allExhausted()) return;
 
       const sentinelEl = document.getElementById('loadSentinel');
       scrollObserver.unobserve(sentinelEl);
@@ -1231,45 +1276,8 @@
       loadingEl.style.display = 'block';
 
       try {
-        const [objectResults, profileResults, rootResults] = await Promise.all([
-          (!state.exhaustedObjects)
-            ? fetchAPI(
-                `${BASE_URL}/GetKnownObjectsBySearchString?searchString=${encodeURIComponent(state.lastSearchText)}&qty=${BATCH_SIZE}&skip=${state.skipObjects}`,
-                'Object search failed', signal
-              ).catch(() => [])
-            : Promise.resolve([]),
-          (!state.exhaustedProfiles)
-            ? fetchAPI(
-                `${BASE_URL}/GetKnownProfilesBySearchString?searchString=${encodeURIComponent(state.lastSearchText)}&qty=${BATCH_SIZE}&skip=${state.skipProfiles}`,
-                'Profile search failed', signal
-              ).catch(() => [])
-            : Promise.resolve([]),
-          (!state.exhaustedMessages)
-            ? fetchAPI(
-                `${BASE_URL}/GetKnownRootsBySearchString?searchString=${encodeURIComponent(state.lastSearchText)}&qty=${BATCH_SIZE}&skip=${state.skipMessages}`,
-                'Message search failed', signal
-              ).catch(() => [])
-            : Promise.resolve([])
-        ]);
-
+        const { objectResults, profileResults, rootResults } = await fetchNextPage(signal);
         if (state.currentSearchId !== searchId) return;
-
-        const objLen = (objectResults || []).length;
-        const profLen = (profileResults || []).length;
-        const rootLen = (rootResults || []).length;
-
-        if (!state.exhaustedObjects) {
-          state.skipObjects += objLen;
-          if (objLen < BATCH_SIZE) state.exhaustedObjects = true;
-        }
-        if (!state.exhaustedProfiles) {
-          state.skipProfiles += profLen;
-          if (profLen < BATCH_SIZE) state.exhaustedProfiles = true;
-        }
-        if (!state.exhaustedMessages) {
-          state.skipMessages += rootLen;
-          if (rootLen < BATCH_SIZE) state.exhaustedMessages = true;
-        }
 
         const added = await appendResultItems(objectResults, profileResults, rootResults, searchId, signal);
         if (state.currentSearchId !== searchId) return;
@@ -1282,8 +1290,7 @@
         loadingEl.style.display = 'none';
         loadingEl.textContent = 'Searching…';
         state.isLoadingMore = false;
-        if (state.currentSearchId === searchId &&
-            (!state.exhaustedObjects || !state.exhaustedProfiles || !state.exhaustedMessages)) {
+        if (state.currentSearchId === searchId && anyMoreNeeded()) {
           // If still no visible results, keep loading automatically; otherwise use scroll observer
           if (countVisible() === 0) {
             setTimeout(() => loadMoreBatch(), 0);
@@ -1333,52 +1340,27 @@
       document.getElementById('loading').style.display = 'block';
       scrollObserver.unobserve(document.getElementById('loadSentinel'));
 
-      // Reset pagination state for this new search
+      // Build per-chain×type pagination state from the currently checked blockchain boxes
+      const activeChains = Object.entries(CHAIN_API_NAMES)
+        .filter(([id]) => document.getElementById(id).checked)
+        .map(([, name]) => name);
+
+      const pagination = {};
+      activeChains.forEach(chain => {
+        if (wantObjects)  pagination[`objects:${chain}`]  = { skip: 0, exhausted: false };
+        if (wantProfiles) pagination[`profiles:${chain}`] = { skip: 0, exhausted: false };
+        if (wantMessages) pagination[`messages:${chain}`] = { skip: 0, exhausted: false };
+      });
+
       state.lastSearchText = searchText;
-      state.lastWantObjects = wantObjects;
-      state.lastWantProfiles = wantProfiles;
-      state.lastWantMessages = wantMessages;
-      state.skipObjects = BATCH_SIZE;
-      state.skipProfiles = BATCH_SIZE;
-      state.skipMessages = BATCH_SIZE;
-      state.exhaustedObjects = !wantObjects;
-      state.exhaustedProfiles = !wantProfiles;
-      state.exhaustedMessages = !wantMessages;
+      state.pagination = pagination;
       state.totalDisplayed = 0;
       state.chainCounts = {};
 
-      const params = `searchString=${encodeURIComponent(searchText)}&qty=${BATCH_SIZE}&skip=0`;
-
       try {
-        // Fetch all selected types in parallel
-        const [objectResults, profileResults, rootResults] = await Promise.all([
-          wantObjects
-            ? fetchAPI(`${BASE_URL}/GetKnownObjectsBySearchString?${params}`, 'Object search failed', signal)
-              .catch(() => [])
-            : Promise.resolve([]),
-          wantProfiles
-            ? fetchAPI(`${BASE_URL}/GetKnownProfilesBySearchString?${params}`, 'Profile search failed', signal)
-              .catch(() => [])
-            : Promise.resolve([]),
-          wantMessages
-            ? fetchAPI(`${BASE_URL}/GetKnownRootsBySearchString?${params}`, 'Message search failed', signal)
-              .catch(() => [])
-            : Promise.resolve([])
-        ]);
-
+        // Fetch the first batch — separate calls per checked blockchain per type
+        const { objectResults, profileResults, rootResults } = await fetchNextPage(signal);
         if (state.currentSearchId !== searchId) return;
-
-        // Update exhaustion flags based on whether the first batch was a full page
-        const objLen = (objectResults || []).length;
-        const profLen = (profileResults || []).length;
-        const rootLen = (rootResults || []).length;
-
-        if (wantObjects && objLen < BATCH_SIZE)
-          state.exhaustedObjects = true;
-        if (wantProfiles && profLen < BATCH_SIZE)
-          state.exhaustedProfiles = true;
-        if (wantMessages && rootLen < BATCH_SIZE)
-          state.exhaustedMessages = true;
 
         document.getElementById('loading').style.display = 'none';
 
@@ -1405,8 +1387,7 @@
         $input.disabled = false;
         // Set up continued loading now that isSearching is cleared
         if (state.currentSearchId === searchId && state.totalDisplayed > 0) {
-          const moreNeeded = !state.exhaustedObjects || !state.exhaustedProfiles || !state.exhaustedMessages;
-          if (moreNeeded) {
+          if (anyMoreNeeded()) {
             if (countVisible() === 0) {
               // No visible results yet; auto-load next batch immediately
               setTimeout(() => loadMoreBatch(), 0);

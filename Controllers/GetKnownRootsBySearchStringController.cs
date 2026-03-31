@@ -17,7 +17,7 @@ namespace P2FK.IO.Controllers
         }
 
         [HttpGet]
-        public async Task<ActionResult> Get(string searchString = "", int qty = 10, int skip = 0)
+        public async Task<ActionResult> Get(string searchString = "", int qty = 10, int skip = 0, string? blockchain = null)
         {
             if (searchString.Length > 2048)
                 return BadRequest("[\"invalid search string\"]");
@@ -26,7 +26,7 @@ namespace P2FK.IO.Controllers
             skip = Math.Clamp(skip, 0, 999);
             qty = Math.Min(qty, 1000 - skip);
 
-            var results = await _searchService.SearchRootsAsync(searchString, qty, skip);
+            var results = await _searchService.SearchRootsAsync(searchString, qty, skip, blockchain);
             return new JsonResult(results);
         }
     }
