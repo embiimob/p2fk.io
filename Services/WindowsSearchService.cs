@@ -94,13 +94,13 @@ namespace P2FK.IO.Services
         // ── Public search methods ──────────────────────────────────────────────
 
         public async Task<List<SearchResultRoot>> SearchRootsAsync(
-            string searchString, int qty, int skip)
+            string searchString, int qty, int skip, string? blockchain = null)
         {
             qty = Math.Clamp(qty, 1, 1000);
             skip = Math.Clamp(skip, 0, 999);
             qty = Math.Min(qty, 1000 - skip);
 
-            string cacheKey = $"roots:{searchString?.ToLowerInvariant() ?? ""}:{qty}:{skip}";
+            string cacheKey = $"roots:{searchString?.ToLowerInvariant() ?? ""}:{qty}:{skip}:{blockchain ?? ""}";
             if (_cache.TryGetValue(cacheKey, out List<SearchResultRoot>? cached) && cached != null)
                 return cached;
 
@@ -184,6 +184,10 @@ namespace P2FK.IO.Services
 
                 string detectedBlockchain = DetectFirstOutputAddress(rootObj.Value);
 
+                // Filter by blockchain if requested
+                if (blockchain != null && !string.Equals(detectedBlockchain, blockchain, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
                 if (skipped < skip) { skipped++; continue; }
 
                 results.Add(new SearchResultRoot
@@ -198,13 +202,13 @@ namespace P2FK.IO.Services
         }
 
         public async Task<List<SearchResultObject>> SearchObjectsAsync(
-            string searchString, int qty, int skip)
+            string searchString, int qty, int skip, string? blockchain = null)
         {
             qty = Math.Clamp(qty, 1, 1000);
             skip = Math.Clamp(skip, 0, 999);
             qty = Math.Min(qty, 1000 - skip);
 
-            string cacheKey = $"objects:{searchString?.ToLowerInvariant() ?? ""}:{qty}:{skip}";
+            string cacheKey = $"objects:{searchString?.ToLowerInvariant() ?? ""}:{qty}:{skip}:{blockchain ?? ""}";
             if (_cache.TryGetValue(cacheKey, out List<SearchResultObject>? cached) && cached != null)
                 return cached;
 
@@ -274,6 +278,10 @@ namespace P2FK.IO.Services
 
                 string detectedBlockchain = DetectBlockchain(address);
 
+                // Filter by blockchain if requested — avoids unnecessary file I/O
+                if (blockchain != null && !string.Equals(detectedBlockchain, blockchain, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
                 // Always load OBJ.json from the address folder, regardless of which file
                 // was matched by the search (e.g. a PDF or HTML file in the same folder).
                 string objJsonPath = Path.Combine(_rootPath, address, "OBJ.json");
@@ -302,13 +310,13 @@ namespace P2FK.IO.Services
         }
 
         public async Task<List<SearchResultProfile>> SearchProfilesAsync(
-            string searchString, int qty, int skip)
+            string searchString, int qty, int skip, string? blockchain = null)
         {
             qty = Math.Clamp(qty, 1, 1000);
             skip = Math.Clamp(skip, 0, 999);
             qty = Math.Min(qty, 1000 - skip);
 
-            string cacheKey = $"profiles:{searchString?.ToLowerInvariant() ?? ""}:{qty}:{skip}";
+            string cacheKey = $"profiles:{searchString?.ToLowerInvariant() ?? ""}:{qty}:{skip}:{blockchain ?? ""}";
             if (_cache.TryGetValue(cacheKey, out List<SearchResultProfile>? cached) && cached != null)
                 return cached;
 
@@ -377,6 +385,10 @@ namespace P2FK.IO.Services
                 if (address == null) continue;
 
                 string detectedBlockchain = DetectBlockchain(address);
+
+                // Filter by blockchain if requested — avoids unnecessary file I/O
+                if (blockchain != null && !string.Equals(detectedBlockchain, blockchain, StringComparison.OrdinalIgnoreCase))
+                    continue;
 
                 // Always load GetProfileByAddress.json from the address folder, regardless of
                 // which file was matched by the search (e.g. a PDF or HTML file in the same folder).
