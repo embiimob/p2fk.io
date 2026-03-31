@@ -96,8 +96,9 @@ namespace P2FK.IO.Services
         public async Task<List<SearchResultRoot>> SearchRootsAsync(
             string searchString, int qty, int skip)
         {
-            qty = Math.Clamp(qty, 1, 100);
-            skip = Math.Max(skip, 0);
+            qty = Math.Clamp(qty, 1, 1000);
+            skip = Math.Clamp(skip, 0, 999);
+            qty = Math.Min(qty, 1000 - skip);
 
             string cacheKey = $"roots:{searchString?.ToLowerInvariant() ?? ""}:{qty}:{skip}";
             if (_cache.TryGetValue(cacheKey, out List<SearchResultRoot>? cached) && cached != null)
@@ -177,6 +178,10 @@ namespace P2FK.IO.Services
                 var rootObj = await ReadJsonAsync<JsonElement?>(rootJsonPath);
                 if (rootObj == null) continue;
 
+                // Skip roots where Output is null or missing
+                if (!rootObj.Value.TryGetProperty("Output", out var rootOutput) || rootOutput.ValueKind == JsonValueKind.Null)
+                    continue;
+
                 string detectedBlockchain = DetectFirstOutputAddress(rootObj.Value);
 
                 if (skipped < skip) { skipped++; continue; }
@@ -195,8 +200,9 @@ namespace P2FK.IO.Services
         public async Task<List<SearchResultObject>> SearchObjectsAsync(
             string searchString, int qty, int skip)
         {
-            qty = Math.Clamp(qty, 1, 100);
-            skip = Math.Max(skip, 0);
+            qty = Math.Clamp(qty, 1, 1000);
+            skip = Math.Clamp(skip, 0, 999);
+            qty = Math.Min(qty, 1000 - skip);
 
             string cacheKey = $"objects:{searchString?.ToLowerInvariant() ?? ""}:{qty}:{skip}";
             if (_cache.TryGetValue(cacheKey, out List<SearchResultObject>? cached) && cached != null)
@@ -278,6 +284,10 @@ namespace P2FK.IO.Services
                 var obj = await ReadJsonAsync<JsonElement?>(objJsonPath);
                 if (obj == null) continue;
 
+                // Skip objects where URN is null or missing
+                if (!obj.Value.TryGetProperty("URN", out var objUrn) || objUrn.ValueKind == JsonValueKind.Null)
+                    continue;
+
                 results.Add(new SearchResultObject
                 {
                     Blockchain = detectedBlockchain,
@@ -292,8 +302,9 @@ namespace P2FK.IO.Services
         public async Task<List<SearchResultProfile>> SearchProfilesAsync(
             string searchString, int qty, int skip)
         {
-            qty = Math.Clamp(qty, 1, 100);
-            skip = Math.Max(skip, 0);
+            qty = Math.Clamp(qty, 1, 1000);
+            skip = Math.Clamp(skip, 0, 999);
+            qty = Math.Min(qty, 1000 - skip);
 
             string cacheKey = $"profiles:{searchString?.ToLowerInvariant() ?? ""}:{qty}:{skip}";
             if (_cache.TryGetValue(cacheKey, out List<SearchResultProfile>? cached) && cached != null)
@@ -374,6 +385,10 @@ namespace P2FK.IO.Services
 
                 var profile = await ReadJsonAsync<JsonElement?>(profileJsonPath);
                 if (profile == null) continue;
+
+                // Skip profiles where URN is null or missing
+                if (!profile.Value.TryGetProperty("URN", out var profileUrn) || profileUrn.ValueKind == JsonValueKind.Null)
+                    continue;
 
                 results.Add(new SearchResultProfile
                 {
