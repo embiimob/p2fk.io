@@ -664,6 +664,11 @@
     // ── String utilities ─────────────────────────────────────────────────
     const abbreviateAddress = (addr) => addr ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : '';
 
+    const normalizeChain = (bc) => {
+      const c = (bc || '').toUpperCase().trim();
+      return c === 'BTC-TESTNET' ? 'TBTC' : c; // '' = unknown origin; applyChainFilter treats '' as BTC/TBTC-compatible
+    };
+
     const escapeHtml = (str) => String(str)
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -1093,6 +1098,33 @@
       return new Date(0);
     };
 
+    // ── Blockchain display filter (show/hide rendered cards without re-fetching) ──
+    const applyChainFilter = () => {
+      const allowedChains = new Set();
+      if (document.getElementById('chkBitcoin').checked) allowedChains.add('BTC');
+      if (document.getElementById('chkTestnet3').checked) allowedChains.add('TBTC');
+      if (document.getElementById('chkLTC').checked) allowedChains.add('LTC');
+      if (document.getElementById('chkDOG').checked) allowedChains.add('DOG');
+      if (document.getElementById('chkMZC').checked) allowedChains.add('MZC');
+
+      let visible = 0;
+      document.querySelectorAll('#feed [data-chain]').forEach(card => {
+        const chain = card.dataset.chain;
+        // Empty chain = unknown origin; show it when BTC or TBTC is selected
+        const passes = chain ? allowedChains.has(chain) : (allowedChains.has('BTC') || allowedChains.has('TBTC'));
+        card.style.display = passes ? '' : 'none';
+        if (passes) visible++;
+      });
+
+      const total = state.totalDisplayed;
+      if (total === 0) return;
+      const countEl = document.getElementById('resultCount');
+      countEl.textContent = visible === total
+        ? `${visible} result${visible === 1 ? '' : 's'} found`
+        : `${visible} of ${total} result${total === 1 ? '' : 's'} match current filters`;
+      countEl.style.display = 'block';
+    };
+
     // ── Render a batch of API results into the feed ───────────────────────
     const appendResultItems = async (objectResults, profileResults, rootResults, searchId, signal) => {
       const items = [];
@@ -1118,22 +1150,8 @@
         items.push({ type: 'message', data: normalized, blockchain: result.Blockchain || result.blockchain || '' });
       }
 
-      // Filter by selected blockchain checkboxes
-      const allowedChains = new Set();
-      if (document.getElementById('chkBitcoin').checked) allowedChains.add('BTC');
-      if (document.getElementById('chkTestnet3').checked) allowedChains.add('TBTC');
-      if (document.getElementById('chkLTC').checked) allowedChains.add('LTC');
-      if (document.getElementById('chkDOG').checked) allowedChains.add('DOG');
-      if (document.getElementById('chkMZC').checked) allowedChains.add('MZC');
-      const filtered = items.filter(item => {
-        const chain = (item.blockchain || '').toUpperCase();
-        if (!chain) return allowedChains.has('BTC') || allowedChains.has('TBTC');
-        const normalised = (chain === 'BTC-TESTNET') ? 'TBTC' : chain;
-        return allowedChains.has(normalised);
-      });
-
       // Sort by date descending within this batch
-      filtered.sort((a, b) => {
+      items.sort((a, b) => {
         const da = getItemDate(a).getTime();
         const db = getItemDate(b).getTime();
         if (da === 0 && db === 0) return 0;
@@ -1143,15 +1161,20 @@
       });
 
       const feed = document.getElementById('feed');
-      for (const item of filtered) {
+      for (const item of items) {
         if (state.currentSearchId !== searchId) break;
         if (item.type === 'object') {
-          feed.appendChild(renderObjectCard(item.raw, item.blockchain));
+          const card = renderObjectCard(item.raw, item.blockchain);
+          card.dataset.chain = normalizeChain(item.blockchain);
+          feed.appendChild(card);
         } else if (item.type === 'profile') {
-          feed.appendChild(renderProfileCard(item.raw, item.blockchain));
+          const card = renderProfileCard(item.raw, item.blockchain);
+          card.dataset.chain = normalizeChain(item.blockchain);
+          feed.appendChild(card);
         } else if (item.type === 'message') {
           const card = await renderMessageCard(item.data, signal, item.blockchain);
           if (state.currentSearchId !== searchId) break;
+          card.dataset.chain = normalizeChain(item.blockchain);
           feed.appendChild(card);
           card.querySelectorAll('source[data-src]').forEach(source => {
             const mediaEl = source.parentElement;
@@ -1167,7 +1190,7 @@
         }
       }
 
-      return filtered.length;
+      return items.length;
     };
 
     // ── Load the next page of results (infinite scroll) ───────────────────
@@ -1231,9 +1254,7 @@
         if (state.currentSearchId !== searchId) return;
 
         state.totalDisplayed += added;
-        const countEl = document.getElementById('resultCount');
-        countEl.textContent = `${state.totalDisplayed} result${state.totalDisplayed === 1 ? '' : 's'} loaded`;
-        countEl.style.display = 'block';
+        applyChainFilter();
       } catch (err) {
         if (err.name !== 'AbortError') showError('Failed to load more results: ' + err.message);
       } finally {
@@ -1343,9 +1364,7 @@
           document.getElementById('feed').innerHTML = '<div class="loading">No results found.</div>';
           document.getElementById('resultCount').style.display = 'none';
         } else {
-          const countEl = document.getElementById('resultCount');
-          countEl.textContent = `${state.totalDisplayed} result${state.totalDisplayed === 1 ? '' : 's'} found`;
-          countEl.style.display = 'block';
+          applyChainFilter();
           // Activate infinite scroll if more pages may exist
           if (!state.exhaustedObjects || !state.exhaustedProfiles || !state.exhaustedMessages) {
             scrollObserver.observe(document.getElementById('loadSentinel'));
@@ -1403,6 +1422,11 @@
 
     document.getElementById('searchInput').addEventListener('keypress', (e) => {
       if (e.key === 'Enter') performSearch();
+    });
+
+    // Blockchain checkboxes are display filters — show/hide already-fetched cards
+    ['chkBitcoin', 'chkTestnet3', 'chkLTC', 'chkDOG', 'chkMZC'].forEach(id => {
+      document.getElementById(id).addEventListener('change', applyChainFilter);
     });
 
     // ── URL Builder ──────────────────────────────────────────────────────
