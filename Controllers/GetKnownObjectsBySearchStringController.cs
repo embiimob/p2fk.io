@@ -22,8 +22,9 @@ namespace P2FK.IO.Controllers
             if (searchString.Length > 2048)
                 return BadRequest("[\"invalid search string\"]");
 
-            qty = Math.Clamp(qty, 1, 100);
-            skip = Math.Max(skip, 0);
+            qty = Math.Clamp(qty, 1, 1000);
+            skip = Math.Clamp(skip, 0, 999);
+            qty = Math.Min(qty, 1000 - skip);
 
             var results = await _searchService.SearchObjectsAsync(searchString, qty, skip);
             return new JsonResult(results);

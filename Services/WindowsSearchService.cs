@@ -96,8 +96,9 @@ namespace P2FK.IO.Services
         public async Task<List<SearchResultRoot>> SearchRootsAsync(
             string searchString, int qty, int skip)
         {
-            qty = Math.Clamp(qty, 1, 100);
-            skip = Math.Max(skip, 0);
+            qty = Math.Clamp(qty, 1, 1000);
+            skip = Math.Clamp(skip, 0, 999);
+            qty = Math.Min(qty, 1000 - skip);
 
             string cacheKey = $"roots:{searchString?.ToLowerInvariant() ?? ""}:{qty}:{skip}";
             if (_cache.TryGetValue(cacheKey, out List<SearchResultRoot>? cached) && cached != null)
@@ -199,8 +200,9 @@ namespace P2FK.IO.Services
         public async Task<List<SearchResultObject>> SearchObjectsAsync(
             string searchString, int qty, int skip)
         {
-            qty = Math.Clamp(qty, 1, 100);
-            skip = Math.Max(skip, 0);
+            qty = Math.Clamp(qty, 1, 1000);
+            skip = Math.Clamp(skip, 0, 999);
+            qty = Math.Min(qty, 1000 - skip);
 
             string cacheKey = $"objects:{searchString?.ToLowerInvariant() ?? ""}:{qty}:{skip}";
             if (_cache.TryGetValue(cacheKey, out List<SearchResultObject>? cached) && cached != null)
@@ -300,8 +302,9 @@ namespace P2FK.IO.Services
         public async Task<List<SearchResultProfile>> SearchProfilesAsync(
             string searchString, int qty, int skip)
         {
-            qty = Math.Clamp(qty, 1, 100);
-            skip = Math.Max(skip, 0);
+            qty = Math.Clamp(qty, 1, 1000);
+            skip = Math.Clamp(skip, 0, 999);
+            qty = Math.Min(qty, 1000 - skip);
 
             string cacheKey = $"profiles:{searchString?.ToLowerInvariant() ?? ""}:{qty}:{skip}";
             if (_cache.TryGetValue(cacheKey, out List<SearchResultProfile>? cached) && cached != null)
