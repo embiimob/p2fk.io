@@ -873,6 +873,7 @@
     currentObjectIndex: -1,
     currentMainnet: false,
     imageCache: new Map(),
+    txidMeta: new Map(),
     keywordCache: new Map(),
     filterType: 'all',
     filteredObjects: [],
@@ -1082,9 +1083,27 @@
     if (!urn) return '';
     urn = urn.replace(/\\/g, '/');
     const parts = urn.split(':').pop().split('/');
-    return /^(BTC|LTC|DOG|MZC):/i.test(urn) || /^[A-Za-z0-9]+\/.+/.test(urn)
-      ? `https://p2fk.io/root/${parts[0]}/${parts[1] || ''}`
-      : '';
+    if (/^(BTC|LTC|DOG|MZC):/i.test(urn) || /^[A-Za-z0-9]+\/.+/.test(urn)) {
+      const chainMatch = urn.match(/^(BTC|LTC|DOG|MZC):/i);
+      const blockchain = chainMatch ? chainMatch[1].toUpperCase() : 'BTC';
+      if (parts[0] && /^[0-9a-fA-F]{64}$/.test(parts[0]))
+        state.txidMeta.set(parts[0], { mainnet: !!document.getElementById('mainnetToggle')?.checked, blockchain });
+      return `https://p2fk.io/root/${parts[0]}/${parts[1] || ''}`;
+    }
+    return '';
+  };
+
+  const warmRootCache = async (txid, mainnet, blockchain) => {
+    if (!txid || !/^[0-9a-fA-F]{64}$/.test(txid)) return;
+    const chain = (blockchain || 'BTC').toUpperCase();
+    try {
+      const apiUrl = chain !== 'BTC'
+        ? `https://p2fk.io/GetRootByTransactionID/${txid}?blockchain=${encodeURIComponent(chain)}&verbose=false`
+        : `https://p2fk.io/GetRootByTransactionID/${txid}?mainnet=${!!mainnet}&verbose=false`;
+      await fetch(apiUrl);
+    } catch (e) {
+      console.warn(`warmRootCache failed for ${txid}:`, e.message);
+    }
   };
 
   const getImageUrl = (image, urn) => {
@@ -1125,25 +1144,30 @@
   const loadImageWithTimeout = async (url, timeout = 180000) => {
     if (state.imageCache.has(url)) return state.imageCache.get(url);
     if (url === state.fallbackImage) return url;
-    try {
+    const tryLoad = () => new Promise((resolve, reject) => {
       const img = new Image();
       if (!url.includes('p2fk.io/root')) img.crossOrigin = 'Anonymous';
-      const result = await new Promise((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error('Timeout')), timeout);
-        img.onload = async () => {
-          clearTimeout(timer);
-          const resizedUrl = url.includes('p2fk.io/root') ? url : await resizeImage(img, 1024);
-          state.imageCache.set(url, resizedUrl);
-          resolve(resizedUrl);
-        };
-        img.onerror = () => {
-          clearTimeout(timer);
-          reject(new Error('Error loading'));
-        };
-        img.src = url;
-      });
-      return result;
+      const timer = setTimeout(() => reject(new Error('Timeout')), timeout);
+      img.onload = async () => {
+        clearTimeout(timer);
+        const resizedUrl = url.includes('p2fk.io/root') ? url : await resizeImage(img, 1024);
+        state.imageCache.set(url, resizedUrl);
+        resolve(resizedUrl);
+      };
+      img.onerror = () => { clearTimeout(timer); reject(new Error('Error loading')); };
+      img.src = url;
+    });
+    try {
+      return await tryLoad();
     } catch (error) {
+      const txidMatch = url.match(/\/root\/([0-9a-fA-F]{64})\//i);
+      if (txidMatch) {
+        const txid = txidMatch[1];
+        const { mainnet, blockchain } = state.txidMeta.get(txid) ||
+          { mainnet: !!document.getElementById('mainnetToggle')?.checked, blockchain: 'BTC' };
+        await warmRootCache(txid, mainnet, blockchain);
+        try { return await tryLoad(); } catch (_) {}
+      }
       state.imageCache.set(url, url);
       return url;
     }
