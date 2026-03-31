@@ -11,11 +11,6 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddSingleton<P2FK.IO.Wrapper>();
 builder.Services.AddMemoryCache();
-builder.Services.AddCors(options =>
-{
-    options.AddDefaultPolicy(policy =>
-        policy.SetIsOriginAllowed(origin => true).AllowAnyMethod().AllowAnyHeader());
-});
 if (OperatingSystem.IsWindows())
     builder.Services.AddSingleton<P2FK.IO.Services.WindowsSearchService>();
 
@@ -34,8 +29,6 @@ builder.WebHost.ConfigureKestrel(kestrel =>
 });
 
 var app = builder.Build();
-
-app.UseCors();
 
 // Serve on-chain files from the root folder at /root/{txid}/{filename}
 var wrapper = app.Services.GetRequiredService<P2FK.IO.Wrapper>();
