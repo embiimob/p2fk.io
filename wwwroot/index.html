@@ -441,12 +441,12 @@
 
     /* ── URN media preview ──────────────────────────────────────────── */
     .obj-preview { width: 100%; margin-bottom: 16px; border-radius: 8px; overflow: hidden; background: #0a0a0a; }
-    .obj-preview video, .obj-preview audio { width: 100%; display: block; max-height: 360px; }
-    .obj-preview audio { height: 54px; background: #1e1e1e; }
-    .obj-preview iframe { width: 100%; height: 420px; border: none; display: block; }
-    .obj-preview model-viewer { width: 100%; height: 360px; display: block; background: #111; --poster-color: transparent; }
-    .obj-preview img.preview-img { width: 100%; max-height: 400px; object-fit: contain; display: block; }
-    .obj-preview .preview-pdf { width: 100%; height: 520px; border: none; display: block; }
+    .obj-preview video { width: 100%; display: block; aspect-ratio: 1/1; max-height: 500px; object-fit: contain; background: #000; }
+    .obj-preview audio { width: 100%; display: block; height: 54px; background: #1e1e1e; }
+    .obj-preview iframe { width: 100%; aspect-ratio: 1/1; border: none; display: block; }
+    .obj-preview model-viewer { width: 100%; aspect-ratio: 1/1; display: block; background: #111; --poster-color: transparent; }
+    .obj-preview img.preview-img { width: 100%; max-height: 500px; object-fit: contain; display: block; }
+    .obj-preview .preview-pdf { width: 100%; aspect-ratio: 1/1; border: none; display: block; }
     .obj-preview-placeholder { text-align: center; padding: 18px; color: #888; font-size: 0.85em; }
     .obj-preview-placeholder a { color: #bb86fc; }
 
@@ -508,7 +508,7 @@
     <img src="/bitfossil.png" alt="bitFossil logo">
   </div>
   <form id="search-form" onsubmit="return false;">
-    <input type="text" id="navbar-search-input" placeholder="Search messages, profiles, objects…" autocomplete="off">
+    <input type="text" id="navbar-search-input" placeholder="Search #Keywords, @Profiles, Free Text" autocomplete="off">
     <button type="submit" id="navbar-search-btn">Search</button>
   </form>
   <div class="nav-links">
@@ -1119,7 +1119,15 @@ const loadMoreBatch=async()=>{
 // ── Main search ────────────────────────────────────────────────────────
 const performSearch=async(searchText)=>{
   if(state.isSearching) return;
-  const text=(searchText||document.getElementById('navbar-search-input').value.trim()||'*');
+  const raw=(searchText||document.getElementById('navbar-search-input').value.trim()||'*');
+
+  // #keyword → keyword object search (calls GetObjectsByKeyword)
+  if(raw.startsWith('#')){
+    const kw=raw.slice(1).trim();
+    if(kw) return performKeywordSearch(kw);
+  }
+
+  const text=raw;
   const wantObjects=document.getElementById('chkObjects').checked;
   const wantProfiles=document.getElementById('chkProfiles').checked;
   const wantMessages=document.getElementById('chkMessages').checked;
@@ -1175,24 +1183,32 @@ const showSearchError=(msg)=>{const el=document.getElementById('searchError');el
 // ── URN media type detection ──────────────────────────────────────────
 const getUrnFilePath=(urn)=>{
   if(!urn) return null;
-  if(/^IPFS:/i.test(urn)||/^ipfs[:/]+/i.test(urn)){
-    return urn.replace(/^ipfs[:/]+/i,'');
+  // Normalize backslashes to forward slashes
+  const u=urn.replace(/\\/g,'/');
+  if(/^IPFS:/i.test(u)||/^ipfs[:/]+/i.test(u)){
+    // Return everything after the hash (the file path portion)
+    const raw=u.replace(/^ipfs[:/]+/i,'');
+    const slashIdx=raw.indexOf('/');
+    return slashIdx>=0?raw.slice(slashIdx+1):null;
   }
-  if(/^(BTC|LTC|DOG|MZC):/i.test(urn)||/^[A-Za-z0-9]+\/.+/.test(urn)){
-    const parts=urn.split(':').pop().split('/');
+  if(/^(BTC|LTC|DOG|MZC):/i.test(u)||/^[A-Za-z0-9]+\/.+/.test(u)){
+    const parts=u.split(':').pop().split('/');
     return parts[1]||null;
   }
   return null;
 };
 const getUrnMediaUrl=(urn)=>{
   if(!urn) return null;
-  if(/^IPFS:/i.test(urn)||/^ipfs[:/]+/i.test(urn)){
-    const path=urn.replace(/^ipfs[:/]+/i,'');
-    const hash=path.split(/[/\\]/)[0];
-    return hash?`https://ipfs.io/ipfs/${path}`:null;
+  const u=urn.replace(/\\/g,'/');
+  if(/^IPFS:/i.test(u)||/^ipfs[:/]+/i.test(u)){
+    // Build full IPFS gateway URL: ipfs.io/ipfs/HASH/optional/path
+    const raw=u.replace(/^ipfs[:/]+/i,'');
+    const hash=raw.split('/')[0];
+    if(!hash) return null;
+    return `https://ipfs.io/ipfs/${raw}`;
   }
-  if(/^(BTC|LTC|DOG|MZC):/i.test(urn)||/^[A-Za-z0-9]+\/.+/.test(urn)){
-    const parts=urn.split(':').pop().split('/');
+  if(/^(BTC|LTC|DOG|MZC):/i.test(u)||/^[A-Za-z0-9]+\/.+/.test(u)){
+    const parts=u.split(':').pop().split('/');
     if(!parts[0]||!/^[0-9a-fA-F]{64}$/.test(parts[0])) return null;
     return parts[1]?`${BASE_URL}/root/${parts[0]}/${parts[1]}`:null;
   }
@@ -1200,7 +1216,8 @@ const getUrnMediaUrl=(urn)=>{
 };
 const getUrnMediaType=(urn)=>{
   if(!urn) return null;
-  const filePath=getUrnFilePath(urn)||'';
+  // Check file extension from the actual file portion of the path
+  const filePath=getUrnFilePath(urn)||getUrnMediaUrl(urn)||'';
   const lo=filePath.toLowerCase();
   if(/\.(mp4|webm|mov|ogg|ogv)$/.test(lo)) return 'video';
   if(/\.(mp3|wav|flac|aac|oga)$/.test(lo)) return 'audio';
@@ -1328,6 +1345,7 @@ const renderObjMiniCard=(obj,mainnet)=>{
   return card;
 };
 
+const _tabIdForType={owned:'tabOwned',created:'tabCreated',associated:'tabAssoc'};
 const loadProfileObjects=async(type,address,mainnet)=>{
   const gridEl=document.getElementById('profileObjGrid');
   const statusEl=document.getElementById('profileObjStatus');
@@ -1339,11 +1357,15 @@ const loadProfileObjects=async(type,address,mainnet)=>{
   const sortBy=sortEl?sortEl.value:'newest';
   const endpoints={owned:'GetObjectsOwnedByAddress',created:'GetObjectsCreatedByAddress',associated:'GetObjectsByAddress'};
   const ep=endpoints[type]||'GetObjectsByAddress';
+  const tabLabels={owned:'Owned',created:'Created',associated:'Associated'};
   try{
     const data=await fetchAPI(`${BASE_URL}/${ep}/${encodeURIComponent(address)}?mainnet=${mainnet}&skip=0&qty=-1&verbose=false`,'',null,30000);
     let objs=Array.isArray(data)?data:[];
     // Objects API may return them wrapped or bare
     objs=objs.map(o=>o.Object||o.object||o).filter(o=>o&&typeof o==='object'&&!Array.isArray(o));
+    // Update tab button with count
+    const tabBtn=document.getElementById(_tabIdForType[type]);
+    if(tabBtn) tabBtn.textContent=`${tabLabels[type]||type} (${objs.length})`;
     objs=sortObjects(objs,sortBy);
     gridEl.innerHTML='';
     if(!objs.length){
@@ -1357,6 +1379,8 @@ const loadProfileObjects=async(type,address,mainnet)=>{
       gridEl.style.display='grid';
     }
   }catch(e){
+    const tabBtn=document.getElementById(_tabIdForType[type]);
+    if(tabBtn) tabBtn.textContent=tabLabels[type]||type;
     if(statusEl){statusEl.className='profile-obj-empty';statusEl.textContent='Failed to load objects: '+e.message;statusEl.style.display='block';}
   }
 };
@@ -1463,9 +1487,12 @@ const showProfileView=async(identifier,mainnet=true)=>{
     // Wire up internal profile URL links (@xxx → navigate by URN)
     info.querySelectorAll('.profile-url-link.internal').forEach(el=>{
       el.addEventListener('click',async()=>{
-        // resolve URN → address via GetProfileByURN for correct profile load
-        const urnTarget=el.dataset.urn;
+        // dataset.urn already has the @ stripped (see renderProfileCard urlHtml)
+        const urnRaw=el.dataset.urn||'';
+        // Strip any accidental leading @ just in case
+        const urnTarget=urnRaw.startsWith('@')?urnRaw.slice(1):urnRaw;
         const resolved=await fetchProfileByURN(urnTarget,mainnet,null);
+        // Use first Creators key (address) as the canonical identifier
         const addr=(resolved&&(resolved.Address||Object.keys(resolved.Creators||{})[0]))||urnTarget;
         navigateTo('profile',{profile:addr,mainnet});
       });
@@ -1886,18 +1913,49 @@ window.addEventListener('popstate',(e)=>{
 });
 
 // ── Navbar search ──────────────────────────────────────────────────────
+// ── Smart search: @username → profile, #keyword → object search ─────
+const handleNavSearch=async()=>{
+  const raw=document.getElementById('navbar-search-input').value.trim();
+  if(!raw){navigateTo('search',{});return;}
+  if(raw.startsWith('@')){
+    // Resolve @URN → profile address
+    const urnTarget=raw.slice(1).trim();
+    if(!urnTarget) return;
+    const btn=document.getElementById('navbar-search-btn');
+    btn.disabled=true;btn.textContent='…';
+    try{
+      const resolved=await fetchProfileByURN(urnTarget,true,null);
+      const addr=resolved&&(resolved.Address||Object.keys(resolved.Creators||{})[0]);
+      if(addr){navigateTo('profile',{profile:addr,mainnet:true});}
+      else{
+        // Try testnet too
+        const resolvedT=await fetchProfileByURN(urnTarget,false,null);
+        const addrT=resolvedT&&(resolvedT.Address||Object.keys(resolvedT.Creators||{})[0]);
+        if(addrT) navigateTo('profile',{profile:addrT,mainnet:false});
+        else navigateTo('search',{search:raw});
+      }
+    }catch{navigateTo('search',{search:raw});}
+    finally{btn.disabled=false;btn.innerHTML='Search';}
+    return;
+  }
+  if(raw.startsWith('#')){
+    // Keyword object search
+    const kw=raw.slice(1).trim();
+    if(!kw) return;
+    navigateTo('search',{search:raw}); // performSearch will detect #
+    return;
+  }
+  navigateTo('search',{search:raw});
+};
+
 document.getElementById('search-form').addEventListener('submit',(e)=>{
   e.preventDefault();
-  const text=document.getElementById('navbar-search-input').value.trim();
-  if(!text) return;
-  navigateTo('search',{search:text});
+  handleNavSearch();
 });
 
 document.getElementById('navbar-search-btn').addEventListener('click',(e)=>{
   e.preventDefault();
-  const text=document.getElementById('navbar-search-input').value.trim();
-  if(!text){navigateTo('search',{});return;}
-  navigateTo('search',{search:text});
+  handleNavSearch();
 });
 
 document.getElementById('brandHome').addEventListener('click',()=>navigateTo('search',{}));
