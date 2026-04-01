@@ -1,0 +1,1390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>P2FK.IO — Sup!? On-Chain Social</title>
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+  <style>
+    /* ── Reset & base ──────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; }
+    html { overscroll-behavior: none; scroll-behavior: smooth; }
+    body {
+      background: #121212;
+      color: #e0e0e0;
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+      overscroll-behavior: none;
+    }
+    a { color: #03dac6; text-decoration: none; }
+    a:hover { color: #bb86fc; }
+
+    /* ── Top nav bar ───────────────────────────────────────────────── */
+    #navbar {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 2000;
+      background: #1e1e1e;
+      border-bottom: 2px solid #bb86fc;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 7px 14px;
+      height: 54px;
+    }
+    #navbar .brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+      text-decoration: none;
+      color: #bb86fc;
+      font-size: 1.15em;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    #navbar .brand img { width: 36px; height: 36px; border-radius: 4px; object-fit: cover; }
+    #search-form {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex: 1;
+      max-width: 680px;
+    }
+    #navbar-search-input {
+      flex: 1;
+      padding: 7px 10px;
+      background: #2a2a2a;
+      border: 1px solid #444;
+      color: #e0e0e0;
+      border-radius: 5px;
+      font-size: 0.9em;
+      min-width: 0;
+    }
+    #navbar-search-input:focus { border-color: #bb86fc; outline: none; }
+    #navbar-search-btn {
+      padding: 7px 14px;
+      background: #6200ea;
+      border: none;
+      color: white;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 0.85em;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    #navbar-search-btn:hover:not(:disabled) { background: #7c4dff; }
+    #navbar-search-btn:disabled { background: #444; opacity: 0.7; }
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+      margin-left: auto;
+    }
+    .nav-links a {
+      color: #b0b0b0;
+      font-size: 0.82em;
+      white-space: nowrap;
+      padding: 4px 8px;
+      border-radius: 4px;
+      border: 1px solid #333;
+      transition: all 0.2s;
+    }
+    .nav-links a:hover { background: #2a2a2a; color: #bb86fc; border-color: #bb86fc; }
+
+    /* ── Chain / type filter bar ───────────────────────────────────── */
+    #filter-bar {
+      position: fixed;
+      top: 54px; left: 0; right: 0;
+      z-index: 1900;
+      background: #181818;
+      border-bottom: 1px solid #2a2a2a;
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 4px 10px;
+      padding: 5px 14px;
+      font-size: 0.8em;
+    }
+    #filter-bar label {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+      color: #b0b0b0;
+      white-space: nowrap;
+    }
+    #filter-bar label:hover { color: #e0e0e0; }
+    #filter-bar .sep {
+      width: 1px;
+      height: 16px;
+      background: #333;
+      flex-shrink: 0;
+    }
+    #filter-bar .chain-label { color: #03dac6; font-weight: bold; }
+    #filter-bar .type-label { color: #bb86fc; font-weight: bold; }
+
+    /* ── Main content area ─────────────────────────────────────────── */
+    #main {
+      padding-top: 98px; /* navbar 54 + filter-bar ~44 */
+      padding-bottom: 40px;
+      min-height: 100vh;
+    }
+
+    /* ── View containers ───────────────────────────────────────────── */
+    .view { display: none; }
+    .view.active { display: block; }
+
+    /* ── Search view ───────────────────────────────────────────────── */
+    #view-search .feed-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 15px 4px;
+    }
+    #resultCount {
+      font-size: 0.82em;
+      color: #b0b0b0;
+      display: none;
+    }
+    #feed {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 0 10px;
+      gap: 10px;
+    }
+    #loadSentinel { height: 20px; }
+    #searchLoading, #profileLoading, #objectLoading, #msgLoading {
+      text-align: center;
+      padding: 20px;
+      color: #b0b0b0;
+      font-size: 0.9em;
+    }
+    #searchError, #profileError, #objectError, #msgError {
+      text-align: center;
+      padding: 12px;
+      color: #cf6679;
+      font-size: 0.9em;
+      display: none;
+    }
+
+    /* ── Card shared styles ────────────────────────────────────────── */
+    .result-card {
+      background: #1e1e1e;
+      border-radius: 8px;
+      border: 1px solid #2a2a2a;
+      padding: 12px;
+      max-width: 660px;
+      width: 100%;
+      position: relative;
+      transition: border-color 0.2s;
+    }
+    .result-card:hover { border-color: #444; }
+    .message-card { background: #1e1e1e; border-radius: 8px; border: 1px solid #2a2a2a; padding: 12px; max-width: 660px; width: 100%; position: relative; }
+    .message-card p { margin: 5px 0; font-size: 0.9em; color: #e0e0e0; white-space: pre-wrap; word-break: break-word; }
+
+    /* ── Profile card (in search results) ─────────────────────────── */
+    .profile-result-card {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      cursor: pointer;
+    }
+    .profile-result-card:hover .card-name { color: #bb86fc; }
+    .card-avatar {
+      width: 56px;
+      height: 56px;
+      border-radius: 6px;
+      object-fit: cover;
+      flex-shrink: 0;
+      background: #333;
+    }
+    .card-body { flex: 1; min-width: 0; }
+    .card-name { font-weight: bold; color: #e0e0e0; font-size: 0.95em; margin: 0 0 2px; }
+    .card-bio { font-size: 0.82em; color: #b0b0b0; margin: 0 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .card-meta { font-size: 0.72em; color: #888; }
+
+    /* ── Object card (in search results) ──────────────────────────── */
+    .object-result-card {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      cursor: pointer;
+    }
+    .object-result-card:hover .card-name { color: #03dac6; }
+    .object-thumb {
+      width: 70px;
+      height: 70px;
+      border-radius: 6px;
+      object-fit: cover;
+      flex-shrink: 0;
+      background: #333;
+    }
+
+    /* ── Msg card sender header ────────────────────────────────────── */
+    .msg-sender {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+    .msg-sender-img {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      object-fit: cover;
+      background: #333;
+      flex-shrink: 0;
+    }
+    .msg-sender-name { font-size: 0.9em; font-weight: bold; color: #bb86fc; }
+    .message-meta { color: #888; font-size: 0.72em; margin-top: 8px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+    .message-attachments { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+    .message-attachments img { max-width: 100%; max-height: 280px; object-fit: cover; border-radius: 5px; background: #333; }
+    .message-attachments audio { width: 100%; }
+    .message-attachments video { max-width: 100%; max-height: 280px; border-radius: 5px; }
+    .message-attachments .pdf-viewer { width: 100%; height: 400px; border: none; border-radius: 5px; }
+    .message-attachments .video-embed { width: 100%; aspect-ratio: 16/9; border: none; border-radius: 5px; }
+
+    /* ── Badge chips ───────────────────────────────────────────────── */
+    .badge { display: inline-block; border-radius: 3px; padding: 1px 6px; font-size: 0.68em; font-weight: bold; margin-right: 4px; vertical-align: middle; }
+    .badge-message { background: #6200ea; color: #fff; }
+    .badge-profile { background: #1a3a2a; color: #03dac6; border: 1px solid #03dac6; }
+    .badge-object  { background: #2a1a3a; color: #bb86fc; border: 1px solid #bb86fc; }
+    .badge-chain   { background: #222; color: #888; font-size: 0.65em; border: 1px solid #333; }
+
+    /* ── Share / copy link button ──────────────────────────────────── */
+    .share-btn {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      background: transparent;
+      border: 1px solid #333;
+      color: #888;
+      border-radius: 4px;
+      padding: 3px 7px;
+      font-size: 0.7em;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 3px;
+    }
+    .share-btn:hover { background: #2a2a2a; color: #03dac6; border-color: #03dac6; }
+    .share-btn.copied { background: #1a3a1a; color: #4caf50; border-color: #4caf50; }
+
+    /* ── URN / keyword links ───────────────────────────────────────── */
+    .urn-link { color: #bb86fc; cursor: pointer; text-decoration: underline; }
+    .urn-link:hover { color: #7c4dff; }
+    .keyword-link { color: #03dac6; cursor: pointer; }
+    .keyword-link:hover { color: #bb86fc; }
+
+    /* ── TXID copy span ────────────────────────────────────────────── */
+    .txid-copy { cursor: pointer; color: #888; }
+    .txid-copy:hover { color: #03dac6; }
+    .refresh-date { cursor: pointer; color: #888; font-size: 0.85em; }
+    .refresh-date:hover { color: #bb86fc; }
+
+    /* ── File cards ────────────────────────────────────────────────── */
+    .file-card { display: flex; align-items: center; gap: 12px; padding: 10px 12px; background: #181818; border: 1px solid #333; border-radius: 6px; }
+    .file-card:hover { border-color: #bb86fc; }
+    .file-card-icon { font-size: 1.8em; width: 36px; text-align: center; flex-shrink: 0; }
+    .file-card-info { flex: 1; min-width: 0; }
+    .file-card-name { font-size: 0.85em; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .file-card-meta { font-size: 0.72em; color: #888; margin-top: 2px; }
+    .file-card-download { flex-shrink: 0; padding: 5px 10px; background: #6200ea; color: #fff; border-radius: 4px; font-size: 0.78em; text-decoration: none; }
+    .file-card-download:hover { background: #bb86fc; color: #121212; }
+
+    /* ── Profile view ──────────────────────────────────────────────── */
+    #view-profile, #view-object, #view-message {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 16px 14px;
+    }
+    .back-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      color: #b0b0b0;
+      font-size: 0.82em;
+      cursor: pointer;
+      margin-bottom: 14px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      border: 1px solid #333;
+      background: transparent;
+      transition: all 0.2s;
+    }
+    .back-link:hover { background: #2a2a2a; color: #bb86fc; border-color: #bb86fc; }
+    .profile-panel {
+      background: #1e1e1e;
+      border-radius: 8px;
+      border: 1px solid #2a2a2a;
+      padding: 16px;
+      margin-bottom: 16px;
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+      position: relative;
+    }
+    .profile-panel-img {
+      width: 88px;
+      height: 88px;
+      border-radius: 8px;
+      object-fit: cover;
+      background: #333;
+      flex-shrink: 0;
+    }
+    .profile-panel-info { flex: 1; min-width: 0; }
+    .profile-panel-info h2 { margin: 0 0 4px; color: #bb86fc; font-size: 1.1em; }
+    .profile-panel-info p { margin: 2px 0; font-size: 0.85em; color: #b0b0b0; }
+    .profile-panel-info .addr { font-family: monospace; font-size: 0.75em; color: #666; word-break: break-all; }
+    .profile-msg-thread { display: flex; flex-direction: column; gap: 10px; }
+    .profile-msg-thread h3 { margin: 0 0 8px; font-size: 0.9em; color: #888; font-weight: normal; }
+    #profileMsgLoadMore {
+      display: none;
+      margin: 12px auto;
+      padding: 8px 20px;
+      background: #2a2a2a;
+      border: 1px solid #444;
+      color: #b0b0b0;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 0.85em;
+    }
+    #profileMsgLoadMore:hover { background: #333; color: #bb86fc; border-color: #bb86fc; }
+
+    /* ── Object detail view ────────────────────────────────────────── */
+    .object-detail-card {
+      background: #1e1e1e;
+      border-radius: 8px;
+      border: 1px solid #2a2a2a;
+      padding: 16px;
+      position: relative;
+    }
+    .object-detail-header { display: flex; gap: 16px; align-items: flex-start; margin-bottom: 12px; }
+    .object-detail-img {
+      width: 120px;
+      height: 120px;
+      border-radius: 8px;
+      object-fit: cover;
+      background: #333;
+      flex-shrink: 0;
+    }
+    .object-detail-info { flex: 1; min-width: 0; }
+    .object-detail-info h2 { margin: 0 0 4px; color: #bb86fc; font-size: 1.15em; }
+    .object-detail-info p { margin: 2px 0; font-size: 0.85em; color: #b0b0b0; }
+    .object-detail-info .desc { color: #e0e0e0; margin-top: 6px; }
+    .object-detail-owners { margin-top: 10px; }
+    .object-detail-owners h4 { margin: 0 0 4px; font-size: 0.8em; color: #888; }
+    .owner-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; border-bottom: 1px solid #2a2a2a; font-size: 0.82em; }
+    .owner-row:last-child { border-bottom: none; }
+    .owner-addr { font-family: monospace; color: #03dac6; cursor: pointer; }
+    .owner-addr:hover { color: #bb86fc; }
+    .owner-units { color: #888; font-size: 0.9em; }
+
+    /* ── Single message view ───────────────────────────────────────── */
+    #view-message .message-card { margin: 0 auto; max-width: 660px; }
+
+    /* ── Infinite scroll sentinel ──────────────────────────────────── */
+    #loadSentinel { height: 10px; }
+
+    /* ── Media query ───────────────────────────────────────────────── */
+    @media (max-width: 600px) {
+      #navbar .brand span { display: none; }
+      .nav-links { gap: 6px; }
+      #filter-bar { font-size: 0.72em; gap: 3px 8px; }
+      .profile-panel { flex-direction: column; }
+      .profile-panel-img { width: 64px; height: 64px; }
+      .object-detail-header { flex-direction: column; }
+      .object-detail-img { width: 100px; height: 100px; }
+    }
+    /* ── Scrollbar ─────────────────────────────────────────────────── */
+    * { scrollbar-width: thin; scrollbar-color: #6200ea #1e1e1e; }
+    *::-webkit-scrollbar { width: 6px; height: 6px; }
+    *::-webkit-scrollbar-track { background: #1e1e1e; }
+    *::-webkit-scrollbar-thumb { background: #6200ea; border-radius: 3px; }
+    *::-webkit-scrollbar-thumb:hover { background: #bb86fc; }
+  </style>
+</head>
+<body>
+
+<!-- ── Top nav ──────────────────────────────────────────────────────── -->
+<nav id="navbar">
+  <div class="brand" id="brandHome" title="Go to home feed">
+    <img src="/bitfossil.png" alt="P2FK logo">
+    <span>P2FK.IO</span>
+  </div>
+  <form id="search-form" onsubmit="return false;">
+    <input type="text" id="navbar-search-input" placeholder="Search messages, profiles, objects…" autocomplete="off">
+    <button type="submit" id="navbar-search-btn">Search</button>
+  </form>
+  <div class="nav-links">
+    <a href="/API" target="_blank" rel="noopener">API Docs</a>
+  </div>
+</nav>
+
+<!-- ── Filter bar ───────────────────────────────────────────────────── -->
+<div id="filter-bar">
+  <span class="type-label">Types:</span>
+  <label title="Messages on-chain"><input type="checkbox" id="chkMessages" checked> Messages</label>
+  <label title="User profiles"><input type="checkbox" id="chkProfiles"> Profiles</label>
+  <label title="Digital objects (NFTs)"><input type="checkbox" id="chkObjects"> Objects</label>
+  <span class="sep"></span>
+  <span class="chain-label">Chains:</span>
+  <label title="Bitcoin mainnet"><input type="checkbox" id="chkBitcoin"> BTC</label>
+  <label title="Bitcoin testnet"><input type="checkbox" id="chkTestnet3" checked> TBTC</label>
+  <label title="Litecoin"><input type="checkbox" id="chkLTC"> LTC</label>
+  <label title="Dogecoin"><input type="checkbox" id="chkDOG"> DOG</label>
+  <label title="Mazacoin"><input type="checkbox" id="chkMZC"> MZC</label>
+</div>
+
+<!-- ── Main content ─────────────────────────────────────────────────── -->
+<main id="main">
+
+  <!-- Search / feed view (default) -->
+  <div id="view-search" class="view active">
+    <div class="feed-header">
+      <span id="resultCount"></span>
+    </div>
+    <div id="searchError" class="error"></div>
+    <div id="searchLoading">Loading…</div>
+    <div id="feed"></div>
+    <div id="loadSentinel"></div>
+  </div>
+
+  <!-- Profile view -->
+  <div id="view-profile" class="view">
+    <button class="back-link" id="backFromProfile">← Back</button>
+    <div id="profileError"></div>
+    <div id="profileLoading">Loading profile…</div>
+    <div id="profilePanel" style="display:none;">
+      <div class="profile-panel" id="profilePanelInner"></div>
+      <div class="profile-msg-thread">
+        <h3 id="profileMsgHeading">Messages</h3>
+        <div id="profileMsgFeed"></div>
+        <button id="profileMsgLoadMore">Load more messages</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Object detail view -->
+  <div id="view-object" class="view">
+    <button class="back-link" id="backFromObject">← Back</button>
+    <div id="objectError"></div>
+    <div id="objectLoading">Loading object…</div>
+    <div id="objectDetail" style="display:none;"></div>
+  </div>
+
+  <!-- Single message view -->
+  <div id="view-message" class="view">
+    <button class="back-link" id="backFromMessage">← Back</button>
+    <div id="msgError"></div>
+    <div id="msgLoading">Loading message…</div>
+    <div id="msgDetail" style="display:none;"></div>
+  </div>
+
+</main>
+
+<script>
+'use strict';
+
+// ── Constants ──────────────────────────────────────────────────────────
+const BASE_URL = 'https://p2fk.io';
+const API_FETCH_BATCH_SIZE = 20;
+const DISPLAY_BATCH_SIZE = 20;
+const MAX_PER_CHAIN = 1000;
+const MSG_PAGE_SIZE = 20;
+
+const CHAINS = {
+  chkBitcoin:  { key: 'BTC',  params: 'blockchain=BTC'  },
+  chkTestnet3: { key: 'TBTC', params: 'mainnet=false'   },
+  chkLTC:      { key: 'LTC',  params: 'blockchain=LTC'  },
+  chkDOG:      { key: 'DOG',  params: 'blockchain=DOG'  },
+  chkMZC:      { key: 'MZC',  params: 'blockchain=MZC'  },
+};
+
+const CHAIN_UPPER_TO_API = { 'BTC':'BTC','TBTC':'BTC','LTC':'LTC','DOG':'DOG','MZC':'MZC' };
+
+const fallbackImage = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='90' height='90'><rect width='100%' height='100%' fill='%23333'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='white' font-size='11'>No Image</text></svg>";
+
+// ── App state ──────────────────────────────────────────────────────────
+const state = {
+  isSearching: false,
+  isLoadingMore: false,
+  currentSearchId: null,
+  abortController: null,
+  imageCache: new Map(),
+  txidMeta: new Map(),
+  lastSearchText: '',
+  pagination: {},
+  totalDisplayed: 0,
+  chainCounts: {},
+  profileMsgSkip: 0,
+  profileMsgAddress: null,
+  profileMsgMainnet: true,
+  profileMsgExhausted: false,
+  currentView: 'search',
+};
+
+// ── Utility helpers ────────────────────────────────────────────────────
+const getQueryParam = (name) => new URLSearchParams(window.location.search).get(name);
+const escapeHtml = (s) => String(s ?? '')
+  .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+const abbreviateAddress = (a) => a ? `${a.slice(0,6)}...${a.slice(-4)}` : '';
+const isAddress = (s) => /^[a-zA-Z0-9][a-km-zA-HJ-NP-Z1-9]{25,34}$/.test((s||'').trim());
+const isTxid   = (s) => /^[0-9a-fA-F]{64}$/.test((s||'').trim());
+const normalizeChain = (bc) => { const c=(bc||'').toUpperCase().trim(); return c==='BTC-TESTNET'?'TBTC':c; };
+
+const formatDate = (d) => {
+  if (!d || String(d).startsWith('0001-01-01')) return null;
+  try { const x=new Date(d); return isNaN(x)?null:x.toLocaleDateString('en-US',{year:'numeric',month:'short',day:'numeric'}); } catch { return null; }
+};
+const isNullDate = (d) => !d || String(d).startsWith('0001-01-01');
+
+const chainToMeta = (blockchain) => {
+  const c=(blockchain||'BTC').toUpperCase();
+  if (c==='BTC-TESTNET'||c==='TBTC') return {mainnet:false,blockchain:'BTC'};
+  if (c==='LTC'||c==='DOG'||c==='MZC') return {mainnet:true,blockchain:c};
+  return {mainnet:true,blockchain:'BTC'};
+};
+
+// ── Session caches ─────────────────────────────────────────────────────
+const getCachedProfile = (a) => { try{const c=sessionStorage.getItem(`p_${a}`);return c?JSON.parse(c):null;}catch{return null;} };
+const cacheProfile = (a,p) => { try{sessionStorage.setItem(`p_${a}`,JSON.stringify(p));}catch{} };
+
+// ── Image helpers ──────────────────────────────────────────────────────
+const MAX_IMG_CACHE=100;
+const cacheImage=(url,res)=>{if(state.imageCache.size>=MAX_IMG_CACHE){state.imageCache.delete(state.imageCache.keys().next().value);}state.imageCache.set(url,res);};
+
+const resolveUrnPath=(urn)=>{
+  if(!urn) return '';
+  urn=urn.replace(/\\/g,'/').replace(/\s+/g,'');
+  const parts=urn.split(':').pop().split('/');
+  return /^(BTC|LTC|DOG|MZC):/i.test(urn)||/^[A-Za-z0-9]+\/.+/.test(urn)
+    ?`${BASE_URL}/root/${parts[0]}/${parts[1]||''}`:'';
+};
+
+const getImageUrl=(image,urn)=>{
+  const norm=(v)=>typeof v==='string'?v.replace(/\\/g,'/').replace(/\s+/g,'').trim():null;
+  const resolve=(v)=>{
+    if(!v) return null;
+    const val=norm(v); if(!val) return null;
+    const lo=val.toLowerCase();
+    try{const u=new URL(val);if(u.protocol==='file:')return null;if(['https:','data:'].includes(u.protocol))return val.replace(/^http:\/\/bitfossil\.com\//i,`${BASE_URL}/root/`).replace(/^https?:\/\/bitfossil\.org\//i,`${BASE_URL}/root/`).replace(/^http:/i,'https:');}catch{}
+    if(lo.startsWith('ipfs')){const m=val.match(/ipfs[:/]*([a-zA-Z0-9]+)/i);return m?`https://ipfs.io/ipfs/${m[1]}`:null;}
+    if(/^(BTC|LTC|DOG|MZC):[0-9a-fA-F]{64}$/i.test(val)) return null;
+    return /^(BTC|LTC|DOG|MZC):/i.test(val)||/^[A-Za-z0-9]+\/.+/.test(val)?resolveUrnPath(val):null;
+  };
+  return resolve(image)||resolve(urn)||fallbackImage;
+};
+
+const warmRootCache=async(txid,mainnet,blockchain)=>{
+  if(!txid||!/^[0-9a-fA-F]{64}$/.test(txid)) return;
+  const c=(blockchain||'BTC').toUpperCase();
+  try{await fetch(c!=='BTC'?`${BASE_URL}/GetRootByTransactionID/${txid}?blockchain=${encodeURIComponent(c)}&verbose=false`:`${BASE_URL}/GetRootByTransactionID/${txid}?mainnet=${!!mainnet}&verbose=false`);}catch{}
+};
+
+const loadImageWithTimeout=async(url,timeout=90000)=>{
+  if(state.imageCache.has(url)) return state.imageCache.get(url);
+  if(url===fallbackImage) return url;
+  let cur=url;
+  try{const u=new URL(url);if(u.protocol==='file:'){cacheImage(url,fallbackImage);return fallbackImage;}if(u.protocol==='ipfs:'){const h=url.replace(/^ipfs[:/]+/i,'').split('/')[0];cur=`https://ipfs.io/ipfs/${h}`;}}catch(e){const m=url.match(/ipfs[:/]*([a-zA-Z0-9]+)/i);if(m)cur=`https://ipfs.io/ipfs/${m[1]}`;else{cacheImage(url,fallbackImage);return fallbackImage;}}
+  let warmed=false;
+  for(let i=0;i<3;i++){
+    try{
+      const res=await new Promise((ok,fail)=>{
+        const img=new Image(); const t=setTimeout(()=>fail(new Error('timeout')),timeout);
+        img.onload=()=>{clearTimeout(t);cacheImage(url,cur);ok(cur);};
+        img.onerror=()=>{clearTimeout(t);fail(new Error('err'));};
+        if(!cur.includes('p2fk.io/root'))img.crossOrigin='Anonymous';
+        img.src=cur;
+      });
+      return res;
+    }catch{
+      if(!warmed&&url.includes('p2fk.io/root')){warmed=true;const m=url.match(/\/root\/([0-9a-fA-F]{64})\//i);if(m){const{mainnet,blockchain}=state.txidMeta.get(m[1])||{mainnet:true,blockchain:'BTC'};await warmRootCache(m[1],mainnet,blockchain);i--;continue;}}
+      if(i===2){cacheImage(url,fallbackImage);return fallbackImage;}
+      await new Promise(r=>setTimeout(r,800));
+    }
+  }
+  return fallbackImage;
+};
+
+// ── API fetch helper ───────────────────────────────────────────────────
+const fetchAPI=async(url,errMsg,signal,timeout=15000)=>{
+  const ctrl=new AbortController();
+  const tid=setTimeout(()=>ctrl.abort(),timeout);
+  try{
+    const res=await fetch(url,{signal:signal||ctrl.signal});
+    clearTimeout(tid);
+    if(!res.ok) throw new Error(errMsg||`HTTP ${res.status}`);
+    return res.json();
+  }catch(e){clearTimeout(tid);if(e.name==='AbortError') return null;throw e;}
+};
+
+const fetchProfileByAddress=async(address,mainnet,signal)=>{
+  if(!isAddress(address)) return null;
+  const cached=getCachedProfile(address);
+  if(cached) return cached;
+  try{const p=await fetchAPI(`${BASE_URL}/GetProfileByAddress/${encodeURIComponent(address)}?mainnet=${mainnet}`,'',signal);if(p) cacheProfile(address,p);return p;}catch{return null;}
+};
+
+const fetchProfileByURN=async(urn,mainnet,signal)=>{
+  try{return await fetchAPI(`${BASE_URL}/GetProfileByURN/${encodeURIComponent(urn)}?mainnet=${mainnet}`,'',signal);}catch{return null;}
+};
+
+// ── File utilities ─────────────────────────────────────────────────────
+const getFileCardIcon=(ext)=>{
+  if(/^(zip|tar|gz|bz2|xz|rar|7z|tgz)$/.test(ext)) return '📦';
+  if(/^(doc|docx|odt|rtf)$/.test(ext)) return '📝';
+  if(/^(xls|xlsx|ods|csv)$/.test(ext)) return '📊';
+  if(/^(txt|log|md)$/.test(ext)) return '📃';
+  if(/^(js|ts|py|java|c|cpp|cs|go|rs|php|rb|sh)$/.test(ext)) return '💻';
+  if(/^(json|xml|yaml|yml|toml|ini|cfg)$/.test(ext)) return '🔧';
+  if(!ext) return '🔗';
+  return '📎';
+};
+const formatBytes=(n)=>{n=Number(n);if(!isFinite(n)||n<0)return null;if(!n)return '0 B';const mb=n/1048576,kb=n/1024;return mb>=1?`${mb.toFixed(1)} MB`:kb>=1?`${kb.toFixed(1)} KB`:`${n} B`;};
+const fetchFileSize=async(url,el)=>{try{const r=await fetch(url,{method:'HEAD',signal:AbortSignal.timeout(8000)});const l=r.headers.get('content-length');el.textContent=l?(formatBytes(parseInt(l,10))||'Size unknown'):'Size unknown';}catch{el.textContent='Size unavailable';}};
+
+// ── Share link helpers ─────────────────────────────────────────────────
+const buildShareUrl=(type,params)=>{
+  const base=`${window.location.origin}/`;
+  const p=new URLSearchParams({[type]:params.id});
+  if(params.mainnet===false||params.mainnet==='false') p.set('mainnet','false');
+  if(params.blockchain&&params.blockchain!=='BTC') p.set('blockchain',params.blockchain);
+  return base+'?'+p.toString();
+};
+
+const makeShareBtn=(type,params)=>{
+  const btn=document.createElement('button');
+  btn.className='share-btn';
+  btn.title='Copy shareable link';
+  btn.innerHTML='🔗 Share';
+  btn.addEventListener('click',async(e)=>{
+    e.stopPropagation(); e.preventDefault();
+    const url=buildShareUrl(type,params);
+    try{await navigator.clipboard.writeText(url);}catch{
+      const ta=document.createElement('textarea');ta.value=url;ta.style.cssText='position:fixed;opacity:0';document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);
+    }
+    btn.textContent='✅ Copied!';btn.classList.add('copied');
+    setTimeout(()=>{btn.innerHTML='🔗 Share';btn.classList.remove('copied');},2200);
+  });
+  return btn;
+};
+
+// ── URN link creation ──────────────────────────────────────────────────
+const createUrnLink=(text,address)=>{
+  if(!text) return '';
+  const s=escapeHtml(text),a=escapeHtml(address);
+  return `<span class="urn-link" data-urn="${a}">${s}</span>`;
+};
+
+// ── Message parsing ────────────────────────────────────────────────────
+const parseMessage=async(messageText,mainnet,signal)=>{
+  const attachments=[],links=[];
+  const urnRegex=/@([A-Za-z0-9]+(?:\/[A-Za-z0-9]+)?)/g;
+  const keywordRegex=/#([\w]+)/g;
+  let clean=messageText.replace(/<<[^>]+>>/g,'').trim();
+  const attMatches=messageText.match(/<<[^>]+>>/g)||[];
+  attMatches.forEach(m=>{
+    const c=m.slice(2,-2).replace(/\s+/g,'').trim();
+    if(c.match(/^-?\d+$/)||c.match(/#[\w\s#]+/)||c.match(/^#[\w\s]+$/)) return;
+    if(/^https?:\/\//i.test(c)) links.push(c);
+    else attachments.push(c);
+  });
+  const parsedAtt=attachments.map(a=>{const p=a.split(/[/\\]/);return{hash:p[0].replace(/^IPFS:/i,'').trim(),filename:p[1]||p[0].replace(/^IPFS:/i,'').trim()};});
+  const parsedLinks=links.map(u=>({url:u}));
+  for(const m of [...clean.matchAll(urnRegex)]){
+    const urn=m[1];
+    if(!/^[a-zA-Z0-9]{26,35}$/.test(urn)&&!/^[a-zA-Z0-9]+\/[a-zA-Z0-9]+$/.test(urn)) continue;
+    const p=await fetchProfileByAddress(urn,mainnet,signal);
+    if(!p) continue;
+    clean=clean.replace(m[0],createUrnLink(p.DisplayName||p.URN||urn,urn));
+  }
+  for(const m of [...clean.matchAll(keywordRegex)]){
+    clean=clean.replace(`#${m[1]}`,`<span class="keyword-link" data-keyword="${escapeHtml(m[1])}">#${escapeHtml(m[1])}</span>`);
+  }
+  return{cleanMessage:clean,attachments:parsedAtt,links:parsedLinks};
+};
+
+// ── Attachment renderer ────────────────────────────────────────────────
+const renderAttachments=(container,attachments,links,blockchain)=>{
+  const audioMime={mp3:'audio/mpeg',wav:'audio/wav',ogg:'audio/ogg',flac:'audio/flac',webm:'audio/webm',aac:'audio/aac',m4a:'audio/mp4',opus:'audio/opus'};
+  const videoMime={mp4:'video/mp4',avi:'video/x-msvideo',mov:'video/quicktime'};
+  const imgEls=[];
+  for(const{hash,filename}of attachments){
+    const isTx=/^[0-9a-f]{64}$/i.test(hash);
+    const url=isTx?`${BASE_URL}/root/${hash}/${encodeURIComponent(filename)}`:`https://ipfs.io/ipfs/${hash}`;
+    if(isTx) state.txidMeta.set(hash,chainToMeta(blockchain));
+    const ext=(filename.match(/\.([^.]+)$/)||[])[1]?.toLowerCase()||'';
+    const isImg=/^(jpg|jpeg|png|gif|webp|bmp|svg|avif)$/.test(ext);
+    const isAud=/^(mp3|wav|ogg|flac|webm|aac|m4a|opus)$/.test(ext);
+    const isVid=/^(mp4|avi|mov)$/.test(ext);
+    const el=document.createElement('div');
+    if(isImg){el.innerHTML=`<img class="media-placeholder" src="${fallbackImage}" alt="Attachment" style="max-width:100%;max-height:280px;border-radius:5px;">`;imgEls.push({img:el.querySelector('img'),url});}
+    else if(isAud){el.innerHTML=`<audio controls style="width:100%"><source src="${url}" type="${audioMime[ext]||'audio/wav'}">Audio not supported.</audio>`;}
+    else if(isVid){el.innerHTML=`<video controls style="max-width:100%;max-height:280px;border-radius:5px"><source src="${url}" type="${videoMime[ext]||'video/mp4'}">Video not supported.</video>`;}
+    else if(ext==='pdf'){el.innerHTML=`<iframe class="pdf-viewer" src="${url}" title="${escapeHtml(filename)}"></iframe>`;}
+    else{
+      const icon=getFileCardIcon(ext);
+      const safe=escapeHtml(filename);
+      el.innerHTML=`<div class="file-card"><div class="file-card-icon">${icon}</div><div class="file-card-info"><div class="file-card-name" title="${safe}">${safe}</div><div class="file-card-meta"><span>${escapeHtml(ext?ext.toUpperCase()+' File':'File')}</span> · <span class="file-card-size">Fetching…</span></div></div><a class="file-card-download" href="${url}" target="_blank" rel="noopener">Download</a></div>`;
+      fetchFileSize(url,el.querySelector('.file-card-size'));
+    }
+    container.appendChild(el);
+  }
+  for(const{url}of links){
+    const ext=(url.match(/\.([^./?#]+)(?:[?#].*)?$/)||[])[1]?.toLowerCase()||'';
+    const isImg=/^(jpg|jpeg|png|gif|webp|bmp|svg|avif)$/.test(ext);
+    const yt=url.match(/(?:youtube\.com\/watch\?(?:[^#]*&)?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+    const el=document.createElement('div');
+    if(yt){el.innerHTML=`<iframe class="video-embed" src="https://www.youtube.com/embed/${yt[1]}" title="YouTube" allow="accelerometer;autoplay;clipboard-write;encrypted-media;gyroscope;picture-in-picture" allowfullscreen></iframe>`;}
+    else if(isImg){el.innerHTML=`<img src="${fallbackImage}" alt="Image" style="max-width:100%;max-height:280px;border-radius:5px;">`;imgEls.push({img:el.querySelector('img'),url});}
+    else{
+      let display=url;try{const u=new URL(url);display=u.hostname+(u.pathname!=='/'?u.pathname:'');}catch{}
+      el.innerHTML=`<div class="file-card"><div class="file-card-icon">${ext==='pdf'?'📄':getFileCardIcon(ext)}</div><div class="file-card-info"><div class="file-card-name" title="${escapeHtml(url)}">${escapeHtml(display)}</div><div class="file-card-meta"><span>${escapeHtml(ext?ext.toUpperCase()+' File':'Link')}</span> · <span class="file-card-size">Fetching…</span></div></div><a class="file-card-download" href="${escapeHtml(url)}" target="_blank" rel="noopener">Open</a></div>`;
+      fetchFileSize(url,el.querySelector('.file-card-size'));
+    }
+    container.appendChild(el);
+  }
+  for(const{img,url}of imgEls) loadImageWithTimeout(url).then(r=>{img.src=r;}).catch(()=>{});
+};
+
+// ── Root normalizer ────────────────────────────────────────────────────
+const normalizeRoot=(root)=>{
+  if(!root||typeof root!=='object') return null;
+  const rawMsg=root['Message']??root.Message??'';
+  const msg=Array.isArray(rawMsg)?rawMsg.join('\n'):String(rawMsg??'');
+  const signedBy=root['Signed By']??root.SignedBy??'';
+  const blockDate=root['Block Date']??root.BlockDate??'';
+  const txId=root['Transaction Id']??root.TransactionId??root['Transaction ID']??'';
+  const outputObj=root['Output']??root.Output??{};
+  const outputAddresses=Object.keys(outputObj);
+  const numOut=outputAddresses.length;
+  const toAddresses=numOut>1?outputAddresses.slice(Math.max(0,numOut-3),numOut-1):[];
+  const rawFile=root['File']??root.File??null;
+  const files=(rawFile&&typeof rawFile==='object'&&!Array.isArray(rawFile))?Object.keys(rawFile).filter(f=>f&&f!=='SIG'):[];
+  return{message:msg,fromAddress:signedBy,toAddresses,blockDate,txId,files};
+};
+
+// ── Message card renderer ──────────────────────────────────────────────
+const renderMessageCard=async(normalized,signal,blockchain,shareParams)=>{
+  const chainUpper=(blockchain||'').toUpperCase();
+  const mainnet=(chainUpper==='BTC-TESTNET'||chainUpper==='TBTC')?false:true;
+  const{cleanMessage,attachments,links}=await parseMessage(normalized.message,mainnet,signal);
+  if(normalized.txId&&normalized.files?.length){for(const f of normalized.files)if(f)attachments.push({hash:normalized.txId,filename:f});}
+
+  const fromProfile=await fetchProfileByAddress(normalized.fromAddress,mainnet,signal);
+  const fromName=fromProfile?(fromProfile.DisplayName||fromProfile.URN||abbreviateAddress(normalized.fromAddress)):abbreviateAddress(normalized.fromAddress);
+  const senderImgUrl=fromProfile?getImageUrl(fromProfile.Image,fromProfile.URN):fallbackImage;
+  const toLinks=await Promise.all(normalized.toAddresses.map(async a=>{
+    const p=await fetchProfileByAddress(a,mainnet,signal);
+    return createUrnLink(p?(p.DisplayName||p.URN||abbreviateAddress(a)):abbreviateAddress(a),a);
+  }));
+
+  const card=document.createElement('div');
+  card.className='result-card message-card';
+
+  // Share button
+  const sp=shareParams||{id:normalized.txId||'',mainnet,blockchain:(CHAIN_UPPER_TO_API[chainUpper]||'BTC')};
+  if(normalized.txId) card.appendChild(makeShareBtn('message',{id:normalized.txId,mainnet,blockchain:sp.blockchain}));
+
+  // Badge row
+  const badgeDiv=document.createElement('div');
+  badgeDiv.innerHTML=`<span class="badge badge-message">Message</span><span class="badge badge-chain">${escapeHtml(blockchain||'BTC')}</span>`;
+  card.appendChild(badgeDiv);
+
+  // Sender
+  const senderDiv=document.createElement('div');
+  senderDiv.className='msg-sender';
+  const si=document.createElement('img');si.className='msg-sender-img';si.src=fallbackImage;si.alt=fromName;
+  loadImageWithTimeout(senderImgUrl).then(u=>{si.src=u;}).catch(()=>{});
+  const txidSender=senderImgUrl.match(/\/root\/([0-9a-fA-F]{64})\//i)?.[1];
+  if(txidSender) state.txidMeta.set(txidSender,chainToMeta(blockchain));
+  const sn=document.createElement('span');sn.className='msg-sender-name';sn.innerHTML=createUrnLink(fromName,normalized.fromAddress);
+  senderDiv.appendChild(si);senderDiv.appendChild(sn);
+  card.appendChild(senderDiv);
+
+  // Body
+  const msgP=document.createElement('p');msgP.innerHTML=cleanMessage||'No message content';card.appendChild(msgP);
+
+  // Attachments
+  const ad=document.createElement('div');ad.className='message-attachments';
+  renderAttachments(ad,attachments,links,blockchain);card.appendChild(ad);
+
+  // Meta
+  const meta=document.createElement('div');meta.className='message-meta';
+  const validApiChains=['BTC','LTC','DOG','MZC'];
+  const apiIsTestnet=!mainnet;
+  const apiChain=apiIsTestnet?'BTC':(validApiChains.includes(chainUpper)?chainUpper:'BTC');
+  const nullDate=isNullDate(normalized.blockDate);
+  const refreshAttr=normalized.txId?` <span class="refresh-date" data-txid="${escapeHtml(normalized.txId)}" data-apichain="${escapeHtml(apiChain)}" data-mainnet="${!apiIsTestnet}" title="Refresh block date">🔄 Refresh</span>`:'';
+  const dateHtml=nullDate?`<span class="msg-date">Unknown</span>${refreshAttr}`:`<span class="msg-date">${escapeHtml(normalized.blockDate)}</span>`;
+  const txidHtml=normalized.txId?` <span class="txid-copy" data-txid="${escapeHtml(normalized.txId)}" title="Copy TX ID">📋 ${escapeHtml(normalized.txId.slice(0,8))}…</span>`:'';
+  meta.innerHTML=`From: ${createUrnLink(fromName,normalized.fromAddress)}${toLinks.length?` | To: ${toLinks.join(', ')}`:''}${normalized.txId?' |':''} ${dateHtml}${txidHtml}`;
+  card.appendChild(meta);
+
+  // Click handler
+  card.addEventListener('click',async(e)=>{
+    const urnEl=e.target.closest('.urn-link');
+    const kwEl=e.target.closest('.keyword-link');
+    const copyEl=e.target.closest('.txid-copy');
+    const refreshEl=e.target.closest('.refresh-date');
+    if(urnEl){e.preventDefault();const urn=urnEl.dataset.urn;navigateTo('profile',{profile:urn,mainnet});}
+    else if(kwEl){e.preventDefault();const kw=kwEl.dataset.keyword;navigateTo('search',{search:'#'+kw});}
+    else if(copyEl){e.preventDefault();e.stopPropagation();const t=copyEl.dataset.txid;try{await navigator.clipboard.writeText(t);}catch{};const prev=copyEl.innerHTML;copyEl.textContent='✅';setTimeout(()=>{copyEl.innerHTML=prev;},2000);}
+    else if(refreshEl){
+      e.preventDefault();e.stopPropagation();
+      const t=refreshEl.dataset.txid,ac=refreshEl.dataset.apichain,mn=refreshEl.dataset.mainnet==='true';
+      refreshEl.textContent='⏳';refreshEl.style.pointerEvents='none';
+      try{const r=await fetchAPI(`${BASE_URL}/GetRootByTransactionID/${encodeURIComponent(t)}?mainnet=${mn}&blockchain=${ac}`,'',null);
+        const root=Array.isArray(r)?r[0]:r;
+        const nd=(root&&typeof root==='object')?(root['Block Date']??root.BlockDate??''):'';
+        if(nd&&!isNullDate(nd)){const de=meta.querySelector('.msg-date');if(de)de.textContent=nd;refreshEl.remove();}
+        else{refreshEl.textContent='❌';setTimeout(()=>{refreshEl.textContent='🔄 Refresh';refreshEl.style.pointerEvents='';},3000);}
+      }catch{refreshEl.textContent='❌';setTimeout(()=>{refreshEl.textContent='🔄 Refresh';refreshEl.style.pointerEvents='';},3000);}
+    }
+  });
+  return card;
+};
+
+// ── Profile card (search results) ─────────────────────────────────────
+const renderProfileCard=(profile,blockchain)=>{
+  const chainUpper=normalizeChain(blockchain);
+  const mainnet=chainUpper!=='TBTC';
+  const imgUrl=getImageUrl(profile.Image,profile.URN);
+  const txm=imgUrl.match(/\/root\/([0-9a-fA-F]{64})\//i)?.[1];
+  if(txm) state.txidMeta.set(txm,chainToMeta(blockchain));
+
+  const card=document.createElement('div');
+  card.className='result-card profile-result-card';
+  const urnOrAddr=profile.URN||'';
+  card.appendChild(makeShareBtn('profile',{id:urnOrAddr,mainnet}));
+
+  const img=document.createElement('img');img.className='card-avatar';img.src=fallbackImage;img.alt=profile.DisplayName||'Profile';
+  loadImageWithTimeout(imgUrl).then(u=>{img.src=u;}).catch(()=>{});
+  card.appendChild(img);
+
+  const body=document.createElement('div');body.className='card-body';
+  body.innerHTML=`<p class="card-name">${escapeHtml(profile.DisplayName||profile.URN||'Unknown')} <span class="badge badge-profile">Profile</span><span class="badge badge-chain">${escapeHtml(blockchain||'')}</span></p><p class="card-bio">${escapeHtml((profile.Bio||'').substring(0,100))}</p><p class="card-meta">${urnOrAddr?escapeHtml(abbreviateAddress(urnOrAddr)):''} ${formatDate(profile.CreatedDate)||''}</p>`;
+  card.appendChild(body);
+
+  card.addEventListener('click',(e)=>{if(e.target.closest('.share-btn')) return;navigateTo('profile',{profile:urnOrAddr,mainnet});});
+  return card;
+};
+
+// ── Object card (search results) ──────────────────────────────────────
+const renderObjectCard=(obj,blockchain)=>{
+  const chainUpper=normalizeChain(blockchain);
+  const mainnet=chainUpper!=='TBTC';
+  const imgUrl=getImageUrl(obj.Image,obj.URN);
+  const txm=imgUrl.match(/\/root\/([0-9a-fA-F]{64})\//i)?.[1];
+  if(txm) state.txidMeta.set(txm,chainToMeta(blockchain));
+
+  const objectAddress=Object.keys(obj.Creators||{})[0]||'';
+  const card=document.createElement('div');
+  card.className='result-card object-result-card';
+  card.appendChild(makeShareBtn('object',{id:objectAddress,mainnet}));
+
+  const img=document.createElement('img');img.className='object-thumb';img.src=fallbackImage;img.alt=obj.Name||'Object';
+  loadImageWithTimeout(imgUrl).then(u=>{img.src=u;}).catch(()=>{});
+  card.appendChild(img);
+
+  const body=document.createElement('div');body.className='card-body';
+  body.innerHTML=`<p class="card-name">${escapeHtml(obj.Name||'Unnamed')} <span class="badge badge-object">Object</span><span class="badge badge-chain">${escapeHtml(blockchain||'')}</span></p><p class="card-bio">${escapeHtml((obj.Description||'').substring(0,100))}</p><p class="card-meta">${formatDate(obj.CreatedDate)||''}</p>`;
+  card.appendChild(body);
+
+  card.addEventListener('click',(e)=>{if(e.target.closest('.share-btn')) return;navigateTo('object',{object:objectAddress,mainnet});});
+  return card;
+};
+
+// ── Search pagination helpers ──────────────────────────────────────────
+const allExhausted=()=>Object.values(state.pagination).every(p=>p.exhausted);
+const anyMoreNeeded=()=>Object.values(state.pagination).some(p=>!p.exhausted);
+const endpointForType=(type)=>type==='objects'?'GetKnownObjectsBySearchString':type==='profiles'?'GetKnownProfilesBySearchString':'GetKnownRootsBySearchString';
+const countVisible=()=>{let n=0;document.querySelectorAll('#feed [data-chain]').forEach(c=>{if(c.style.display!=='none')n++;});return n;};
+
+const fetchNextPage=async(signal)=>{
+  const pending=Object.entries(state.pagination).filter(([,p])=>!p.exhausted);
+  if(!pending.length) return{objectResults:[],profileResults:[],rootResults:[]};
+  const raw=await Promise.all(pending.map(([key])=>{
+    const[type]=key.split(':',2);const p=state.pagination[key];
+    return fetchAPI(`${BASE_URL}/${endpointForType(type)}?searchString=${encodeURIComponent(state.lastSearchText)}&qty=${API_FETCH_BATCH_SIZE}&skip=${p.skip}&${p.params}`,'',signal).catch(()=>[]);
+  }));
+  pending.forEach(([key],i)=>{const len=(raw[i]||[]).length;state.pagination[key].skip+=len;if(len<API_FETCH_BATCH_SIZE)state.pagination[key].exhausted=true;});
+  const objectResults=[],profileResults=[],rootResults=[];
+  pending.forEach(([key],i)=>{const[type]=key.split(':',2);const r=raw[i]||[];if(type==='objects')objectResults.push(...r);else if(type==='profiles')profileResults.push(...r);else rootResults.push(...r);});
+  return{objectResults,profileResults,rootResults};
+};
+
+// ── Chain filter ───────────────────────────────────────────────────────
+const applyChainFilter=()=>{
+  const allowed=new Set();
+  if(document.getElementById('chkBitcoin').checked) allowed.add('BTC');
+  if(document.getElementById('chkTestnet3').checked) allowed.add('TBTC');
+  if(document.getElementById('chkLTC').checked) allowed.add('LTC');
+  if(document.getElementById('chkDOG').checked) allowed.add('DOG');
+  if(document.getElementById('chkMZC').checked) allowed.add('MZC');
+  let vis=0;
+  document.querySelectorAll('#feed [data-chain]').forEach(c=>{
+    const ch=c.dataset.chain;
+    const pass=ch?(allowed.has(ch)):(allowed.has('BTC')||allowed.has('TBTC'));
+    c.style.display=pass?'':'none';
+    if(pass) vis++;
+  });
+  const total=state.totalDisplayed;
+  const rc=document.getElementById('resultCount');
+  if(total){rc.textContent=vis===total?`${vis} result${vis===1?'':'s'} found`:`${vis} of ${total} result${total===1?'':'s'} match filters`;rc.style.display='block';}
+  if(vis===0&&anyMoreNeeded()&&!state.isLoadingMore&&!state.isSearching) setTimeout(()=>loadMoreBatch(),0);
+};
+
+// ── Append search results ──────────────────────────────────────────────
+const appendResultItems=async(objectResults,profileResults,rootResults,searchId,signal)=>{
+  const items=[];
+  for(const r of(objectResults||[])){const o=r.Object||r.object;if(!o||!o.Name) continue;items.push({type:'object',raw:o,blockchain:r.Blockchain||r.blockchain||''});}
+  for(const r of(profileResults||[])){const p=r.Profile||r.profile;if(!p) continue;if(!p.DisplayName&&!p.URN) continue;items.push({type:'profile',raw:p,blockchain:r.Blockchain||r.blockchain||''});}
+  for(const r of(rootResults||[])){const root=r.Root||r.root;if(!root) continue;const n=normalizeRoot(root);if(!n) continue;items.push({type:'message',data:n,blockchain:r.Blockchain||r.blockchain||''});}
+  items.sort((a,b)=>{
+    const getD=item=>{if(item.type==='message') return new Date(item.data.blockDate||0);return new Date(item.raw?.CreatedDate||0);};
+    const da=getD(a).getTime(),db=getD(b).getTime();
+    if(!da&&!db) return 0;if(!da) return 1;if(!db) return -1;return db-da;
+  });
+  const feed=document.getElementById('feed');
+  let rendered=0;
+  for(const item of items){
+    if(state.currentSearchId!==searchId) break;
+    if(rendered>=DISPLAY_BATCH_SIZE) break;
+    const ch=normalizeChain(item.blockchain);
+    if((state.chainCounts[ch]||0)>=MAX_PER_CHAIN) continue;
+    state.chainCounts[ch]=(state.chainCounts[ch]||0)+1;
+    rendered++;
+    let card;
+    if(item.type==='object') card=renderObjectCard(item.raw,item.blockchain);
+    else if(item.type==='profile') card=renderProfileCard(item.raw,item.blockchain);
+    else{ card=await renderMessageCard(item.data,signal,item.blockchain); if(state.currentSearchId!==searchId) break; }
+    card.dataset.chain=ch;
+    feed.appendChild(card);
+  }
+  return rendered;
+};
+
+// ── Infinite scroll ────────────────────────────────────────────────────
+const scrollObserver=new IntersectionObserver(entries=>{if(entries[0].isIntersecting) loadMoreBatch();},{rootMargin:'300px'});
+
+const loadMoreBatch=async()=>{
+  if(state.isLoadingMore||state.isSearching) return;
+  if(allExhausted()) return;
+  const sentinel=document.getElementById('loadSentinel');
+  scrollObserver.unobserve(sentinel);
+  state.isLoadingMore=true;
+  const searchId=state.currentSearchId;
+  const signal=state.abortController?.signal;
+  const loadEl=document.getElementById('searchLoading');
+  loadEl.textContent=countVisible()===0?'Searching deeper…':'Loading more…';
+  loadEl.style.display='block';
+  try{
+    const{objectResults,profileResults,rootResults}=await fetchNextPage(signal);
+    if(state.currentSearchId!==searchId) return;
+    const added=await appendResultItems(objectResults,profileResults,rootResults,searchId,signal);
+    if(state.currentSearchId!==searchId) return;
+    state.totalDisplayed+=added;
+    applyChainFilter();
+  }catch(e){if(e.name!=='AbortError') showSearchError('Failed to load more: '+e.message);}
+  finally{
+    loadEl.style.display='none';loadEl.textContent='Loading…';state.isLoadingMore=false;
+    if(state.currentSearchId===searchId&&anyMoreNeeded()){
+      if(countVisible()===0) setTimeout(()=>loadMoreBatch(),0);
+      else scrollObserver.observe(sentinel);
+    }
+  }
+};
+
+// ── Main search ────────────────────────────────────────────────────────
+const performSearch=async(searchText)=>{
+  if(state.isSearching) return;
+  const text=(searchText||document.getElementById('navbar-search-input').value.trim()||'*');
+  const wantObjects=document.getElementById('chkObjects').checked;
+  const wantProfiles=document.getElementById('chkProfiles').checked;
+  const wantMessages=document.getElementById('chkMessages').checked;
+  if(!wantObjects&&!wantProfiles&&!wantMessages){showSearchError('Please select at least one result type.');return;}
+
+  state.isSearching=true;
+  if(state.abortController) state.abortController.abort();
+  state.abortController=new AbortController();
+  const searchId=Date.now()+Math.random().toString(36).slice(2);
+  state.currentSearchId=searchId;
+  const signal=state.abortController.signal;
+
+  const btn=document.getElementById('navbar-search-btn'),inp=document.getElementById('navbar-search-input');
+  btn.disabled=true;btn.textContent='…';inp.disabled=true;
+  document.getElementById('feed').innerHTML='';
+  document.getElementById('resultCount').style.display='none';
+  document.getElementById('searchError').style.display='none';
+  document.getElementById('searchLoading').style.display='block';
+  scrollObserver.unobserve(document.getElementById('loadSentinel'));
+
+  const activeChains=Object.entries(CHAINS).filter(([id])=>document.getElementById(id).checked).map(([,c])=>c);
+  const pagination={};
+  activeChains.forEach(({key,params})=>{
+    if(wantObjects)  pagination[`objects:${key}`] ={skip:0,exhausted:false,params};
+    if(wantProfiles) pagination[`profiles:${key}`]={skip:0,exhausted:false,params};
+    if(wantMessages) pagination[`messages:${key}`]={skip:0,exhausted:false,params};
+  });
+
+  state.lastSearchText=text;state.pagination=pagination;state.totalDisplayed=0;state.chainCounts={};
+
+  try{
+    const{objectResults,profileResults,rootResults}=await fetchNextPage(signal);
+    if(state.currentSearchId!==searchId) return;
+    document.getElementById('searchLoading').style.display='none';
+    const added=await appendResultItems(objectResults,profileResults,rootResults,searchId,signal);
+    if(state.currentSearchId!==searchId) return;
+    state.totalDisplayed=added;
+    if(!added){document.getElementById('feed').innerHTML='<div style="text-align:center;padding:30px;color:#666;">No results found.</div>';document.getElementById('resultCount').style.display='none';}
+    else applyChainFilter();
+  }catch(e){
+    if(e.name!=='AbortError'){showSearchError('Search failed: '+e.message);document.getElementById('searchLoading').style.display='none';}
+  }finally{
+    state.isSearching=false;btn.disabled=false;btn.textContent='Search';inp.disabled=false;
+    if(state.currentSearchId===searchId&&state.totalDisplayed>0&&anyMoreNeeded()){
+      if(countVisible()===0) setTimeout(()=>loadMoreBatch(),0);
+      else scrollObserver.observe(document.getElementById('loadSentinel'));
+    }
+  }
+};
+
+const showSearchError=(msg)=>{const el=document.getElementById('searchError');el.textContent=msg;el.style.display='block';setTimeout(()=>{el.style.display='none';},6000);};
+
+// ── Profile view ───────────────────────────────────────────────────────
+const showProfileView=async(identifier,mainnet=true)=>{
+  setView('profile');
+  const loadEl=document.getElementById('profileLoading');
+  const errEl=document.getElementById('profileError');
+  const panelEl=document.getElementById('profilePanel');
+  const innerEl=document.getElementById('profilePanelInner');
+  const feedEl=document.getElementById('profileMsgFeed');
+  loadEl.style.display='block';errEl.textContent='';errEl.style.display='none';panelEl.style.display='none';
+  innerEl.innerHTML='';feedEl.innerHTML='';
+  document.getElementById('profileMsgLoadMore').style.display='none';
+
+  try{
+    let profile=null;
+    let address='';
+    if(isAddress(identifier)){
+      address=identifier;
+      profile=await fetchProfileByAddress(identifier,mainnet,null);
+      if(!profile) profile={DisplayName:abbreviateAddress(identifier),URN:'',Address:identifier};
+    }else{
+      profile=await fetchProfileByURN(identifier,mainnet,null);
+      if(!profile) throw new Error(`Profile not found: ${identifier}`);
+      address=profile.Address||profile['Signed By']||'';
+      if(!address){
+        // Try to resolve address from the profile's URN
+        const urnAddr=profile.URN;
+        if(isAddress(urnAddr)) address=urnAddr;
+      }
+    }
+
+    const imgUrl=getImageUrl(profile.Image,profile.URN);
+    const txm=imgUrl.match(/\/root\/([0-9a-fA-F]{64})\//i)?.[1];
+    if(txm) state.txidMeta.set(txm,chainToMeta(mainnet?'BTC':'TBTC'));
+
+    // Build profile panel
+    innerEl.innerHTML='';
+    const shareBtn=makeShareBtn('profile',{id:profile.URN||identifier,mainnet});
+    innerEl.appendChild(shareBtn);
+
+    const imgEl=document.createElement('img');imgEl.className='profile-panel-img';imgEl.src=fallbackImage;imgEl.alt=profile.DisplayName||'Profile';
+    loadImageWithTimeout(imgUrl).then(u=>{imgEl.src=u;}).catch(()=>{});
+    innerEl.appendChild(imgEl);
+
+    const info=document.createElement('div');info.className='profile-panel-info';
+    const nameHtml=escapeHtml(profile.DisplayName||profile.URN||'Unknown Profile');
+    const bioHtml=profile.Bio?`<p>${escapeHtml(profile.Bio)}</p>`:'';
+    const locHtml=profile.Location?`<p>📍 ${escapeHtml(profile.Location)}</p>`:'';
+    const linkHtml=profile.Links?`<p>🔗 <a href="${escapeHtml(profile.Links)}" target="_blank" rel="noopener">${escapeHtml(profile.Links)}</a></p>`:'';
+    const dateHtml=profile.CreatedDate&&!isNullDate(profile.CreatedDate)?`<p>Joined: ${formatDate(profile.CreatedDate)||escapeHtml(profile.CreatedDate)}</p>`:'';
+    const addrHtml=address?`<p class="addr">${escapeHtml(address)}</p>`:'';
+    info.innerHTML=`<h2>${nameHtml}</h2>${bioHtml}${locHtml}${linkHtml}${dateHtml}${addrHtml}`;
+    innerEl.appendChild(info);
+
+    panelEl.style.display='block';
+    loadEl.style.display='none';
+
+    // Load messages
+    state.profileMsgSkip=0;
+    state.profileMsgAddress=address;
+    state.profileMsgMainnet=mainnet;
+    state.profileMsgExhausted=false;
+    document.getElementById('profileMsgHeading').textContent='Messages';
+
+    if(address){
+      await loadProfileMessages();
+    }else{
+      document.getElementById('profileMsgHeading').textContent='No address available for message history';
+    }
+  }catch(e){
+    loadEl.style.display='none';
+    errEl.textContent='Failed to load profile: '+e.message;
+    errEl.style.display='block';
+  }
+};
+
+const loadProfileMessages=async()=>{
+  if(state.profileMsgExhausted) return;
+  const feedEl=document.getElementById('profileMsgFeed');
+  const moreBtn=document.getElementById('profileMsgLoadMore');
+  moreBtn.disabled=true;moreBtn.textContent='Loading…';
+
+  try{
+    const data=await fetchAPI(`${BASE_URL}/GetPublicMessagesByAddress/${encodeURIComponent(state.profileMsgAddress)}?mainnet=${state.profileMsgMainnet}&skip=${state.profileMsgSkip}&qty=${MSG_PAGE_SIZE}`,'',null);
+    const roots=Array.isArray(data)?data:[];
+    const bc=state.profileMsgMainnet?'BTC':'BTC-TESTNET';
+    for(const item of roots){
+      const root=item.Root||item.root||item;
+      const n=normalizeRoot(root);
+      if(!n) continue;
+      const card=await renderMessageCard(n,null,bc,{id:n.txId,mainnet:state.profileMsgMainnet,blockchain:state.profileMsgMainnet?'BTC':'BTC'});
+      feedEl.appendChild(card);
+    }
+    state.profileMsgSkip+=roots.length;
+    if(roots.length<MSG_PAGE_SIZE){
+      state.profileMsgExhausted=true;
+      moreBtn.style.display='none';
+    }else{
+      moreBtn.style.display='block';
+      moreBtn.disabled=false;moreBtn.textContent='Load more messages';
+    }
+    document.getElementById('profileMsgHeading').textContent=`Messages (${state.profileMsgSkip} loaded)`;
+  }catch(e){
+    document.getElementById('profileError').textContent='Failed to load messages: '+e.message;
+    document.getElementById('profileError').style.display='block';
+    moreBtn.style.display='none';
+  }
+};
+
+// ── Object view ────────────────────────────────────────────────────────
+const showObjectView=async(identifier,mainnet=true)=>{
+  setView('object');
+  const loadEl=document.getElementById('objectLoading');
+  const errEl=document.getElementById('objectError');
+  const detailEl=document.getElementById('objectDetail');
+  loadEl.style.display='block';errEl.textContent='';errEl.style.display='none';detailEl.style.display='none';detailEl.innerHTML='';
+
+  try{
+    let obj=null;
+    if(isAddress(identifier)){
+      const data=await fetchAPI(`${BASE_URL}/GetObjectByAddress/${encodeURIComponent(identifier)}?mainnet=${mainnet}&verbose=false`,'',null);
+      obj=data?.Object||data?.object||data;
+    }else{
+      const data=await fetchAPI(`${BASE_URL}/GetObjectByURN/${encodeURIComponent(identifier)}?mainnet=${mainnet}`,'',null);
+      obj=data?.Object||data?.object||data;
+    }
+    if(!obj||Array.isArray(obj)) throw new Error(`Object not found: ${identifier}`);
+
+    const imgUrl=getImageUrl(obj.Image,obj.URN);
+    const txm=imgUrl.match(/\/root\/([0-9a-fA-F]{64})\//i)?.[1];
+    if(txm) state.txidMeta.set(txm,chainToMeta(mainnet?'BTC':'TBTC'));
+
+    const card=document.createElement('div');card.className='object-detail-card';
+
+    const objectAddress=Object.keys(obj.Creators||{})[0]||identifier||'';
+    card.appendChild(makeShareBtn('object',{id:objectAddress,mainnet}));
+
+    // Header
+    const header=document.createElement('div');header.className='object-detail-header';
+    const imgEl=document.createElement('img');imgEl.className='object-detail-img';imgEl.src=fallbackImage;imgEl.alt=obj.Name||'Object';
+    loadImageWithTimeout(imgUrl).then(u=>{imgEl.src=u;}).catch(()=>{});
+    header.appendChild(imgEl);
+
+    const info=document.createElement('div');info.className='object-detail-info';
+    const descHtml=obj.Description?`<p class="desc">${escapeHtml(obj.Description)}</p>`:'';
+    const dateHtml=obj.CreatedDate&&!isNullDate(obj.CreatedDate)?`<p>Created: ${formatDate(obj.CreatedDate)||escapeHtml(obj.CreatedDate)}</p>`:'';
+    const keyHtml=obj.Keyword?`<p>Keywords: ${escapeHtml(Array.isArray(obj.Keyword)?obj.Keyword.join(', '):obj.Keyword)}</p>`:'';
+    const urnHtml=obj.URN?`<p class="desc">URN: <code>${escapeHtml(obj.URN)}</code></p>`:'';
+    info.innerHTML=`<h2>${escapeHtml(obj.Name||'Unnamed Object')}</h2><p><span class="badge badge-object">Object</span><span class="badge badge-chain">${escapeHtml(mainnet?'BTC':'TBTC')}</span></p>${descHtml}${dateHtml}${keyHtml}${urnHtml}`;
+    header.appendChild(info);
+    card.appendChild(header);
+
+    // Owners
+    const owners=obj.Owners||obj.Creators||{};
+    const ownerEntries=Object.entries(owners);
+    if(ownerEntries.length){
+      const ownerSec=document.createElement('div');ownerSec.className='object-detail-owners';
+      ownerSec.innerHTML='<h4>Ownership</h4>';
+      ownerEntries.forEach(([addr,units])=>{
+        const row=document.createElement('div');row.className='owner-row';
+        row.innerHTML=`<span class="owner-addr" data-addr="${escapeHtml(addr)}" data-mainnet="${mainnet}" title="View profile">${escapeHtml(abbreviateAddress(addr))}</span><span class="owner-units">${escapeHtml(String(units))} unit${units===1?'':'s'}</span>`;
+        row.querySelector('.owner-addr').addEventListener('click',()=>navigateTo('profile',{profile:addr,mainnet}));
+        ownerSec.appendChild(row);
+      });
+      card.appendChild(ownerSec);
+    }
+
+    detailEl.appendChild(card);
+    detailEl.style.display='block';
+    loadEl.style.display='none';
+  }catch(e){
+    loadEl.style.display='none';
+    errEl.textContent='Failed to load object: '+e.message;
+    errEl.style.display='block';
+  }
+};
+
+// ── Single message view ────────────────────────────────────────────────
+const showMessageView=async(txid,mainnet=true,blockchain='BTC')=>{
+  setView('message');
+  const loadEl=document.getElementById('msgLoading');
+  const errEl=document.getElementById('msgError');
+  const detailEl=document.getElementById('msgDetail');
+  loadEl.style.display='block';errEl.textContent='';errEl.style.display='none';detailEl.style.display='none';detailEl.innerHTML='';
+
+  try{
+    const chain=(blockchain||'BTC').toUpperCase();
+    const url=chain!=='BTC'
+      ?`${BASE_URL}/GetRootByTransactionID/${encodeURIComponent(txid)}?blockchain=${encodeURIComponent(chain)}&verbose=false`
+      :`${BASE_URL}/GetRootByTransactionID/${encodeURIComponent(txid)}?mainnet=${mainnet}&verbose=false`;
+    const data=await fetchAPI(url,'',null);
+    const raw=Array.isArray(data)?data[0]:data;
+    if(!raw) throw new Error(`Message not found for txid: ${txid}`);
+
+    const normalized=normalizeRoot(raw);
+    if(!normalized) throw new Error('Could not parse message data');
+
+    const bc=chain==='BTC'?(mainnet?'BTC':'BTC-TESTNET'):chain;
+    const card=await renderMessageCard(normalized,null,bc,{id:txid,mainnet,blockchain:CHAIN_UPPER_TO_API[chain]||'BTC'});
+    detailEl.appendChild(card);
+    detailEl.style.display='block';
+    loadEl.style.display='none';
+  }catch(e){
+    loadEl.style.display='none';
+    errEl.textContent='Failed to load message: '+e.message;
+    errEl.style.display='block';
+  }
+};
+
+// ── View switching ─────────────────────────────────────────────────────
+const setView=(name)=>{
+  state.currentView=name;
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  const el=document.getElementById(`view-${name}`);
+  if(el) el.classList.add('active');
+  // Only show filter bar for search view
+  document.getElementById('filter-bar').style.display=(name==='search')?'':'none';
+  // Adjust top padding accordingly
+  document.getElementById('main').style.paddingTop=(name==='search')?'98px':'62px';
+};
+
+// ── SPA navigation ─────────────────────────────────────────────────────
+const navigateTo=(view,params={})=>{
+  const url=new URL(window.location.href);
+  // Clear previous view params
+  ['search','profile','object','message','mainnet','blockchain'].forEach(k=>url.searchParams.delete(k));
+  Object.entries(params).forEach(([k,v])=>{if(v!==undefined&&v!==null&&v!=='') url.searchParams.set(k,String(v));});
+  history.pushState({view,params},'',(url.searchParams.toString()?'?'+url.searchParams.toString():'/'));
+  loadFromParams(url.searchParams);
+};
+
+const loadFromParams=(sp)=>{
+  const profile=sp.get('profile');
+  const object=sp.get('object');
+  const message=sp.get('message');
+  const search=sp.get('search');
+  const mainnet=sp.get('mainnet')!=='false'; // default true
+  const blockchain=(sp.get('blockchain')||'BTC').toUpperCase();
+
+  if(message){
+    showMessageView(message,mainnet,blockchain);
+  }else if(profile){
+    showProfileView(profile,mainnet);
+  }else if(object){
+    showObjectView(object,mainnet);
+  }else{
+    setView('search');
+    if(search){
+      document.getElementById('navbar-search-input').value=search;
+      performSearch(search);
+    }else{
+      performSearch('*');
+    }
+  }
+};
+
+// ── Back buttons ───────────────────────────────────────────────────────
+const goBack=()=>{
+  if(history.length>1) history.back();
+  else navigateTo('search',{});
+};
+document.getElementById('backFromProfile').addEventListener('click',goBack);
+document.getElementById('backFromObject').addEventListener('click',goBack);
+document.getElementById('backFromMessage').addEventListener('click',goBack);
+
+window.addEventListener('popstate',(e)=>{
+  const sp=new URLSearchParams(window.location.search);
+  loadFromParams(sp);
+});
+
+// ── Navbar search ──────────────────────────────────────────────────────
+document.getElementById('search-form').addEventListener('submit',(e)=>{
+  e.preventDefault();
+  const text=document.getElementById('navbar-search-input').value.trim();
+  if(!text) return;
+  navigateTo('search',{search:text});
+});
+
+document.getElementById('navbar-search-btn').addEventListener('click',(e)=>{
+  e.preventDefault();
+  const text=document.getElementById('navbar-search-input').value.trim();
+  if(!text){navigateTo('search',{});return;}
+  navigateTo('search',{search:text});
+});
+
+document.getElementById('brandHome').addEventListener('click',()=>navigateTo('search',{}));
+
+// ── Chain / type checkbox events ───────────────────────────────────────
+['chkBitcoin','chkTestnet3','chkLTC','chkDOG','chkMZC'].forEach(id=>{
+  document.getElementById(id).addEventListener('change',applyChainFilter);
+});
+['chkObjects','chkProfiles','chkMessages'].forEach(id=>{
+  document.getElementById(id).addEventListener('change',()=>{
+    if(state.currentView==='search') performSearch(state.lastSearchText||'*');
+  });
+});
+
+// ── Profile load more ──────────────────────────────────────────────────
+document.getElementById('profileMsgLoadMore').addEventListener('click',()=>loadProfileMessages());
+
+// ── Initial load ───────────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded',()=>{
+  const sp=new URLSearchParams(window.location.search);
+
+  // Apply URL checkbox overrides for search view
+  const objects=sp.get('objects');
+  const profiles=sp.get('profiles');
+  const messages=sp.get('messages');
+  const bitcoin=sp.get('bitcoin');
+  const testnet3=sp.get('testnet3');
+  const ltc=sp.get('ltc');
+  const dog=sp.get('dog');
+  const mzc=sp.get('mzc');
+  if(objects!==null) document.getElementById('chkObjects').checked=objects==='true';
+  if(profiles!==null) document.getElementById('chkProfiles').checked=profiles==='true';
+  if(messages!==null) document.getElementById('chkMessages').checked=messages==='true';
+  if(bitcoin!==null) document.getElementById('chkBitcoin').checked=bitcoin==='true';
+  if(testnet3!==null) document.getElementById('chkTestnet3').checked=testnet3==='true';
+  if(ltc!==null) document.getElementById('chkLTC').checked=ltc==='true';
+  if(dog!==null) document.getElementById('chkDOG').checked=dog==='true';
+  if(mzc!==null) document.getElementById('chkMZC').checked=mzc==='true';
+
+  loadFromParams(sp);
+});
+</script>
+</body>
+</html>
