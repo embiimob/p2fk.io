@@ -1269,7 +1269,7 @@ const getUrnMediaUrl=(urn)=>{
 // Detect text-only URNs: bare 64-hex txid, or chain:txid with no file path
 const isTextOnlyUrn=(urn)=>{
   if(!urn) return false;
-  const u=urn.replace(/\/g,'/').trim();
+  const u=urn.replace(/\\/g,'/').trim();
   // Bare 64-char hex (no chain prefix, no file path)
   if(/^[0-9a-fA-F]{64}$/.test(u)) return true;
   // Chain-prefixed bare txid: BTC:abc123..., TBTC:abc123..., LTC:abc123..., etc.
@@ -1298,7 +1298,7 @@ const fetchTextForUrn=async(urn,mainnet)=>{
   if(_textUrnCache.has(cacheKey)) return _textUrnCache.get(cacheKey);
   let text=null;
   try{
-    const u=urn.replace(/\/g,'/').trim();
+    const u=urn.replace(/\\/g,'/').trim();
     let txid,blockchain;
     const chainMatch=u.match(/^(BTC|TBTC|LTC|DOG|MZC):([0-9a-fA-F]{64})$/i);
     if(chainMatch){blockchain=chainMatch[1].toUpperCase();txid=chainMatch[2];}
