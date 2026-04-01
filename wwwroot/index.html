@@ -357,6 +357,8 @@
     .profile-panel-info h2 { margin: 0 0 4px; color: #bb86fc; font-size: 1.1em; }
     .profile-panel-info p { margin: 2px 0; font-size: 0.85em; color: #b0b0b0; }
     .profile-panel-info .addr { font-family: monospace; font-size: 0.75em; color: #666; word-break: break-all; }
+    .profile-handle-addr { font-family: monospace; font-size: 0.65em; color: #666; font-weight: normal; vertical-align: middle; cursor: pointer; border-bottom: 1px dotted #444; }
+    .profile-handle-addr:hover { color: #03dac6; }
     .profile-msg-thread { display: flex; flex-direction: column; gap: 10px; }
     .profile-msg-thread h3 { margin: 0 0 8px; font-size: 0.9em; color: #888; font-weight: normal; }
     #profileMsgLoadMore {
@@ -577,7 +579,8 @@
         </div>
         <h3 id="profileMsgHeading" style="display:none;">Messages</h3>
         <div id="profileMsgFeed"></div>
-        <button id="profileMsgLoadMore">Load more messages</button>
+        <div id="profileMsgSentinel" style="height:1px;"></div>
+        <button id="profileMsgLoadMore" style="display:none;">Load more messages</button>
         <div id="profileObjGrid" class="profile-obj-grid" style="display:none;"></div>
         <div id="profileObjStatus" style="display:none;"></div>
       </div>
@@ -640,6 +643,8 @@ const state = {
   profileMsgAddress: null,
   profileMsgMainnet: true,
   profileMsgExhausted: false,
+  profileMsgLoading: false,
+  profileMsgObserver: null,
   currentView: 'search',
 };
 
@@ -975,7 +980,9 @@ const renderProfileCard=(profile,blockchain)=>{
   if(txm) state.txidMeta.set(txm,chainToMeta(blockchain));
 
   // Prefer _address (injected from search service folder path), then Creators key, then URN
-  const address=profile._address||profile.Address||Object.keys(profile.Creators||{})[0]||'';
+  // Creators can be an array (GetProfileByURN) or an object (other endpoints); handle both.
+  const _pc=profile.Creators;
+  const address=profile._address||profile.Address||(Array.isArray(_pc)?_pc.find(a=>typeof a==='string'&&a.length>10)||'':Object.keys(_pc||{}).find(k=>k!=='0'&&k.length>10)||'');
   const navId=address||profile.URN||'';
   const shareId=profile.URN||address||'';
 
@@ -1379,16 +1386,19 @@ const buildUrnPreviewEl=(urn,objectAddress,mainnet,blockchain)=>{
     mv.setAttribute('ar-modes','webxr scene-viewer quick-look');
     mv.setAttribute('crossorigin','anonymous');
     mv.setAttribute('loading','eager');
-    mv.style.cssText='width:100%;aspect-ratio:1/1;display:block;background:#111;';
-    // Loading indicator
+    mv.style.cssText='width:100%;height:100%;display:block;background:#111;';
+    // Wrapper provides positioning context for the centered overlay
+    const mvWrap=document.createElement('div');
+    mvWrap.style.cssText='position:relative;width:100%;aspect-ratio:1/1;';
     const mvLoader=document.createElement('div');
-    mvLoader.setAttribute('slot','progress-bar');
-    mvLoader.style.cssText='position:absolute;bottom:8px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.7);color:#03dac6;padding:3px 10px;border-radius:4px;font-size:0.75em;pointer-events:none;';
+    mvLoader.style.cssText='position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.75);color:#03dac6;padding:7px 18px;border-radius:6px;font-size:0.85em;pointer-events:none;z-index:2;';
     mvLoader.textContent='Loading 3D…';
-    mv.appendChild(mvLoader);
-    mv.addEventListener('load',()=>{mvLoader.style.display='none';});
-    mv.addEventListener('error',()=>{mvLoader.style.color='#ff5252';mvLoader.textContent='⚠ Failed to load 3D model';});
-    wrap.appendChild(mv);
+    const mvTimeout=setTimeout(()=>{if(mvLoader.style.display!=='none'){mvLoader.style.color='#ff5252';mvLoader.textContent='⚠ Model load timed out';}},15000);
+    mv.addEventListener('load',()=>{clearTimeout(mvTimeout);mvLoader.style.display='none';});
+    mv.addEventListener('error',()=>{clearTimeout(mvTimeout);mvLoader.style.color='#ff5252';mvLoader.textContent='⚠ Failed to load 3D model';});
+    mvWrap.appendChild(mv);
+    mvWrap.appendChild(mvLoader);
+    wrap.appendChild(mvWrap);
   }
   return wrap;
 };
@@ -1546,7 +1556,8 @@ const showProfileView=async(identifier,mainnet=true)=>{
   const feedEl=document.getElementById('profileMsgFeed');
   loadEl.style.display='block';errEl.textContent='';errEl.style.display='none';panelEl.style.display='none';
   innerEl.innerHTML='';feedEl.innerHTML='';
-  document.getElementById('profileMsgLoadMore').style.display='none';
+  // Disconnect any previous message scroll observer
+  if(state.profileMsgObserver){state.profileMsgObserver.disconnect();state.profileMsgObserver=null;}
 
   try{
     let profile=null;
@@ -1636,7 +1647,7 @@ const showProfileView=async(identifier,mainnet=true)=>{
     // Process height placeholder
     const heightHtml=address?`<p class="profile-height" id="processHeightEl">Process height: <span id="processHeightVal">…</span></p>`:'';
 
-    info.innerHTML=`<h2>${escapeHtml(displayName)}</h2>${bioHtml}${locHtml}${urlHtml}${dateHtml}${changedHtml}${addrHtml}${heightHtml}`;
+    info.innerHTML=`<h2>${escapeHtml(displayName)}${address?` <span class="profile-handle-addr" id="profAddrInline" title="${escapeHtml(address)}">${escapeHtml(abbreviateAddress(address))}</span>`:''}</h2>${bioHtml}${locHtml}${urlHtml}${dateHtml}${changedHtml}${addrHtml}${heightHtml}`;
     innerEl.appendChild(info);
 
     panelEl.style.display='block';
@@ -1647,6 +1658,12 @@ const showProfileView=async(identifier,mainnet=true)=>{
     if(addrEl) addrEl.addEventListener('click',async()=>{
       try{await navigator.clipboard.writeText(address);}catch{}
       const prev=addrEl.textContent;addrEl.textContent='✅ Copied!';setTimeout(()=>{addrEl.textContent=prev;},2000);
+    });
+    const addrInlineEl=document.getElementById('profAddrInline');
+    if(addrInlineEl) addrInlineEl.addEventListener('click',async(e)=>{
+      e.stopPropagation();
+      try{await navigator.clipboard.writeText(address);}catch{}
+      const prev=addrInlineEl.textContent;addrInlineEl.textContent='✅';setTimeout(()=>{addrInlineEl.textContent=prev;},1500);
     });
 
     // Wire up internal profile URL links (@xxx → navigate by URN)
@@ -1706,6 +1723,17 @@ const showProfileView=async(identifier,mainnet=true)=>{
     state.profileMsgAddress=address;
     state.profileMsgMainnet=mainnet;
     state.profileMsgExhausted=false;
+    state.profileMsgLoading=false;
+
+    // Set up infinite scroll for profile messages feed
+    if(state.profileMsgObserver){state.profileMsgObserver.disconnect();state.profileMsgObserver=null;}
+    const sentinelEl=document.getElementById('profileMsgSentinel');
+    if(sentinelEl&&address){
+      state.profileMsgObserver=new IntersectionObserver(entries=>{
+        if(entries[0].isIntersecting&&!state.profileMsgExhausted&&!state.profileMsgLoading) loadProfileMessages();
+      },{rootMargin:'200px'});
+      state.profileMsgObserver.observe(sentinelEl);
+    }
 
     if(address){
       await loadProfileMessages();
@@ -1720,10 +1748,9 @@ const showProfileView=async(identifier,mainnet=true)=>{
 };
 
 const loadProfileMessages=async()=>{
-  if(state.profileMsgExhausted) return;
+  if(state.profileMsgExhausted||state.profileMsgLoading) return;
+  state.profileMsgLoading=true;
   const feedEl=document.getElementById('profileMsgFeed');
-  const moreBtn=document.getElementById('profileMsgLoadMore');
-  moreBtn.disabled=true;moreBtn.textContent='Loading…';
 
   try{
     const data=await fetchAPI(`${BASE_URL}/GetPublicMessagesByAddress/${encodeURIComponent(state.profileMsgAddress)}?mainnet=${state.profileMsgMainnet}&skip=${state.profileMsgSkip}&qty=${MSG_PAGE_SIZE}`,'',null);
@@ -1737,18 +1764,13 @@ const loadProfileMessages=async()=>{
       feedEl.appendChild(card);
     }
     state.profileMsgSkip+=roots.length;
-    if(roots.length<MSG_PAGE_SIZE){
-      state.profileMsgExhausted=true;
-      moreBtn.style.display='none';
-    }else{
-      moreBtn.style.display='block';
-      moreBtn.disabled=false;moreBtn.textContent='Load more messages';
-    }
+    if(roots.length<MSG_PAGE_SIZE) state.profileMsgExhausted=true;
     const msgsTabBtn=document.getElementById('tabMessages');if(msgsTabBtn) msgsTabBtn.textContent=`Messages (${state.profileMsgSkip})`;
   }catch(e){
     document.getElementById('profileError').textContent='Failed to load messages: '+e.message;
     document.getElementById('profileError').style.display='block';
-    moreBtn.style.display='none';
+  }finally{
+    state.profileMsgLoading=false;
   }
 };
 
