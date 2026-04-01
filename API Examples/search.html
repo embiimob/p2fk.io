@@ -921,7 +921,9 @@
         } else if (isVideo) {
           el.innerHTML = `<video controls style="display:none;"><source data-src="${url}" type="${videoMimeTypes[ext] || 'video/mp4'}">Video not supported.</video>`;
         } else if (isPDF) {
-          el.innerHTML = `<iframe class="pdf-viewer" src="${url}" title="${escapeHtml(filename)}"></iframe>`;
+          const safeName = escapeHtml(filename);
+          el.innerHTML = `<div class="file-card"><div class="file-card-icon">📄</div><div class="file-card-info"><div class="file-card-name" title="${safeName}">${safeName}</div><div class="file-card-meta"><span>PDF File</span> &middot; <span class="file-card-size">Fetching size...</span></div></div><a class="file-card-download" href="${url}" target="_blank" rel="noopener noreferrer">Open</a></div>`;
+          fetchFileSize(url, el.querySelector('.file-card-size'));
         } else {
           const icon = getFileCardIcon(ext);
           const typeLabel = ext ? ext.toUpperCase() + ' File' : 'File';
@@ -1258,6 +1260,11 @@
         if (!root) continue;
         const normalized = normalizeRoot(root);
         if (!normalized) continue;
+        // Always prefer the TransactionId supplied by the search API (derived from the
+        // folder name on disk) over any TransactionId embedded in ROOT.json itself.
+        // This is the authoritative source for building File-attachment URLs like
+        // https://p2fk.io/root/{txId}/{filename}.
+        normalized.txId = result.TransactionId || result.transactionId || normalized.txId;
         items.push({ type: 'message', data: normalized, blockchain: result.Blockchain || result.blockchain || '' });
       }
 

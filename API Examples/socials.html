@@ -1329,14 +1329,12 @@
                         state.txidMeta.set(txid, { mainnet, blockchain: "BTC" });
                         const ext = (filename.match(/\.([^.]+)$/) || [])[1]?.toLowerCase() || "";
                         const onchainMedia = document.createElement("div");
-                        if (ext === "pdf") {
-                            onchainMedia.innerHTML = `<iframe class="pdf-viewer" src="${downloadUrl}" title="${escapeHtml(filename)}"></iframe>`;
-                        } else if (/^(jpg|jpeg|png|gif|webp|bmp|svg|tiff|tif|ico|avif)$/.test(ext)) {
+                        if (/^(jpg|jpeg|png|gif|webp|bmp|svg|tiff|tif|ico|avif)$/.test(ext)) {
                             onchainMedia.innerHTML = `<img class="media-placeholder" src="${state.fallbackImage}" alt="${escapeHtml(filename)}" style="display:block;">`;
                             const img = onchainMedia.querySelector("img");
                             imageElements.push({ img, url: downloadUrl, hash: txid, mediaElement: onchainMedia, mainnet });
                         } else {
-                            const icon = getFileCardIcon(ext);
+                            const icon = ext === "pdf" ? "📄" : getFileCardIcon(ext);
                             const typeLabel = ext ? ext.toUpperCase() + " File" : "File";
                             const knownSize = formatBytes(fileSize);
                             const safeName = escapeHtml(filename);

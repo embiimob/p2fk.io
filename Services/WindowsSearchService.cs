@@ -193,6 +193,7 @@ namespace P2FK.IO.Services
                 results.Add(new SearchResultRoot
                 {
                     Blockchain = detectedBlockchain,
+                    TransactionId = txId,
                     Root = rootObj
                 });
             }
