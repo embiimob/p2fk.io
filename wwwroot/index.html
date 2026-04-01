@@ -289,6 +289,7 @@
     }
     .share-btn:hover { background: #2a2a2a; color: #03dac6; border-color: #03dac6; }
     .share-btn.copied { background: #1a3a1a; color: #4caf50; border-color: #4caf50; }
+    .object-detail-card .share-btn, .object-detail-card > .share-btn { z-index: 20; }
 
     /* ── URN / keyword links ───────────────────────────────────────── */
     .urn-link { color: #bb86fc; cursor: pointer; text-decoration: underline; }
@@ -1250,13 +1251,12 @@ const getUrnMediaUrl=(urn)=>{
   if(!urn) return null;
   const u=urn.replace(/\\/g,'/');
   if(/^IPFS:/i.test(u)||/^ipfs[:/]+/i.test(u)){
-    // Build full IPFS gateway URL: ipfs.io/ipfs/HASH/optional/path
+    // The CID itself is the content — the /filename is display metadata only.
+    // Fetch via hash only: https://ipfs.io/ipfs/{HASH}
     const raw=u.replace(/^ipfs[:/]+/i,'');
-    // Percent-encode each path segment individually to handle spaces etc.
-    const encodedPath=raw.split('/').map((seg,i)=>i===0?seg:encodeURIComponent(seg)).join('/');
     const hash=raw.split('/')[0];
     if(!hash) return null;
-    return `https://ipfs.io/ipfs/${encodedPath}`;
+    return `https://ipfs.io/ipfs/${hash}`;
   }
   if(/^(BTC|LTC|DOG|MZC):/i.test(u)||/^[A-Za-z0-9]+\/.+/.test(u)){
     const parts=u.split(':').pop().split('/');
@@ -1338,10 +1338,9 @@ const buildUrnPreviewEl=(urn,objectAddress,mainnet,blockchain)=>{
 const renderUrnLinkForObj=(urn)=>{
   if(!urn) return 'None';
   if(/^IPFS:/i.test(urn)||/^ipfs[:/]+/i.test(urn)){
-    // Use full path with proper encoding (so links to files with spaces work)
-    const mediaUrl=getUrnMediaUrl(urn);
-    const url=mediaUrl||`https://ipfs.io/ipfs/${encodeURIComponent(urn.replace(/^ipfs[:/]+/i,'').split(/[/\\]/)[0])}`;
-    return `<a href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(urn)}</a>`;
+    // Link to just the CID (hash); filename portion is display-only
+    const hash=urn.replace(/^ipfs[:/]+/i,'').split(/[/\\]/)[0];
+    return `<a href="https://ipfs.io/ipfs/${encodeURIComponent(hash)}" target="_blank" rel="noopener">${escapeHtml(urn)}</a>`;
   }
   if(/^(BTC|LTC|DOG|MZC):/i.test(urn)||/^[A-Za-z0-9]+\/.+/.test(urn)){
     const parts=urn.split(':').pop().split('/');
@@ -1492,8 +1491,8 @@ const showProfileView=async(identifier,mainnet=true)=>{
       }
       if(!profile) throw new Error(`Profile not found: ${identifier}`);
       // Address is in Creators object (key=address) or Address field
-      // Filter out '0' which is sometimes returned as a placeholder
-      const creatorKeys=Object.keys(profile.Creators||{}).filter(k=>k!=='0'&&isAddress(k));
+      // Filter out '0' placeholder; keep any other key (including bech32 addresses)
+      const creatorKeys=Object.keys(profile.Creators||{}).filter(k=>k!=='0'&&k.length>10);
       address=profile.Address||profile['Signed By']||creatorKeys[0]||'';
     }
 
@@ -2000,10 +1999,18 @@ const handleNavSearch=async()=>{
   const raw=document.getElementById('navbar-search-input').value.trim();
   if(!raw){navigateTo('search',{});return;}
   if(raw.startsWith('@')){
-    // Navigate directly by URN — showProfileView tries both networks
     const urnTarget=raw.slice(1).trim();
     if(!urnTarget) return;
-    navigateTo('profile',{profile:urnTarget,mainnet:false});
+    const btcChk=document.getElementById('chkBitcoin').checked;
+    const tbtcChk=document.getElementById('chkTestnet3').checked;
+    if(btcChk&&tbtcChk){
+      showSearchError('@profile search requires selecting only BTC or TBTC, not both.');
+      setView('search');
+      return;
+    }
+    // Use selected network; if neither is checked default to TBTC (common dev default)
+    const isMainnet=btcChk&&!tbtcChk;
+    navigateTo('profile',{profile:urnTarget,mainnet:isMainnet});
     return;
   }
   if(raw.startsWith('#')){
