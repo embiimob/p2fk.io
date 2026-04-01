@@ -438,6 +438,44 @@
     .profile-height { font-size: 0.78em; color: #888; margin-top: 4px; }
     .profile-height span { color: #03dac6; font-weight: bold; }
 
+
+    /* ── URN media preview ──────────────────────────────────────────── */
+    .obj-preview { width: 100%; margin-bottom: 16px; border-radius: 8px; overflow: hidden; background: #0a0a0a; }
+    .obj-preview video, .obj-preview audio { width: 100%; display: block; max-height: 360px; }
+    .obj-preview audio { height: 54px; background: #1e1e1e; }
+    .obj-preview iframe { width: 100%; height: 420px; border: none; display: block; }
+    .obj-preview model-viewer { width: 100%; height: 360px; display: block; background: #111; --poster-color: transparent; }
+    .obj-preview img.preview-img { width: 100%; max-height: 400px; object-fit: contain; display: block; }
+    .obj-preview .preview-pdf { width: 100%; height: 520px; border: none; display: block; }
+    .obj-preview-placeholder { text-align: center; padding: 18px; color: #888; font-size: 0.85em; }
+    .obj-preview-placeholder a { color: #bb86fc; }
+
+    /* ── Object detail name + address header ────────────────────────── */
+    .obj-name-row { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 2px; }
+    .obj-name-row h2 { margin: 0; color: #bb86fc; font-size: 1.15em; }
+    .obj-name-addr { font-family: monospace; font-size: 0.72em; color: #03dac6; cursor: pointer; padding: 1px 5px; border: 1px solid #2a2a2a; border-radius: 4px; }
+    .obj-name-addr:hover { color: #bb86fc; border-color: #bb86fc; }
+
+    /* ── Profile tabs / object grid ─────────────────────────────────── */
+    .profile-obj-tabs { display: flex; gap: 6px; margin: 12px 0 8px; flex-wrap: wrap; align-items: center; }
+    .profile-obj-tab { padding: 4px 12px; border: 1px solid #333; border-radius: 14px; background: #1a1a1a; color: #b0b0b0; cursor: pointer; font-size: 0.8em; transition: all 0.2s; }
+    .profile-obj-tab:hover { border-color: #bb86fc; color: #bb86fc; }
+    .profile-obj-tab.active { border-color: #bb86fc; background: #bb86fc20; color: #bb86fc; font-weight: bold; }
+    .profile-sort-wrap { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+    .profile-sort-select { background: #1a1a1a; border: 1px solid #333; color: #b0b0b0; border-radius: 4px; padding: 3px 8px; font-size: 0.78em; cursor: pointer; }
+    .profile-sort-select:focus { outline: none; border-color: #bb86fc; }
+    .profile-obj-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; margin-top: 10px; }
+    .profile-obj-card { background: #1e1e1e; border: 1px solid #2a2a2a; border-radius: 8px; overflow: hidden; cursor: pointer; transition: border-color 0.2s; position: relative; }
+    .profile-obj-card:hover { border-color: #bb86fc; }
+    .profile-obj-card img { width: 100%; height: 110px; object-fit: cover; display: block; background: #333; }
+    .profile-obj-card .poc-body { padding: 6px 8px; }
+    .profile-obj-card .poc-name { font-size: 0.82em; color: #e0e0e0; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .profile-obj-card .poc-price { font-size: 0.72em; color: #03dac6; font-family: monospace; }
+    .profile-obj-card .poc-units { font-size: 0.7em; color: #888; }
+    .profile-obj-card .poc-date { font-size: 0.7em; color: #666; }
+    .profile-obj-loading { text-align: center; padding: 18px; color: #888; font-size: 0.85em; }
+    .profile-obj-empty { text-align: center; padding: 18px; color: #555; font-size: 0.85em; }
+
     /* ── Single message view ───────────────────────────────────────── */
     #view-message .message-card { margin: 0 auto; max-width: 660px; }
 
@@ -515,9 +553,28 @@
     <div id="profilePanel" style="display:none;">
       <div class="profile-panel" id="profilePanelInner"></div>
       <div class="profile-msg-thread">
-        <h3 id="profileMsgHeading">Messages</h3>
+        <div class="profile-obj-tabs" id="profileTabsBar">
+          <button class="profile-obj-tab active" id="tabMessages" data-tab="messages">Messages</button>
+          <button class="profile-obj-tab" id="tabOwned"    data-tab="owned">Owned</button>
+          <button class="profile-obj-tab" id="tabCreated"  data-tab="created">Created</button>
+          <button class="profile-obj-tab" id="tabAssoc"    data-tab="associated">Associated</button>
+          <div class="profile-sort-wrap" id="profileSortWrap" style="display:none;">
+            <label style="font-size:0.78em;color:#888;">Sort:</label>
+            <select class="profile-sort-select" id="profileObjSort">
+              <option value="newest">Newest</option>
+              <option value="oldest">Oldest</option>
+              <option value="highestPrice">Price ▼</option>
+              <option value="lowestPrice">Price ▲</option>
+              <option value="recentActivity">Recent Activity</option>
+              <option value="highestActivity">Most Active</option>
+            </select>
+          </div>
+        </div>
+        <h3 id="profileMsgHeading" style="display:none;">Messages</h3>
         <div id="profileMsgFeed"></div>
         <button id="profileMsgLoadMore">Load more messages</button>
+        <div id="profileObjGrid" class="profile-obj-grid" style="display:none;"></div>
+        <div id="profileObjStatus" style="display:none;"></div>
       </div>
     </div>
   </div>
@@ -912,8 +969,8 @@ const renderProfileCard=(profile,blockchain)=>{
   const txm=imgUrl.match(/\/root\/([0-9a-fA-F]{64})\//i)?.[1];
   if(txm) state.txidMeta.set(txm,chainToMeta(blockchain));
 
-  // Prefer blockchain address over URN for reliable profile navigation
-  const address=profile.Address||Object.keys(profile.Creators||{})[0]||'';
+  // Prefer _address (injected from search service folder path), then Creators key, then URN
+  const address=profile._address||profile.Address||Object.keys(profile.Creators||{})[0]||'';
   const navId=address||profile.URN||'';
   const shareId=profile.URN||address||'';
 
@@ -1002,7 +1059,7 @@ const applyChainFilter=()=>{
 const appendResultItems=async(objectResults,profileResults,rootResults,searchId,signal)=>{
   const items=[];
   for(const r of(objectResults||[])){const o=r.Object||r.object;if(!o||!o.Name) continue;items.push({type:'object',raw:o,blockchain:r.Blockchain||r.blockchain||''});}
-  for(const r of(profileResults||[])){const p=r.Profile||r.profile;if(!p) continue;if(!p.DisplayName&&!p.URN) continue;items.push({type:'profile',raw:p,blockchain:r.Blockchain||r.blockchain||''});}
+  for(const r of(profileResults||[])){const p=r.Profile||r.profile;if(!p) continue;if(!p.DisplayName&&!p.URN) continue;if(r.Address||r.address) p._address=r.Address||r.address;items.push({type:'profile',raw:p,blockchain:r.Blockchain||r.blockchain||''});}
   for(const r of(rootResults||[])){const root=r.Root||r.root;if(!root) continue;const n=normalizeRoot(root);if(!n) continue;items.push({type:'message',data:n,blockchain:r.Blockchain||r.blockchain||''});}
   items.sort((a,b)=>{
     const getD=item=>{if(item.type==='message') return new Date(item.data.blockDate||0);return new Date(item.raw?.CreatedDate||0);};
@@ -1115,6 +1172,97 @@ const performSearch=async(searchText)=>{
 
 const showSearchError=(msg)=>{const el=document.getElementById('searchError');el.textContent=msg;el.style.display='block';setTimeout(()=>{el.style.display='none';},6000);};
 
+// ── URN media type detection ──────────────────────────────────────────
+const getUrnFilePath=(urn)=>{
+  if(!urn) return null;
+  if(/^IPFS:/i.test(urn)||/^ipfs[:/]+/i.test(urn)){
+    return urn.replace(/^ipfs[:/]+/i,'');
+  }
+  if(/^(BTC|LTC|DOG|MZC):/i.test(urn)||/^[A-Za-z0-9]+\/.+/.test(urn)){
+    const parts=urn.split(':').pop().split('/');
+    return parts[1]||null;
+  }
+  return null;
+};
+const getUrnMediaUrl=(urn)=>{
+  if(!urn) return null;
+  if(/^IPFS:/i.test(urn)||/^ipfs[:/]+/i.test(urn)){
+    const path=urn.replace(/^ipfs[:/]+/i,'');
+    const hash=path.split(/[/\\]/)[0];
+    return hash?`https://ipfs.io/ipfs/${path}`:null;
+  }
+  if(/^(BTC|LTC|DOG|MZC):/i.test(urn)||/^[A-Za-z0-9]+\/.+/.test(urn)){
+    const parts=urn.split(':').pop().split('/');
+    if(!parts[0]||!/^[0-9a-fA-F]{64}$/.test(parts[0])) return null;
+    return parts[1]?`${BASE_URL}/root/${parts[0]}/${parts[1]}`:null;
+  }
+  return null;
+};
+const getUrnMediaType=(urn)=>{
+  if(!urn) return null;
+  const filePath=getUrnFilePath(urn)||'';
+  const lo=filePath.toLowerCase();
+  if(/\.(mp4|webm|mov|ogg|ogv)$/.test(lo)) return 'video';
+  if(/\.(mp3|wav|flac|aac|oga)$/.test(lo)) return 'audio';
+  if(/\.pdf$/.test(lo)) return 'pdf';
+  if(/\.html?$/.test(lo)) return 'html';
+  if(/\.glb$/.test(lo)) return 'model';
+  if(/\.gltf$/.test(lo)) return 'model';
+  return null;
+};
+
+// ── Build URN media preview element ─────────────────────────────────
+const buildUrnPreviewEl=(urn,objectAddress,mainnet,blockchain)=>{
+  const mtype=getUrnMediaType(urn);
+  if(!mtype) return null;
+  const mediaUrl=getUrnMediaUrl(urn);
+  if(!mediaUrl) return null;
+
+  const wrap=document.createElement('div');
+  wrap.className='obj-preview';
+
+  if(mtype==='video'){
+    const v=document.createElement('video');
+    v.controls=true;v.preload='metadata';v.src=mediaUrl;
+    wrap.appendChild(v);
+  }else if(mtype==='audio'){
+    const a=document.createElement('audio');
+    a.controls=true;a.preload='metadata';a.src=mediaUrl;
+    wrap.appendChild(a);
+  }else if(mtype==='pdf'){
+    const ifr=document.createElement('iframe');
+    ifr.className='preview-pdf';ifr.src=mediaUrl;ifr.title='PDF Preview';
+    wrap.appendChild(ifr);
+  }else if(mtype==='html'){
+    const chain=(blockchain||'BTC').toUpperCase();
+    const chainParam=chain==='TBTC'?'BTC':chain;
+    const qs=new URLSearchParams({
+      address:objectAddress||'',
+      mainnet:String(!!mainnet),
+      network:chainParam,
+      blockchain:chainParam,
+      urn:urn||'',
+    });
+    const ifr=document.createElement('iframe');
+    ifr.src=`${mediaUrl}?${qs.toString()}`;
+    ifr.title='Object Preview';ifr.sandbox='allow-scripts allow-same-origin allow-forms allow-popups';
+    ifr.style.cssText='width:100%;height:420px;border:none;display:block;';
+    wrap.appendChild(ifr);
+  }else if(mtype==='model'){
+    const mv=document.createElement('model-viewer');
+    mv.setAttribute('src',mediaUrl);
+    mv.setAttribute('camera-controls','');
+    mv.setAttribute('auto-rotate','');
+    mv.setAttribute('shadow-intensity','1');
+    mv.setAttribute('exposure','1');
+    mv.setAttribute('ar','');
+    mv.setAttribute('ar-modes','webxr scene-viewer quick-look');
+    mv.style.cssText='width:100%;height:360px;display:block;background:#111;';
+    wrap.appendChild(mv);
+  }
+  return wrap;
+};
+
 // ── URN/object link renderer ───────────────────────────────────────────
 const renderUrnLinkForObj=(urn)=>{
   if(!urn) return 'None';
@@ -1144,6 +1292,73 @@ const updateMetaTags=(title,description,image,url)=>{
   set('tw-title',fullTitle); set('tw-description',description); set('tw-image',image);
   const card=document.getElementById('tw-card');
   if(card) card.setAttribute('content',image&&image!=='https://p2fk.io/bitfossil.png'?'summary_large_image':'summary');
+};
+
+// ── Sort helper (objects) ─────────────────────────────────────────────
+const sortObjects=(objects,sortBy)=>{
+  const comparePrice=(a,b,dir)=>{
+    const la=a.Listings?Math.min(...Object.values(a.Listings).map(l=>l.Value||Infinity)):Infinity;
+    const lb=b.Listings?Math.min(...Object.values(b.Listings).map(l=>l.Value||Infinity)):Infinity;
+    return dir==='asc'?la-lb:lb-la;
+  };
+  return [...objects].sort((a,b)=>{
+    if(sortBy==='newest') return new Date(b.CreatedDate)-new Date(a.CreatedDate);
+    if(sortBy==='oldest') return new Date(a.CreatedDate)-new Date(b.CreatedDate);
+    if(sortBy==='highestPrice') return comparePrice(a,b,'desc');
+    if(sortBy==='lowestPrice') return comparePrice(a,b,'asc');
+    if(sortBy==='highestActivity') return (b.ProcessHeight||0)-(a.ProcessHeight||0);
+    if(sortBy==='recentActivity') return new Date(b.ChangeDate)-new Date(a.ChangeDate);
+    return 0;
+  });
+};
+
+const renderObjMiniCard=(obj,mainnet)=>{
+  const card=document.createElement('div');card.className='profile-obj-card';
+  const imgUrl=getImageUrl(obj.Image,obj.URN);
+  const img=document.createElement('img');img.src=fallbackImage;img.alt=obj.Name||'Object';
+  loadImageWithTimeout(imgUrl).then(u=>{img.src=u;}).catch(()=>{});
+  card.appendChild(img);
+  const lowestPrice=obj.Listings&&Object.keys(obj.Listings).length?Math.min(...Object.values(obj.Listings).map(l=>l.Value)):null;
+  const totalUnits=obj.Owners?Object.values(obj.Owners).reduce((s,v)=>s+(v?.Item1??v??0),0):0;
+  const body=document.createElement('div');body.className='poc-body';
+  body.innerHTML=`<div class="poc-name">${escapeHtml(obj.Name||'Unnamed')}</div>${lowestPrice!==null?`<div class="poc-price">${lowestPrice} BTC</div>`:''}${totalUnits?`<div class="poc-units">${totalUnits} unit${totalUnits===1?'':'s'}</div>`:''}${obj.CreatedDate&&!isNullDate(obj.CreatedDate)?`<div class="poc-date">${formatDate(obj.CreatedDate)||''}</div>`:''}`;
+  card.appendChild(body);
+  const objectAddress=Object.keys(obj.Creators||{})[0]||'';
+  card.addEventListener('click',()=>{if(objectAddress) navigateTo('object',{object:objectAddress,mainnet});});
+  return card;
+};
+
+const loadProfileObjects=async(type,address,mainnet)=>{
+  const gridEl=document.getElementById('profileObjGrid');
+  const statusEl=document.getElementById('profileObjStatus');
+  const sortEl=document.getElementById('profileObjSort');
+  if(!gridEl||!address) return;
+  gridEl.innerHTML='';
+  gridEl.style.display='none';
+  if(statusEl){statusEl.className='profile-obj-loading';statusEl.textContent='Loading…';statusEl.style.display='block';}
+  const sortBy=sortEl?sortEl.value:'newest';
+  const endpoints={owned:'GetObjectsOwnedByAddress',created:'GetObjectsCreatedByAddress',associated:'GetObjectsByAddress'};
+  const ep=endpoints[type]||'GetObjectsByAddress';
+  try{
+    const data=await fetchAPI(`${BASE_URL}/${ep}/${encodeURIComponent(address)}?mainnet=${mainnet}&skip=0&qty=-1&verbose=false`,'',null,30000);
+    let objs=Array.isArray(data)?data:[];
+    // Objects API may return them wrapped or bare
+    objs=objs.map(o=>o.Object||o.object||o).filter(o=>o&&typeof o==='object'&&!Array.isArray(o));
+    objs=sortObjects(objs,sortBy);
+    gridEl.innerHTML='';
+    if(!objs.length){
+      if(statusEl){statusEl.className='profile-obj-empty';statusEl.textContent=`No ${type} objects found.`;statusEl.style.display='block';}
+    }else{
+      if(statusEl) statusEl.style.display='none';
+      objs.forEach(obj=>{
+        const c=renderObjMiniCard(obj,mainnet);
+        gridEl.appendChild(c);
+      });
+      gridEl.style.display='grid';
+    }
+  }catch(e){
+    if(statusEl){statusEl.className='profile-obj-empty';statusEl.textContent='Failed to load objects: '+e.message;statusEl.style.display='block';}
+  }
 };
 
 // ── Profile view ───────────────────────────────────────────────────────
@@ -1245,9 +1460,15 @@ const showProfileView=async(identifier,mainnet=true)=>{
       const prev=addrEl.textContent;addrEl.textContent='✅ Copied!';setTimeout(()=>{addrEl.textContent=prev;},2000);
     });
 
-    // Wire up internal profile URL links
+    // Wire up internal profile URL links (@xxx → navigate by URN)
     info.querySelectorAll('.profile-url-link.internal').forEach(el=>{
-      el.addEventListener('click',()=>navigateTo('profile',{profile:el.dataset.urn,mainnet}));
+      el.addEventListener('click',async()=>{
+        // resolve URN → address via GetProfileByURN for correct profile load
+        const urnTarget=el.dataset.urn;
+        const resolved=await fetchProfileByURN(urnTarget,mainnet,null);
+        const addr=(resolved&&(resolved.Address||Object.keys(resolved.Creators||{})[0]))||urnTarget;
+        navigateTo('profile',{profile:addr,mainnet});
+      });
     });
 
     // Load process height asynchronously
@@ -1262,17 +1483,46 @@ const showProfileView=async(identifier,mainnet=true)=>{
       })();
     }
 
+    // ── Profile tab wiring ────────────────────────────────────────────
+    let _activeProfileTab='messages';
+    const _switchProfileTab=async(tab)=>{
+      _activeProfileTab=tab;
+      document.querySelectorAll('.profile-obj-tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));
+      const sortWrap=document.getElementById('profileSortWrap');
+      const feedEl2=document.getElementById('profileMsgFeed');
+      const moreBtn2=document.getElementById('profileMsgLoadMore');
+      const gridEl=document.getElementById('profileObjGrid');
+      const statusEl=document.getElementById('profileObjStatus');
+      if(tab==='messages'){
+        if(sortWrap) sortWrap.style.display='none';
+        if(feedEl2) feedEl2.style.display='';
+        if(moreBtn2) moreBtn2.style.display='';
+        if(gridEl) gridEl.style.display='none';
+        if(statusEl) statusEl.style.display='none';
+      }else{
+        if(sortWrap) sortWrap.style.display='flex';
+        if(feedEl2) feedEl2.style.display='none';
+        if(moreBtn2) moreBtn2.style.display='none';
+        if(statusEl) statusEl.style.display='block';
+        await loadProfileObjects(tab,address,mainnet);
+      }
+    };
+    document.querySelectorAll('.profile-obj-tab').forEach(btn=>{
+      btn.onclick=()=>_switchProfileTab(btn.dataset.tab);
+    });
+    const sortSel=document.getElementById('profileObjSort');
+    if(sortSel) sortSel.onchange=()=>{if(_activeProfileTab!=='messages') loadProfileObjects(_activeProfileTab,address,mainnet);};
+
     // Load messages
     state.profileMsgSkip=0;
     state.profileMsgAddress=address;
     state.profileMsgMainnet=mainnet;
     state.profileMsgExhausted=false;
-    document.getElementById('profileMsgHeading').textContent='Messages';
 
     if(address){
       await loadProfileMessages();
     }else{
-      document.getElementById('profileMsgHeading').textContent='No address available for message history';
+      const msgsBtn2=document.getElementById('tabMessages');if(msgsBtn2) msgsBtn2.textContent='Messages (0)';
     }
   }catch(e){
     loadEl.style.display='none';
@@ -1306,7 +1556,7 @@ const loadProfileMessages=async()=>{
       moreBtn.style.display='block';
       moreBtn.disabled=false;moreBtn.textContent='Load more messages';
     }
-    document.getElementById('profileMsgHeading').textContent=`Messages (${state.profileMsgSkip} loaded)`;
+    const msgsTabBtn=document.getElementById('tabMessages');if(msgsTabBtn) msgsTabBtn.textContent=`Messages (${state.profileMsgSkip})`;
   }catch(e){
     document.getElementById('profileError').textContent='Failed to load messages: '+e.message;
     document.getElementById('profileError').style.display='block';
@@ -1346,6 +1596,10 @@ const showObjectView=async(identifier,mainnet=true)=>{
 
     card.appendChild(makeShareBtn('object',{id:objectAddress,mainnet}));
 
+    // URN media preview at the top (video, audio, PDF, HTML, GLB)
+    const previewEl=buildUrnPreviewEl(obj.URN,objectAddress,mainnet,mainnet?'BTC':'TBTC');
+    if(previewEl) card.appendChild(previewEl);
+
     // Header: image + info
     const header=document.createElement('div');header.className='object-detail-header';
     const imgEl=document.createElement('img');imgEl.className='object-detail-img';imgEl.src=fallbackImage;imgEl.alt=obj.Name||'Object';
@@ -1367,10 +1621,10 @@ const showObjectView=async(identifier,mainnet=true)=>{
     const lockMsg=isLocked?`Locked: ${escapeHtml(lockedFull||'')}`:'Object is unlocked';
     const lockHtml=`<span class="obj-lock">${lockIcon}<span class="lock-tooltip">${lockMsg}</span></span>`;
 
-    // Address row (copyable)
-    const addrRowHtml=objectAddress?`<p>Address: <span class="obj-addr-copy" id="objAddrCopy" title="Click to copy">${escapeHtml(abbreviateAddress(objectAddress))}</span></p>`:'';
+    // Name row: name + abbreviated copyable address on the right
+    const addrShort=objectAddress?escapeHtml(abbreviateAddress(objectAddress)):'';
 
-    info.innerHTML=`<h2>${escapeHtml(obj.Name||'Unnamed Object')}</h2><p><span class="badge badge-object">Object</span><span class="badge badge-chain">${escapeHtml(mainnet?'BTC':'TBTC')}</span> ${lockHtml}</p>${descHtml}${keyHtml}${dateHtml}${addrRowHtml}${urnLinkHtml}`;
+    info.innerHTML=`<div class="obj-name-row"><h2>${escapeHtml(obj.Name||'Unnamed Object')}</h2>${addrShort?`<span class="obj-name-addr" id="objAddrCopy" title="Click to copy address">${addrShort}</span>`:''}</div><p><span class="badge badge-object">Object</span><span class="badge badge-chain">${escapeHtml(mainnet?'BTC':'TBTC')}</span> ${lockHtml}</p>${descHtml}${keyHtml}${dateHtml}${urnLinkHtml}`;
     header.appendChild(info);
     card.appendChild(header);
 
