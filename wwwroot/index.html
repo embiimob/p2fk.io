@@ -1563,18 +1563,17 @@ const showProfileView=async(identifier,mainnet=true)=>{
         if(profile) mainnet=!mainnet; // switch network to match found profile
       }
       if(!profile) throw new Error(`Profile not found: ${identifier}`);
-      // Address is in Creators object (key=address) or Address field
-      // Filter out '0' placeholder; keep any other key (including bech32 addresses)
-      const creatorKeys=Object.keys(profile.Creators||{}).filter(k=>k!=='0'&&k.length>10);
-      address=profile.Address||profile['Signed By']||creatorKeys[0]||'';
-      // Fallback: if address still empty, resolve via keyword→address lookup using the URN
-      if(!address&&(profile.URN||identifier)){
-        try{
-          const kw=profile.URN||identifier;
-          const kwAddr=await fetchAPI(`${BASE_URL}/GetPublicAddressByKeyword/${encodeURIComponent(kw)}?mainnet=${mainnet}`,'',null,10000);
-          if(kwAddr&&typeof kwAddr==='string'&&kwAddr.trim().length>10) address=kwAddr.trim();
-        }catch{}
+      // Creators can be an array (from GetProfileByURN) or an object/dict (from other endpoints).
+      // Array form: ["addr1", ...] → first element is the owner address.
+      // Object form: {"addr1": date, ...} → first key is the owner address.
+      const _creators=profile.Creators;
+      let _creatorAddr='';
+      if(Array.isArray(_creators)){
+        _creatorAddr=(_creators.find(a=>typeof a==='string'&&a.length>10))||'';
+      }else if(_creators&&typeof _creators==='object'){
+        _creatorAddr=Object.keys(_creators).find(k=>k!=='0'&&k.length>10)||'';
       }
+      address=profile.Address||profile['Signed By']||_creatorAddr||'';
     }
 
     const imgUrl=getImageUrl(profile.Image,profile.URN);
