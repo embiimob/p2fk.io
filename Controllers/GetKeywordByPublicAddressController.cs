@@ -17,6 +17,9 @@ namespace P2FK.IO.Controllers
         }
 
         // GET <GetKeywordByPublicAddressController >/5
+        /// <summary>Resolve a blockchain address to its registered keyword/hashtag.</summary>
+        /// <remarks>Returns the keyword string that this address registered via a keyword transaction. Chain-agnostic — the keyword registry is shared.</remarks>
+        /// <param name="address">Cryptocurrency address (26–34 base58 characters).</param>
         [HttpGet("{address}")]
         public async Task<ActionResult> Get(string address)
         {

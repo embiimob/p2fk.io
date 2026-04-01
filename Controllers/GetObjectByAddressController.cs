@@ -17,6 +17,11 @@ namespace P2FK.IO.Controllers
         }
 
         // GET <GetObjectByAddressController>/5
+        /// <summary>Look up a single P2FK digital object by its object address.</summary>
+        /// <remarks>Returns the full object record including name, description, URN, owners, creators, royalties, listings, and provenance changelog.</remarks>
+        /// <param name="address">Object address (26–34 base58 characters).</param>
+        /// <param name="mainnet">true = Bitcoin mainnet; false = Bitcoin testnet (default true).</param>
+        /// <param name="verbose">true = include extended metadata in the response.</param>
         [HttpGet("{address}")]
         public async Task<ActionResult> Get(string address, bool mainnet = true, bool verbose = false)
         {

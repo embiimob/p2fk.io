@@ -17,6 +17,12 @@ namespace P2FK.IO.Controllers
         }
 
         // GET <GetInquiriesByAddressController>/5
+        /// <summary>Get all P2FK inquiries (buy/offer requests) associated with an address.</summary>
+        /// <param name="address">Cryptocurrency address (26–34 base58 characters).</param>
+        /// <param name="skip">Number of results to skip for pagination (default 0).</param>
+        /// <param name="qty">Number of results to return (default 10).</param>
+        /// <param name="mainnet">true = Bitcoin mainnet; false = Bitcoin testnet (default true).</param>
+        /// <param name="verbose">Reserved — always treated as false.</param>
         [HttpGet("{address}")]
         public async Task<ActionResult> Get(string address, int skip = 0, int qty = 10, bool mainnet = true, bool verbose = false)
         {

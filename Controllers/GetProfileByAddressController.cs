@@ -17,6 +17,10 @@ namespace P2FK.IO.Controllers
         }
 
         // GET <GetProfileByAddressController>/5
+        /// <summary>Look up a user profile by their blockchain address.</summary>
+        /// <remarks>Returns the profile record (display name, bio, URN, links, image URN, created/changed dates) registered at this address.</remarks>
+        /// <param name="address">Cryptocurrency address (26–34 base58 characters).</param>
+        /// <param name="mainnet">true = Bitcoin mainnet; false = Bitcoin testnet (default true).</param>
         [HttpGet("{address}")]
         public async Task<ActionResult> Get(string address, bool mainnet = true)
         {

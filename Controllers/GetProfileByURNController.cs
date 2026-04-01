@@ -16,6 +16,10 @@ namespace P2FK.IO.Controllers
         }
 
         // GET <GetProfileByURNController>/5
+        /// <summary>Look up a user profile by its URN (display name / handle).</summary>
+        /// <remarks>The URN is the human-readable identity registered on-chain, e.g. <c>embii4u</c>. Returns the full profile record including bio, image URN, links, and creation dates.</remarks>
+        /// <param name="urn">Profile URN / handle — URL-encode slashes as <c>%2F</c>.</param>
+        /// <param name="mainnet">true = Bitcoin mainnet; false = Bitcoin testnet (default true).</param>
         [HttpGet("{urn}")]
         public async Task<ActionResult> Get(string urn, bool mainnet = true)
         {

@@ -5,6 +5,8 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <InvariantGlobalization>false</InvariantGlobalization>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);1591</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -20,9 +22,11 @@
 
   <ItemGroup>
     <None Include="wwwroot\apple-touch-icon.png" />
+    <None Include="wwwroot\bitfossil.png" />
     <None Include="wwwroot\favicon-16x16.png" />
     <None Include="wwwroot\favicon-32x32.png" />
     <None Include="wwwroot\HugPuddle.jpg" />
+    <None Include="wwwroot\swagger-dark.css" />
   </ItemGroup>
 
   <ItemGroup>
@@ -34,6 +38,9 @@
     <Content Update="wwwroot\apple-touch-icon.png">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
+    <Content Update="wwwroot\bitfossil.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
     <Content Update="wwwroot\favicon-16x16.png">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
@@ -41,6 +48,9 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <Content Update="wwwroot\HugPuddle.jpg">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Update="wwwroot\swagger-dark.css">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
   </ItemGroup>

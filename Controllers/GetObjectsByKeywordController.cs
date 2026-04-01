@@ -17,6 +17,12 @@ namespace P2FK.IO.Controllers
         }
 
         // GET <GetObjectsByKeywordController>/5
+        /// <summary>Get all P2FK digital objects tagged with a specific keyword/hashtag.</summary>
+        /// <remarks>Returns every object whose metadata includes this keyword. Useful for browsing collections or thematic searches.</remarks>
+        /// <param name="keyword">Keyword or hashtag (without the # prefix).</param>
+        /// <param name="skip">Number of results to skip (default 0).</param>
+        /// <param name="qty">Number of results to return; -1 = all (default -1).</param>
+        /// <param name="mainnet">true = Bitcoin mainnet; false = Bitcoin testnet (default true).</param>
         [HttpGet("{keyword}")]
         public async Task<ActionResult> Get(string keyword, int skip = 0, int qty = -1, bool mainnet = true)
         {

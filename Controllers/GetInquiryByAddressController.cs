@@ -17,6 +17,10 @@ namespace P2FK.IO.Controllers
         }
 
         // GET <GetInquiryByAddressController>/5
+        /// <summary>Look up a single P2FK inquiry by its object address.</summary>
+        /// <param name="address">Object address for the inquiry (26–34 base58 characters).</param>
+        /// <param name="mainnet">true = Bitcoin mainnet; false = Bitcoin testnet (default true).</param>
+        /// <param name="verbose">Reserved — always treated as false.</param>
         [HttpGet("{address}")]
         public async Task<ActionResult> Get(string address, bool mainnet = true, bool verbose = false)
         {

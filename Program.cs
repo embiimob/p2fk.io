@@ -8,7 +8,48 @@ using System.Runtime.Versioning;
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "P2FK.IO API",
+        Version = "v1",
+        Description =
+            "The **Sup!? / P2FK** protocol API — search for on-chain messages, user profiles, " +
+            "and digital objects (NFTs) inscribed across Bitcoin (mainnet & testnet), Litecoin, Dogecoin, and Mazacoin.\n\n" +
+            "**Chain selection:**  \n" +
+            "- `mainnet=true` (default) + `blockchain=BTC` → Bitcoin mainnet  \n" +
+            "- `mainnet=false` + `blockchain=BTC` → Bitcoin testnet  \n" +
+            "- `blockchain=LTC | DOG | MZC` → Litecoin / Dogecoin / Mazacoin\n\n" +
+            "All endpoints are read-only.",
+    });
+
+    // Include XML doc comments generated from the triple-slash summaries on every controller
+    var xmlFile = $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml";
+    var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
+    if (File.Exists(xmlPath)) c.IncludeXmlComments(xmlPath);
+
+    // Group endpoints by logical category instead of one-tag-per-controller
+    c.TagActionsBy(api =>
+    {
+        var ctrl = api.ActionDescriptor.RouteValues["controller"] ?? "";
+        if (ctrl.Contains("KnownRoots") || ctrl.Contains("KnownObjects") || ctrl.Contains("KnownProfiles"))
+            return ["Search"];
+        if (ctrl.Contains("PublicMessages") || ctrl.Contains("PrivateMessages") ||
+            ctrl.Contains("Root") || ctrl.Contains("Roots"))
+            return ["Messages & Roots"];
+        if (ctrl.Contains("Profile"))
+            return ["Profiles"];
+        if (ctrl.Contains("Object"))
+            return ["Objects"];
+        if (ctrl.Contains("Inquiry") || ctrl.Contains("Inquiries"))
+            return ["Inquiries"];
+        if (ctrl.Contains("Keyword") || ctrl.Contains("PublicAddress"))
+            return ["Keywords"];
+        return [ctrl];
+    });
+    c.OrderActionsBy(a => a.ActionDescriptor.RouteValues["controller"]);
+});
 builder.Services.AddSingleton<P2FK.IO.Wrapper>();
 builder.Services.AddMemoryCache();
 if (OperatingSystem.IsWindows())
@@ -76,6 +117,9 @@ app.UseSwaggerUI(options =>
          {
              ["activated"] = false
          };
+
+        // Inject the P2FK dark theme stylesheet
+        options.InjectStylesheet("/swagger-dark.css");
 
 
     }

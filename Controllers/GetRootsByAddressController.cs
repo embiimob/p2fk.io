@@ -17,6 +17,11 @@ namespace P2FK.IO.Controllers
         }
 
         // GET <GetRootsByAddressController>/5
+        /// <summary>Get all root records (messages / file inscriptions) associated with a blockchain address.</summary>
+        /// <remarks>Returns every P2FK root transaction sent from or to this address. Verbose mode is disabled server-side to protect performance.</remarks>
+        /// <param name="address">Cryptocurrency address (26–34 base58 characters).</param>
+        /// <param name="mainnet">true = Bitcoin mainnet; false = Bitcoin testnet (default true).</param>
+        /// <param name="verbose">Reserved — always treated as false.</param>
         [HttpGet("{address}")]
         public async Task<ActionResult> Get(string address, bool mainnet = true, bool verbose = false)
         {

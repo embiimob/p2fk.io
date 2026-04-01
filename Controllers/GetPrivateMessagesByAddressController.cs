@@ -17,6 +17,15 @@ namespace P2FK.IO.Controllers
         }
 
         // GET <GetPublicMessagesByAddressController>/5
+        /// <summary>Get the public message thread for a given address.</summary>
+        /// <remarks>
+        /// Returns the ordered list of public on-chain messages (P2FK roots) broadcast by or to this address.
+        /// Paginate with <c>skip</c> + <c>qty</c>. Sorted newest-first by block date.
+        /// </remarks>
+        /// <param name="address">Cryptocurrency address (26–34 base58 characters).</param>
+        /// <param name="skip">Number of messages to skip (default 0).</param>
+        /// <param name="qty">Number of messages to return (default 10).</param>
+        /// <param name="mainnet">true = Bitcoin mainnet; false = Bitcoin testnet (default true).</param>
         [HttpGet("{address}")]
         public async Task<ActionResult> Get(string address, int skip=0, int qty = 10, bool mainnet = true)
         {

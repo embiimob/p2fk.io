@@ -17,6 +17,9 @@ namespace P2FK.IO.Controllers
         }
 
         // GET <GetObjectByTransactionIDController>/5
+        /// <summary>Look up a P2FK digital object by the transaction ID of its creation transaction.</summary>
+        /// <param name="id">64-character hexadecimal transaction ID.</param>
+        /// <param name="mainnet">true = Bitcoin mainnet; false = Bitcoin testnet (default true).</param>
         [HttpGet("{id}")]
         public async Task<ActionResult> Get(string id, bool mainnet = true)
         {
