@@ -467,10 +467,14 @@
     .profile-obj-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; margin-top: 10px; }
     .profile-obj-card { background: #1e1e1e; border: 1px solid #2a2a2a; border-radius: 8px; overflow: hidden; cursor: pointer; transition: border-color 0.2s; position: relative; }
     .profile-obj-card:hover { border-color: #bb86fc; }
+    .profile-obj-card .poc-img-wrap { position: relative; }
     .profile-obj-card img { width: 100%; height: 110px; object-fit: cover; display: block; background: #333; }
+    .poc-chain-badge { position: absolute; top: 4px; left: 4px; background: rgba(0,0,0,0.72); color: #03dac6; font-size: 0.65em; font-family: monospace; padding: 1px 5px; border-radius: 3px; pointer-events: none; }
+    .poc-price-badge { position: absolute; bottom: 4px; right: 4px; background: rgba(0,0,0,0.75); color: #03dac6; font-size: 0.68em; font-family: monospace; padding: 2px 5px; border-radius: 3px; pointer-events: none; }
     .profile-obj-card .poc-body { padding: 6px 8px; }
     .profile-obj-card .poc-name { font-size: 0.82em; color: #e0e0e0; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .profile-obj-card .poc-price { font-size: 0.72em; color: #03dac6; font-family: monospace; }
+    .profile-obj-card .poc-creator { font-size: 0.68em; color: #bb86fc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+    .profile-obj-card .poc-creator:hover { color: #03dac6; }
     .profile-obj-card .poc-units { font-size: 0.7em; color: #888; }
     .profile-obj-card .poc-date { font-size: 0.7em; color: #666; }
     .profile-obj-loading { text-align: center; padding: 18px; color: #888; font-size: 0.85em; }
@@ -1110,9 +1114,54 @@ const loadMoreBatch=async()=>{
   finally{
     loadEl.style.display='none';loadEl.textContent='Loading…';state.isLoadingMore=false;
     if(state.currentSearchId===searchId&&anyMoreNeeded()){
-      if(countVisible()===0) setTimeout(()=>loadMoreBatch(),0);
-      else scrollObserver.observe(sentinel);
+      if(countVisible()===0&&(state.autoLoadDepth||0)<6){state.autoLoadDepth=(state.autoLoadDepth||0)+1;setTimeout(()=>loadMoreBatch(),0);}
+      else{state.autoLoadDepth=0;scrollObserver.observe(sentinel);}
     }
+  }
+};
+
+// ── Keyword object search ─────────────────────────────────────────────
+const performKeywordSearch=async(keyword)=>{
+  // #keyword is only for BTC mainnet or TBTC; validate single-network selection
+  const btcChecked=document.getElementById('chkBitcoin').checked;
+  const tbtcChecked=document.getElementById('chkTestnet3').checked;
+  if(btcChecked&&tbtcChecked){
+    showSearchError('#keyword search requires selecting only BTC or TBTC, not both.');
+    return;
+  }
+  const isMainnet=btcChecked;
+  const feedEl=document.getElementById('feed');
+  const loadEl=document.getElementById('searchLoading');
+  const btn=document.getElementById('navbar-search-btn');
+  const inp=document.getElementById('navbar-search-input');
+  feedEl.innerHTML='';
+  document.getElementById('resultCount').style.display='none';
+  document.getElementById('searchError').style.display='none';
+  loadEl.style.display='block';loadEl.textContent='Searching keyword…';
+  btn.disabled=true;btn.textContent='…';inp.disabled=true;
+  setView('search');
+  try{
+    const addr=await fetchAPI(`${BASE_URL}/GetPublicAddressByKeyword/${encodeURIComponent(keyword)}?mainnet=${isMainnet}`,'',null,15000);
+    if(!addr||typeof addr!=='string') throw new Error(`No address found for keyword: ${keyword}`);
+    const roots=await fetchAPI(`${BASE_URL}/GetRootsByAddress/${encodeURIComponent(addr)}?mainnet=${isMainnet}&verbose=false`,'',null,30000);
+    const list=Array.isArray(roots)?roots:[];
+    if(!list.length){feedEl.innerHTML='<div style="text-align:center;padding:30px;color:#666;">No results for #'+escapeHtml(keyword)+'</div>';return;}
+    const bc=isMainnet?'BTC':'BTC-TESTNET';
+    const searchId=Date.now()+Math.random().toString(36).slice(2);
+    state.currentSearchId=searchId;
+    for(const item of list){
+      const root=item.Root||item.root||item;
+      const n=normalizeRoot(root);
+      if(!n) continue;
+      const card=await renderMessageCard(n,null,bc,{id:n.txId,mainnet:isMainnet,blockchain:isMainnet?'BTC':'BTC'});
+      card.dataset.chain=isMainnet?'BTC':'BTC-testnet';
+      feedEl.appendChild(card);
+    }
+  }catch(e){
+    showSearchError('Keyword search failed: '+e.message);
+  }finally{
+    loadEl.style.display='none';loadEl.textContent='Loading…';
+    btn.disabled=false;btn.textContent='Search';inp.disabled=false;
   }
 };
 
@@ -1156,7 +1205,7 @@ const performSearch=async(searchText)=>{
     if(wantMessages) pagination[`messages:${key}`]={skip:0,exhausted:false,params};
   });
 
-  state.lastSearchText=text;state.pagination=pagination;state.totalDisplayed=0;state.chainCounts={};
+  state.lastSearchText=text;state.pagination=pagination;state.totalDisplayed=0;state.chainCounts={};state.autoLoadDepth=0;
 
   try{
     const{objectResults,profileResults,rootResults}=await fetchNextPage(signal);
@@ -1172,7 +1221,7 @@ const performSearch=async(searchText)=>{
   }finally{
     state.isSearching=false;btn.disabled=false;btn.textContent='Search';inp.disabled=false;
     if(state.currentSearchId===searchId&&state.totalDisplayed>0&&anyMoreNeeded()){
-      if(countVisible()===0) setTimeout(()=>loadMoreBatch(),0);
+      if(countVisible()===0&&(state.autoLoadDepth||0)<6){state.autoLoadDepth=(state.autoLoadDepth||0)+1;setTimeout(()=>loadMoreBatch(),0);}
       else scrollObserver.observe(document.getElementById('loadSentinel'));
     }
   }
@@ -1203,9 +1252,11 @@ const getUrnMediaUrl=(urn)=>{
   if(/^IPFS:/i.test(u)||/^ipfs[:/]+/i.test(u)){
     // Build full IPFS gateway URL: ipfs.io/ipfs/HASH/optional/path
     const raw=u.replace(/^ipfs[:/]+/i,'');
+    // Percent-encode each path segment individually to handle spaces etc.
+    const encodedPath=raw.split('/').map((seg,i)=>i===0?seg:encodeURIComponent(seg)).join('/');
     const hash=raw.split('/')[0];
     if(!hash) return null;
-    return `https://ipfs.io/ipfs/${raw}`;
+    return `https://ipfs.io/ipfs/${encodedPath}`;
   }
   if(/^(BTC|LTC|DOG|MZC):/i.test(u)||/^[A-Za-z0-9]+\/.+/.test(u)){
     const parts=u.split(':').pop().split('/');
@@ -1240,7 +1291,8 @@ const buildUrnPreviewEl=(urn,objectAddress,mainnet,blockchain)=>{
 
   if(mtype==='video'){
     const v=document.createElement('video');
-    v.controls=true;v.preload='metadata';v.src=mediaUrl;
+    v.controls=true;v.preload='auto';v.crossOrigin='anonymous';
+    v.src=mediaUrl;
     wrap.appendChild(v);
   }else if(mtype==='audio'){
     const a=document.createElement('audio');
@@ -1274,7 +1326,9 @@ const buildUrnPreviewEl=(urn,objectAddress,mainnet,blockchain)=>{
     mv.setAttribute('exposure','1');
     mv.setAttribute('ar','');
     mv.setAttribute('ar-modes','webxr scene-viewer quick-look');
-    mv.style.cssText='width:100%;height:360px;display:block;background:#111;';
+    mv.setAttribute('crossorigin','anonymous');
+    mv.setAttribute('loading','eager');
+    mv.style.cssText='width:100%;aspect-ratio:1/1;display:block;background:#111;';
     wrap.appendChild(mv);
   }
   return wrap;
@@ -1284,12 +1338,10 @@ const buildUrnPreviewEl=(urn,objectAddress,mainnet,blockchain)=>{
 const renderUrnLinkForObj=(urn)=>{
   if(!urn) return 'None';
   if(/^IPFS:/i.test(urn)||/^ipfs[:/]+/i.test(urn)){
-    const path=urn.replace(/^ipfs[:/]+/i,'');
-    const hash=path.split(/[/\\]/)[0];
-    const lower=path.toLowerCase();
-    if(lower.endsWith('.zip'))
-      return `<a href="https://ipfs.io/ipfs/${encodeURIComponent(hash)}" target="_blank" rel="noopener">${escapeHtml(urn)}</a>`;
-    return `<a href="https://ipfs.io/ipfs/${encodeURIComponent(hash)}" target="_blank" rel="noopener">${escapeHtml(urn)}</a>`;
+    // Use full path with proper encoding (so links to files with spaces work)
+    const mediaUrl=getUrnMediaUrl(urn);
+    const url=mediaUrl||`https://ipfs.io/ipfs/${encodeURIComponent(urn.replace(/^ipfs[:/]+/i,'').split(/[/\\]/)[0])}`;
+    return `<a href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(urn)}</a>`;
   }
   if(/^(BTC|LTC|DOG|MZC):/i.test(urn)||/^[A-Za-z0-9]+\/.+/.test(urn)){
     const parts=urn.split(':').pop().split('/');
@@ -1329,19 +1381,46 @@ const sortObjects=(objects,sortBy)=>{
   });
 };
 
+const getUrnChainBadge=(urn)=>{
+  if(!urn) return null;
+  const u=(urn||'').replace(/\\/g,'/');
+  if(/^IPFS:/i.test(u)) return 'IPFS';
+  const m=u.match(/^([A-Za-z]+):/);
+  if(m) return m[1].toUpperCase();
+  return null;
+};
+
 const renderObjMiniCard=(obj,mainnet)=>{
   const card=document.createElement('div');card.className='profile-obj-card';
   const imgUrl=getImageUrl(obj.Image,obj.URN);
+  const imgWrap=document.createElement('div');imgWrap.className='poc-img-wrap';
   const img=document.createElement('img');img.src=fallbackImage;img.alt=obj.Name||'Object';
   loadImageWithTimeout(imgUrl).then(u=>{img.src=u;}).catch(()=>{});
-  card.appendChild(img);
+  imgWrap.appendChild(img);
+  // Blockchain badge top-left
+  const chainBadge=getUrnChainBadge(obj.URN)||(mainnet?'BTC':'TBTC');
+  const chainBadgeEl=document.createElement('span');chainBadgeEl.className='poc-chain-badge';chainBadgeEl.textContent=chainBadge;
+  imgWrap.appendChild(chainBadgeEl);
+  // Price overlay bottom-right if for sale
   const lowestPrice=obj.Listings&&Object.keys(obj.Listings).length?Math.min(...Object.values(obj.Listings).map(l=>l.Value)):null;
+  if(lowestPrice!==null){const pb=document.createElement('span');pb.className='poc-price-badge';pb.textContent=lowestPrice+' BTC';imgWrap.appendChild(pb);}
+  card.appendChild(imgWrap);
   const totalUnits=obj.Owners?Object.values(obj.Owners).reduce((s,v)=>s+(v?.Item1??v??0),0):0;
   const body=document.createElement('div');body.className='poc-body';
-  body.innerHTML=`<div class="poc-name">${escapeHtml(obj.Name||'Unnamed')}</div>${lowestPrice!==null?`<div class="poc-price">${lowestPrice} BTC</div>`:''}${totalUnits?`<div class="poc-units">${totalUnits} unit${totalUnits===1?'':'s'}</div>`:''}${obj.CreatedDate&&!isNullDate(obj.CreatedDate)?`<div class="poc-date">${formatDate(obj.CreatedDate)||''}</div>`:''}`;
+  body.innerHTML=`<div class="poc-name">${escapeHtml(obj.Name||'Unnamed')}</div><div class="poc-creator" title="Creator">…</div>${totalUnits?`<div class="poc-units">${totalUnits} unit${totalUnits===1?'':'s'}</div>`:''}${obj.CreatedDate&&!isNullDate(obj.CreatedDate)?`<div class="poc-date">${formatDate(obj.CreatedDate)||''}</div>`:''}`;
   card.appendChild(body);
   const objectAddress=Object.keys(obj.Creators||{})[0]||'';
   card.addEventListener('click',()=>{if(objectAddress) navigateTo('object',{object:objectAddress,mainnet});});
+  // Async-load creator name
+  const creatorEl=body.querySelector('.poc-creator');
+  if(objectAddress&&creatorEl){
+    fetchProfileByAddress(objectAddress,mainnet,null).then(p=>{
+      const name=p?(p.DisplayName||p.URN||abbreviateAddress(objectAddress)):abbreviateAddress(objectAddress);
+      creatorEl.textContent=name;
+      creatorEl.title='Creator: '+name;
+      creatorEl.addEventListener('click',e=>{e.stopPropagation();navigateTo('profile',{profile:objectAddress,mainnet});});
+    }).catch(()=>{creatorEl.textContent=abbreviateAddress(objectAddress);});
+  }else if(creatorEl) creatorEl.remove();
   return card;
 };
 
@@ -1405,10 +1484,17 @@ const showProfileView=async(identifier,mainnet=true)=>{
       profile=await fetchProfileByAddress(identifier,mainnet,null);
       if(!profile) profile={DisplayName:abbreviateAddress(identifier),URN:'',Address:identifier};
     }else{
+      // Try requested network first, then the other
       profile=await fetchProfileByURN(identifier,mainnet,null);
+      if(!profile){
+        profile=await fetchProfileByURN(identifier,!mainnet,null);
+        if(profile) mainnet=!mainnet; // switch network to match found profile
+      }
       if(!profile) throw new Error(`Profile not found: ${identifier}`);
       // Address is in Creators object (key=address) or Address field
-      address=profile.Address||profile['Signed By']||Object.keys(profile.Creators||{})[0]||'';
+      // Filter out '0' which is sometimes returned as a placeholder
+      const creatorKeys=Object.keys(profile.Creators||{}).filter(k=>k!=='0'&&isAddress(k));
+      address=profile.Address||profile['Signed By']||creatorKeys[0]||'';
     }
 
     const imgUrl=getImageUrl(profile.Image,profile.URN);
@@ -1486,15 +1572,11 @@ const showProfileView=async(identifier,mainnet=true)=>{
 
     // Wire up internal profile URL links (@xxx → navigate by URN)
     info.querySelectorAll('.profile-url-link.internal').forEach(el=>{
-      el.addEventListener('click',async()=>{
-        // dataset.urn already has the @ stripped (see renderProfileCard urlHtml)
+      el.addEventListener('click',()=>{
         const urnRaw=el.dataset.urn||'';
-        // Strip any accidental leading @ just in case
+        // Strip any leading @ — showProfileView handles URN resolution
         const urnTarget=urnRaw.startsWith('@')?urnRaw.slice(1):urnRaw;
-        const resolved=await fetchProfileByURN(urnTarget,mainnet,null);
-        // Use first Creators key (address) as the canonical identifier
-        const addr=(resolved&&(resolved.Address||Object.keys(resolved.Creators||{})[0]))||urnTarget;
-        navigateTo('profile',{profile:addr,mainnet});
+        navigateTo('profile',{profile:urnTarget,mainnet:false});
       });
     });
 
@@ -1782,7 +1864,7 @@ const showObjectView=async(identifier,mainnet=true)=>{
       if(!objectAddress){alert('Cannot refresh: no object address');return;}
       refreshBtn.classList.add('loading');refreshBtn.disabled=true;
       try{
-        const fresh=await fetchAPI(`${BASE_URL}/GetObjectByAddress/${encodeURIComponent(objectAddress)}?mainnet=${mainnet}&verbose=false`,'Refresh failed',null);
+        const fresh=await fetchAPI(`${BASE_URL}/GetObjectByAddress/${encodeURIComponent(objectAddress)}?mainnet=${mainnet}&verbose=true`,'Refresh failed',null);
         const newObj=fresh?.Object||fresh?.object||fresh;
         if(!newObj||Array.isArray(newObj)) throw new Error('No object data in refresh response');
         await doRender(newObj);
@@ -1796,10 +1878,10 @@ const showObjectView=async(identifier,mainnet=true)=>{
   try{
     let obj=null;
     if(isAddress(identifier)){
-      const data=await fetchAPI(`${BASE_URL}/GetObjectByAddress/${encodeURIComponent(identifier)}?mainnet=${mainnet}&verbose=false`,'',null);
+      const data=await fetchAPI(`${BASE_URL}/GetObjectByAddress/${encodeURIComponent(identifier)}?mainnet=${mainnet}&verbose=true`,'',null);
       obj=data?.Object||data?.object||data;
     }else{
-      const data=await fetchAPI(`${BASE_URL}/GetObjectByURN/${encodeURIComponent(identifier)}?mainnet=${mainnet}`,'',null);
+      const data=await fetchAPI(`${BASE_URL}/GetObjectByURN/${encodeURIComponent(identifier)}?mainnet=${mainnet}&verbose=true`,'',null);
       obj=data?.Object||data?.object||data;
     }
     if(!obj||Array.isArray(obj)) throw new Error(`Object not found: ${identifier}`);
@@ -1918,24 +2000,10 @@ const handleNavSearch=async()=>{
   const raw=document.getElementById('navbar-search-input').value.trim();
   if(!raw){navigateTo('search',{});return;}
   if(raw.startsWith('@')){
-    // Resolve @URN → profile address
+    // Navigate directly by URN — showProfileView tries both networks
     const urnTarget=raw.slice(1).trim();
     if(!urnTarget) return;
-    const btn=document.getElementById('navbar-search-btn');
-    btn.disabled=true;btn.textContent='…';
-    try{
-      const resolved=await fetchProfileByURN(urnTarget,true,null);
-      const addr=resolved&&(resolved.Address||Object.keys(resolved.Creators||{})[0]);
-      if(addr){navigateTo('profile',{profile:addr,mainnet:true});}
-      else{
-        // Try testnet too
-        const resolvedT=await fetchProfileByURN(urnTarget,false,null);
-        const addrT=resolvedT&&(resolvedT.Address||Object.keys(resolvedT.Creators||{})[0]);
-        if(addrT) navigateTo('profile',{profile:addrT,mainnet:false});
-        else navigateTo('search',{search:raw});
-      }
-    }catch{navigateTo('search',{search:raw});}
-    finally{btn.disabled=false;btn.innerHTML='Search';}
+    navigateTo('profile',{profile:urnTarget,mainnet:false});
     return;
   }
   if(raw.startsWith('#')){
