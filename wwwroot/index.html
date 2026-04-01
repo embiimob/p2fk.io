@@ -471,7 +471,7 @@
     .profile-obj-card .poc-img-wrap { position: relative; }
     .profile-obj-card img { width: 100%; height: 110px; object-fit: cover; display: block; background: #333; }
     .poc-chain-badge { position: absolute; top: 4px; left: 4px; background: rgba(0,0,0,0.72); color: #03dac6; font-size: 0.65em; font-family: monospace; padding: 1px 5px; border-radius: 3px; pointer-events: none; }
-    .poc-price-badge { position: absolute; bottom: 4px; right: 4px; background: rgba(0,0,0,0.75); color: #03dac6; font-size: 0.68em; font-family: monospace; padding: 2px 5px; border-radius: 3px; pointer-events: none; }
+    .poc-price-badge { display: inline-block; background: #1a3a2a; color: #03dac6; font-size: 0.7em; font-family: monospace; padding: 2px 6px; border-radius: 3px; margin-top: 4px; }
     .profile-obj-card .poc-body { padding: 6px 8px; }
     .profile-obj-card .poc-name { font-size: 0.82em; color: #e0e0e0; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .profile-obj-card .poc-creator { font-size: 0.68em; color: #bb86fc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
@@ -1013,7 +1013,8 @@ const renderObjectCard=(obj,blockchain)=>{
   card.appendChild(img);
 
   const body=document.createElement('div');body.className='card-body';
-  body.innerHTML=`<p class="card-name">${escapeHtml(obj.Name||'Unnamed')} <span class="badge badge-object">Object</span><span class="badge badge-chain">${escapeHtml(blockchain||'')}</span></p><p class="card-bio">${escapeHtml((obj.Description||'').substring(0,100))}</p><p class="card-meta">${formatDate(obj.CreatedDate)||''}</p>`;
+  const urnDisplay=obj.URN?`<p class="card-urn" style="font-size:0.72em;color:#bb86fc;word-break:break-all;margin:2px 0 0;">${escapeHtml(obj.URN)}</p>`:'';
+  body.innerHTML=`<p class="card-name">${escapeHtml(obj.Name||'Unnamed')} <span class="badge badge-object">Object</span><span class="badge badge-chain">${escapeHtml(blockchain||'')}</span></p><p class="card-bio">${escapeHtml((obj.Description||'').substring(0,100))}</p><p class="card-meta">${formatDate(obj.CreatedDate)||''}</p>${urnDisplay}`;
   card.appendChild(body);
 
   card.addEventListener('click',(e)=>{if(e.target.closest('.share-btn')) return;navigateTo('object',{object:objectAddress,mainnet});});
@@ -1265,8 +1266,19 @@ const getUrnMediaUrl=(urn)=>{
   }
   return null;
 };
+// Detect text-only URNs: bare 64-hex txid, or chain:txid with no file path
+const isTextOnlyUrn=(urn)=>{
+  if(!urn) return false;
+  const u=urn.replace(/\/g,'/').trim();
+  // Bare 64-char hex (no chain prefix, no file path)
+  if(/^[0-9a-fA-F]{64}$/.test(u)) return true;
+  // Chain-prefixed bare txid: BTC:abc123..., TBTC:abc123..., LTC:abc123..., etc.
+  if(/^(BTC|TBTC|LTC|DOG|MZC):[0-9a-fA-F]{64}$/i.test(u)) return true;
+  return false;
+};
 const getUrnMediaType=(urn)=>{
   if(!urn) return null;
+  if(isTextOnlyUrn(urn)) return 'text';
   // Check file extension from the actual file portion of the path
   const filePath=getUrnFilePath(urn)||getUrnMediaUrl(urn)||'';
   const lo=filePath.toLowerCase();
@@ -1279,15 +1291,54 @@ const getUrnMediaType=(urn)=>{
   return null;
 };
 
+// ── Fetch text content for text-only URNs ───────────────────────────
+const _textUrnCache=new Map();
+const fetchTextForUrn=async(urn,mainnet)=>{
+  const cacheKey=`text_${urn}_${mainnet}`;
+  if(_textUrnCache.has(cacheKey)) return _textUrnCache.get(cacheKey);
+  let text=null;
+  try{
+    const u=urn.replace(/\/g,'/').trim();
+    let txid,blockchain;
+    const chainMatch=u.match(/^(BTC|TBTC|LTC|DOG|MZC):([0-9a-fA-F]{64})$/i);
+    if(chainMatch){blockchain=chainMatch[1].toUpperCase();txid=chainMatch[2];}
+    else{blockchain='BTC';txid=u;}
+    const isBtcFamily=blockchain==='BTC'||blockchain==='TBTC';
+    const url=isBtcFamily
+      ?`${BASE_URL}/GetRootByTransactionID/${encodeURIComponent(txid)}?mainnet=${!!mainnet}`
+      :`${BASE_URL}/GetRootByTransactionID/${encodeURIComponent(txid)}?blockchain=${blockchain}`;
+    const data=await fetchAPI(url,'',null,15000);
+    if(data&&data.Message!=null){
+      text=Array.isArray(data.Message)?data.Message.join('\n'):String(data.Message);
+    }
+  }catch{}
+  if(text!=null) _textUrnCache.set(cacheKey,text);
+  return text;
+};
+
 // ── Build URN media preview element ─────────────────────────────────
 const buildUrnPreviewEl=(urn,objectAddress,mainnet,blockchain)=>{
   const mtype=getUrnMediaType(urn);
   if(!mtype) return null;
-  const mediaUrl=getUrnMediaUrl(urn);
-  if(!mediaUrl) return null;
 
   const wrap=document.createElement('div');
   wrap.className='obj-preview';
+
+  if(mtype==='text'){
+    // Text-only URN: fetch message text from GetRootByTransactionID
+    const textWrap=document.createElement('div');
+    textWrap.className='obj-preview-text';
+    textWrap.style.cssText='padding:16px;color:#ccc;font-size:0.9em;line-height:1.5;white-space:pre-wrap;word-break:break-word;min-height:60px;';
+    textWrap.textContent='Loading text…';
+    wrap.appendChild(textWrap);
+    fetchTextForUrn(urn,mainnet).then(t=>{
+      if(t){textWrap.textContent=t;}else{textWrap.style.color='#666';textWrap.textContent='(No text content found)';}
+    }).catch(()=>{textWrap.style.color='#666';textWrap.textContent='(Failed to load text)';});
+    return wrap;
+  }
+
+  const mediaUrl=getUrnMediaUrl(urn);
+  if(!mediaUrl) return null;
 
   if(mtype==='video'){
     const v=document.createElement('video');
@@ -1329,6 +1380,14 @@ const buildUrnPreviewEl=(urn,objectAddress,mainnet,blockchain)=>{
     mv.setAttribute('crossorigin','anonymous');
     mv.setAttribute('loading','eager');
     mv.style.cssText='width:100%;aspect-ratio:1/1;display:block;background:#111;';
+    // Loading indicator
+    const mvLoader=document.createElement('div');
+    mvLoader.setAttribute('slot','progress-bar');
+    mvLoader.style.cssText='position:absolute;bottom:8px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.7);color:#03dac6;padding:3px 10px;border-radius:4px;font-size:0.75em;pointer-events:none;';
+    mvLoader.textContent='Loading 3D…';
+    mv.appendChild(mvLoader);
+    mv.addEventListener('load',()=>{mvLoader.style.display='none';});
+    mv.addEventListener('error',()=>{mvLoader.style.color='#ff5252';mvLoader.textContent='⚠ Failed to load 3D model';});
     wrap.appendChild(mv);
   }
   return wrap;
@@ -1400,15 +1459,24 @@ const renderObjMiniCard=(obj,mainnet)=>{
   const chainBadge=getUrnChainBadge(obj.URN)||(mainnet?'BTC':'TBTC');
   const chainBadgeEl=document.createElement('span');chainBadgeEl.className='poc-chain-badge';chainBadgeEl.textContent=chainBadge;
   imgWrap.appendChild(chainBadgeEl);
-  // Price overlay bottom-right if for sale
-  const lowestPrice=obj.Listings&&Object.keys(obj.Listings).length?Math.min(...Object.values(obj.Listings).map(l=>l.Value)):null;
-  if(lowestPrice!==null){const pb=document.createElement('span');pb.className='poc-price-badge';pb.textContent=lowestPrice+' BTC';imgWrap.appendChild(pb);}
   card.appendChild(imgWrap);
   const totalUnits=obj.Owners?Object.values(obj.Owners).reduce((s,v)=>s+(v?.Item1??v??0),0):0;
+  const lowestPrice=obj.Listings&&Object.keys(obj.Listings).length?Math.min(...Object.values(obj.Listings).map(l=>l.Value)):null;
   const body=document.createElement('div');body.className='poc-body';
-  body.innerHTML=`<div class="poc-name">${escapeHtml(obj.Name||'Unnamed')}</div><div class="poc-creator" title="Creator">…</div>${totalUnits?`<div class="poc-units">${totalUnits} unit${totalUnits===1?'':'s'}</div>`:''}${obj.CreatedDate&&!isNullDate(obj.CreatedDate)?`<div class="poc-date">${formatDate(obj.CreatedDate)||''}</div>`:''}`;
+  body.innerHTML=`<div class="poc-name">${escapeHtml(obj.Name||'Unnamed')}</div><div class="poc-creator" title="Creator">…</div>${totalUnits?`<div class="poc-units">${totalUnits} unit${totalUnits===1?'':'s'}</div>`:''}${obj.CreatedDate&&!isNullDate(obj.CreatedDate)?`<div class="poc-date">${formatDate(obj.CreatedDate)||''}</div>`:''}${lowestPrice!==null?`<div class="poc-price-badge">${lowestPrice} BTC</div>`:''}`;
   card.appendChild(body);
   const objectAddress=Object.keys(obj.Creators||{})[0]||'';
+  // Text-only URN: fetch and show a text snippet on the card
+  if(isTextOnlyUrn(obj.URN)){
+    const textSnip=document.createElement('div');
+    textSnip.style.cssText='padding:4px 8px 6px;font-size:0.72em;color:#bbb;max-height:60px;overflow:hidden;line-height:1.4;';
+    textSnip.textContent='…';
+    card.appendChild(textSnip);
+    fetchTextForUrn(obj.URN,mainnet).then(t=>{
+      if(t) textSnip.textContent=t.length>160?t.slice(0,157)+'…':t;
+      else textSnip.remove();
+    }).catch(()=>textSnip.remove());
+  }
   card.addEventListener('click',()=>{if(objectAddress) navigateTo('object',{object:objectAddress,mainnet});});
   // Async-load creator name
   const creatorEl=body.querySelector('.poc-creator');
@@ -1417,8 +1485,13 @@ const renderObjMiniCard=(obj,mainnet)=>{
       const name=p?(p.DisplayName||p.URN||abbreviateAddress(objectAddress)):abbreviateAddress(objectAddress);
       creatorEl.textContent=name;
       creatorEl.title='Creator: '+name;
+      // Navigate by URN if available, else by address
+      const navTarget=p?(p.URN||objectAddress):objectAddress;
+      creatorEl.addEventListener('click',e=>{e.stopPropagation();navigateTo('profile',{profile:navTarget,mainnet});});
+    }).catch(()=>{
+      creatorEl.textContent=abbreviateAddress(objectAddress);
       creatorEl.addEventListener('click',e=>{e.stopPropagation();navigateTo('profile',{profile:objectAddress,mainnet});});
-    }).catch(()=>{creatorEl.textContent=abbreviateAddress(objectAddress);});
+    });
   }else if(creatorEl) creatorEl.remove();
   return card;
 };
@@ -1494,6 +1567,14 @@ const showProfileView=async(identifier,mainnet=true)=>{
       // Filter out '0' placeholder; keep any other key (including bech32 addresses)
       const creatorKeys=Object.keys(profile.Creators||{}).filter(k=>k!=='0'&&k.length>10);
       address=profile.Address||profile['Signed By']||creatorKeys[0]||'';
+      // Fallback: if address still empty, resolve via keyword→address lookup using the URN
+      if(!address&&(profile.URN||identifier)){
+        try{
+          const kw=profile.URN||identifier;
+          const kwAddr=await fetchAPI(`${BASE_URL}/GetPublicAddressByKeyword/${encodeURIComponent(kw)}?mainnet=${mainnet}`,'',null,10000);
+          if(kwAddr&&typeof kwAddr==='string'&&kwAddr.trim().length>10) address=kwAddr.trim();
+        }catch{}
+      }
     }
 
     const imgUrl=getImageUrl(profile.Image,profile.URN);
