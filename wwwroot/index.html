@@ -478,6 +478,9 @@
     .profile-obj-card .poc-name { font-size: 0.82em; color: #e0e0e0; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .profile-obj-card .poc-creator { font-size: 0.68em; color: #bb86fc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
     .profile-obj-card .poc-creator:hover { color: #03dac6; }
+    .profile-obj-card .poc-creator.poc-unack { color: #666; font-style: italic; }
+    .profile-obj-card .poc-creator.poc-unack::after { content: ' (u)'; font-size: 0.75em; color: #888; }
+    .profile-obj-card .poc-creator.poc-unack:hover { color: #888; }
     .profile-obj-card .poc-units { font-size: 0.7em; color: #888; }
     .profile-obj-card .poc-date { font-size: 0.7em; color: #666; }
     .profile-obj-loading { text-align: center; padding: 18px; color: #888; font-size: 0.85em; }
@@ -1323,6 +1326,47 @@ const fetchTextForUrn=async(urn,mainnet)=>{
   return text;
 };
 
+// ── Render text content as an SVG data-URL image ─────────────────────
+const generateTextImage=(text,width,height)=>{
+  const cacheKey=`textimg_${width}x${height}_${text}`;
+  if(_textUrnCache.has(cacheKey)) return _textUrnCache.get(cacheKey);
+  const pad=12,maxW=width-pad*2,maxH=height-pad*2;
+  const approxCharWidth=8;
+  const charsPerRow=Math.max(1,Math.floor(maxW/approxCharWidth));
+  const estimatedRows=Math.max(1,Math.ceil(text.length/charsPerRow));
+  const rowHeight=Math.max(9,Math.min(16,Math.floor(maxH/estimatedRows)));
+  const fontSize=rowHeight;
+  const charsPerLine=Math.max(1,Math.floor(maxW/(fontSize*0.6)));
+  const maxLines=Math.floor(maxH/(fontSize*1.4));
+  const truncateLine=(s)=>s.length>charsPerLine?s.slice(0,charsPerLine-1)+'…':s;
+  const inputLines=text.replace(/\r\n/g,'\n').replace(/\r/g,'\n').split('\n');
+  const lines=[];let truncated=false;
+  outer:for(const inputLine of inputLines){
+    if(inputLine.trim()===''){if(lines.length<maxLines){lines.push('');}else{truncated=true;break;}continue;}
+    const words=inputLine.split(/[ \t]+/);let line='';
+    for(const word of words){
+      const test=line?line+' '+word:word;
+      if(test.length>charsPerLine&&line){if(lines.length>=maxLines){truncated=true;break outer;}lines.push(line);line=truncateLine(word);}
+      else if(test.length>charsPerLine){if(lines.length>=maxLines){truncated=true;break outer;}lines.push(truncateLine(test));line='';truncated=true;}
+      else{line=test;}
+    }
+    if(line){if(lines.length>=maxLines){truncated=true;break;}lines.push(line);}
+  }
+  if(truncated&&lines.length>0&&!lines[lines.length-1].endsWith('…')){
+    const last=lines[lines.length-1];
+    lines[lines.length-1]=last.length<charsPerLine?last+'…':last.slice(0,charsPerLine-1)+'…';
+  }
+  const lineHeight=fontSize*1.4;
+  const totalTextH=lines.length*lineHeight;
+  const startY=(height-totalTextH)/2+fontSize;
+  const escape=(s)=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const textEls=lines.map((l,i)=>`<text x="${width/2}" y="${startY+i*lineHeight}" text-anchor="middle" dominant-baseline="auto" fill="#e0e0e0" font-size="${fontSize}" font-family="monospace,sans-serif">${escape(l)}</text>`).join('');
+  const svg=`<svg xmlns='http://www.w3.org/2000/svg' width='${width}' height='${height}'><rect width='100%' height='100%' fill='#333' rx='6'/>${textEls}</svg>`;
+  const dataUrl=`data:image/svg+xml,${encodeURIComponent(svg)}`;
+  _textUrnCache.set(cacheKey,dataUrl);
+  return dataUrl;
+};
+
 // ── Build URN media preview element ─────────────────────────────────
 const buildUrnPreviewEl=(urn,objectAddress,mainnet,blockchain)=>{
   const mtype=getUrnMediaType(urn);
@@ -1463,46 +1507,52 @@ const renderObjMiniCard=(obj,mainnet)=>{
   const imgUrl=getImageUrl(obj.Image,obj.URN);
   const imgWrap=document.createElement('div');imgWrap.className='poc-img-wrap';
   const img=document.createElement('img');img.src=fallbackImage;img.alt=obj.Name||'Object';
-  loadImageWithTimeout(imgUrl).then(u=>{img.src=u;}).catch(()=>{});
+  // Text-only URNs: render content as an SVG image in the thumbnail
+  if(isTextOnlyUrn(obj.URN)){
+    fetchTextForUrn(obj.URN,mainnet).then(t=>{if(t) img.src=generateTextImage(t,250,110);}).catch(()=>{});
+  }else{
+    loadImageWithTimeout(imgUrl).then(u=>{img.src=u;}).catch(()=>{});
+  }
   imgWrap.appendChild(img);
   // Blockchain badge top-left
   const chainBadge=getUrnChainBadge(obj.URN)||(mainnet?'BTC':'TBTC');
   const chainBadgeEl=document.createElement('span');chainBadgeEl.className='poc-chain-badge';chainBadgeEl.textContent=chainBadge;
   imgWrap.appendChild(chainBadgeEl);
   card.appendChild(imgWrap);
+
+  // Creators: index 0 = object address (navigation only), index 1 = collection, index 2 = additional creator
+  const creatorKeys=Object.keys(obj.Creators||{});
+  const objectAddress=creatorKeys[0]||'';
+  const collectionAddr=creatorKeys[1]||'';
+  const additionalAddr=creatorKeys[2]||'';
+  const isCollUnack=!!(collectionAddr&&obj.Creators[collectionAddr]==='0001-01-01T00:00:00');
+  const isAddlUnack=!!(additionalAddr&&obj.Creators[additionalAddr]==='0001-01-01T00:00:00');
+
   const totalUnits=obj.Owners?Object.values(obj.Owners).reduce((s,v)=>s+(v?.Item1??v??0),0):0;
   const lowestPrice=obj.Listings&&Object.keys(obj.Listings).length?Math.min(...Object.values(obj.Listings).map(l=>l.Value)):null;
   const body=document.createElement('div');body.className='poc-body';
-  body.innerHTML=`<div class="poc-name">${escapeHtml(obj.Name||'Unnamed')}</div><div class="poc-creator" title="Creator">…</div>${totalUnits?`<div class="poc-units">${totalUnits} unit${totalUnits===1?'':'s'}</div>`:''}${obj.CreatedDate&&!isNullDate(obj.CreatedDate)?`<div class="poc-date">${formatDate(obj.CreatedDate)||''}</div>`:''}${lowestPrice!==null?`<div class="poc-price-badge">${lowestPrice} BTC</div>`:''}`;
+  body.innerHTML=`<div class="poc-name">${escapeHtml(obj.Name||'Unnamed')}</div>${collectionAddr?`<div class="poc-creator${isCollUnack?' poc-unack':''}" data-addr="${escapeHtml(collectionAddr)}">…</div>`:''}${additionalAddr?`<div class="poc-creator${isAddlUnack?' poc-unack':''}" data-addr="${escapeHtml(additionalAddr)}">…</div>`:''}${totalUnits?`<div class="poc-units">${totalUnits} unit${totalUnits===1?'':'s'}</div>`:''}${obj.CreatedDate&&!isNullDate(obj.CreatedDate)?`<div class="poc-date">${formatDate(obj.CreatedDate)||''}</div>`:''}${lowestPrice!==null?`<div class="poc-price-badge">${lowestPrice} BTC</div>`:''}`;
   card.appendChild(body);
-  const objectAddress=Object.keys(obj.Creators||{})[0]||'';
-  // Text-only URN: fetch and show a text snippet on the card
-  if(isTextOnlyUrn(obj.URN)){
-    const textSnip=document.createElement('div');
-    textSnip.style.cssText='padding:4px 8px 6px;font-size:0.72em;color:#bbb;max-height:60px;overflow:hidden;line-height:1.4;';
-    textSnip.textContent='…';
-    card.appendChild(textSnip);
-    fetchTextForUrn(obj.URN,mainnet).then(t=>{
-      if(t) textSnip.textContent=t.length>160?t.slice(0,157)+'…':t;
-      else textSnip.remove();
-    }).catch(()=>textSnip.remove());
-  }
   card.addEventListener('click',()=>{if(objectAddress) navigateTo('object',{object:objectAddress,mainnet});});
-  // Async-load creator name
-  const creatorEl=body.querySelector('.poc-creator');
-  if(objectAddress&&creatorEl){
-    fetchProfileByAddress(objectAddress,mainnet,null).then(p=>{
-      const name=p?(p.DisplayName||p.URN||abbreviateAddress(objectAddress)):abbreviateAddress(objectAddress);
-      creatorEl.textContent=name;
-      creatorEl.title='Creator: '+name;
-      // Navigate by URN if available, else by address
-      const navTarget=p?(p.URN||objectAddress):objectAddress;
-      creatorEl.addEventListener('click',e=>{e.stopPropagation();navigateTo('profile',{profile:navTarget,mainnet});});
+
+  // Async resolve each creator row
+  const _resolveCreator=(addr,isUnack,el)=>{
+    fetchProfileByAddress(addr,mainnet,null).then(p=>{
+      const name=p?(p.DisplayName||p.URN||abbreviateAddress(addr)):abbreviateAddress(addr);
+      el.textContent=name;
+      el.title=(isUnack?'Unacknowledged: ':'')+name;
+      const navTarget=p?(p.URN||addr):addr;
+      el.addEventListener('click',e=>{e.stopPropagation();navigateTo('profile',{profile:navTarget,mainnet});});
     }).catch(()=>{
-      creatorEl.textContent=abbreviateAddress(objectAddress);
-      creatorEl.addEventListener('click',e=>{e.stopPropagation();navigateTo('profile',{profile:objectAddress,mainnet});});
+      el.textContent=abbreviateAddress(addr);
+      el.addEventListener('click',e=>{e.stopPropagation();navigateTo('profile',{profile:addr,mainnet});});
     });
-  }else if(creatorEl) creatorEl.remove();
+  };
+  body.querySelectorAll('.poc-creator').forEach(el=>{
+    const addr=el.dataset.addr;
+    if(addr) _resolveCreator(addr,el.classList.contains('poc-unack'),el);
+    else el.remove();
+  });
   return card;
 };
 
