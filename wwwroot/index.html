@@ -3,10 +3,22 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>P2FK.IO — Sup!? On-Chain Social</title>
+  <title>bitFossil — On-Chain Social</title>
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+  <!-- Default OG / Twitter card (updated dynamically for deep links) -->
+  <meta id="og-title"       property="og:title"              content="bitFossil — On-Chain Social">
+  <meta id="og-description" property="og:description"        content="Discover on-chain messages, profiles, and digital objects on the Bitcoin blockchain.">
+  <meta id="og-image"       property="og:image"              content="https://p2fk.io/bitfossil.png">
+  <meta id="og-url"         property="og:url"                content="https://p2fk.io/">
+  <meta                     property="og:type"               content="website">
+  <meta                     property="og:site_name"          content="bitFossil">
+  <meta id="tw-card"        name="twitter:card"              content="summary_large_image">
+  <meta id="tw-title"       name="twitter:title"             content="bitFossil — On-Chain Social">
+  <meta id="tw-description" name="twitter:description"       content="Discover on-chain messages, profiles, and digital objects on the Bitcoin blockchain.">
+  <meta id="tw-image"       name="twitter:image"             content="https://p2fk.io/bitfossil.png">
+  <meta                     name="twitter:site"              content="@bitFossil">
   <style>
     /* ── Reset & base ──────────────────────────────────────────────── */
     *, *::before, *::after { box-sizing: border-box; }
@@ -388,6 +400,44 @@
     .owner-addr:hover { color: #bb86fc; }
     .owner-units { color: #888; font-size: 0.9em; }
 
+    /* ── Object detail expanded sections ───────────────────────────── */
+    .obj-section { margin-top: 14px; }
+    .obj-section-title { font-size: 0.78em; color: #888; text-transform: uppercase; letter-spacing: 0.05em; margin: 0 0 5px; font-weight: bold; }
+    .obj-list { display: flex; flex-direction: column; gap: 2px; }
+    .obj-list-header { display: flex; align-items: center; gap: 8px; padding: 3px 6px; background: #1a1a1a; border-radius: 4px 4px 0 0; font-size: 0.72em; color: #888; font-weight: bold; }
+    .obj-list-row { display: flex; align-items: center; gap: 8px; padding: 5px 6px; border-bottom: 1px solid #1e1e1e; font-size: 0.82em; background: #161616; }
+    .obj-list-row:last-child { border-bottom: none; border-radius: 0 0 4px 4px; }
+    .obj-list-row.unack { color: #888; font-style: italic; }
+    .obj-list-row.status-success { border-left: 2px solid #4caf50; }
+    .obj-list-row.status-failed  { border-left: 2px solid #cf6679; }
+    .obj-list-row.listing-cheapest { border-left: 2px solid #03dac6; }
+    .col-name  { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .col-qty   { flex: 0 0 50px; text-align: right; color: #888; }
+    .col-price { flex: 0 0 80px; text-align: right; color: #03dac6; font-family: monospace; }
+    .col-pct   { flex: 0 0 46px; text-align: right; color: #bb86fc; }
+    .col-date  { flex: 0 0 80px; text-align: right; color: #888; font-size: 0.9em; }
+    .col-action{ flex: 0 0 70px; text-align: right; color: #b0b0b0; font-size: 0.85em; }
+    .obj-addr-copy { font-family: monospace; color: #03dac6; cursor: pointer; font-size: 0.82em; }
+    .obj-addr-copy:hover { color: #bb86fc; }
+    .obj-lock { display: inline-block; font-size: 1em; position: relative; cursor: default; }
+    .obj-lock .lock-tooltip { visibility: hidden; position: absolute; bottom: 110%; left: 50%; transform: translateX(-50%); background: #333; color: #e0e0e0; padding: 3px 7px; border-radius: 4px; font-size: 0.75em; white-space: nowrap; z-index: 100; }
+    .obj-lock:hover .lock-tooltip { visibility: visible; }
+    .obj-refresh-btn { padding: 4px 10px; background: #1a1a1a; border: 1px solid #444; color: #b0b0b0; border-radius: 4px; cursor: pointer; font-size: 0.8em; transition: all 0.2s; }
+    .obj-refresh-btn:hover { border-color: #03dac6; color: #03dac6; }
+    .obj-refresh-btn.loading { animation: spin 1s linear infinite; }
+    @keyframes spin { from{transform:rotate(0deg);} to{transform:rotate(360deg);} }
+    .urn-link-row { margin-top: 6px; font-size: 0.82em; color: #b0b0b0; word-break: break-all; }
+    .urn-link-row a { color: #bb86fc; }
+    .urn-link-row a:hover { color: #03dac6; }
+    .changelog { max-height: 200px; overflow-y: auto; }
+
+    /* ── Profile URL links ──────────────────────────────────────────── */
+    .profile-url-link { display: inline-block; border: 1px solid #bb86fc; border-radius: 10px; padding: 1px 8px; font-size: 0.75em; color: #bb86fc; cursor: pointer; margin: 2px; transition: all 0.2s; }
+    .profile-url-link:hover { background: #bb86fc; color: #121212; }
+    .profile-url-link.internal:hover { background: #03dac6; border-color: #03dac6; color: #121212; }
+    .profile-height { font-size: 0.78em; color: #888; margin-top: 4px; }
+    .profile-height span { color: #03dac6; font-weight: bold; }
+
     /* ── Single message view ───────────────────────────────────────── */
     #view-message .message-card { margin: 0 auto; max-width: 660px; }
 
@@ -417,8 +467,7 @@
 <!-- ── Top nav ──────────────────────────────────────────────────────── -->
 <nav id="navbar">
   <div class="brand" id="brandHome" title="Go to home feed">
-    <img src="/bitfossil.png" alt="P2FK logo">
-    <span>P2FK.IO</span>
+    <img src="/bitfossil.png" alt="bitFossil logo">
   </div>
   <form id="search-form" onsubmit="return false;">
     <input type="text" id="navbar-search-input" placeholder="Search messages, profiles, objects…" autocomplete="off">
@@ -863,20 +912,24 @@ const renderProfileCard=(profile,blockchain)=>{
   const txm=imgUrl.match(/\/root\/([0-9a-fA-F]{64})\//i)?.[1];
   if(txm) state.txidMeta.set(txm,chainToMeta(blockchain));
 
+  // Prefer blockchain address over URN for reliable profile navigation
+  const address=profile.Address||Object.keys(profile.Creators||{})[0]||'';
+  const navId=address||profile.URN||'';
+  const shareId=profile.URN||address||'';
+
   const card=document.createElement('div');
   card.className='result-card profile-result-card';
-  const urnOrAddr=profile.URN||'';
-  card.appendChild(makeShareBtn('profile',{id:urnOrAddr,mainnet}));
+  card.appendChild(makeShareBtn('profile',{id:shareId,mainnet}));
 
   const img=document.createElement('img');img.className='card-avatar';img.src=fallbackImage;img.alt=profile.DisplayName||'Profile';
   loadImageWithTimeout(imgUrl).then(u=>{img.src=u;}).catch(()=>{});
   card.appendChild(img);
 
   const body=document.createElement('div');body.className='card-body';
-  body.innerHTML=`<p class="card-name">${escapeHtml(profile.DisplayName||profile.URN||'Unknown')} <span class="badge badge-profile">Profile</span><span class="badge badge-chain">${escapeHtml(blockchain||'')}</span></p><p class="card-bio">${escapeHtml((profile.Bio||'').substring(0,100))}</p><p class="card-meta">${urnOrAddr?escapeHtml(abbreviateAddress(urnOrAddr)):''} ${formatDate(profile.CreatedDate)||''}</p>`;
+  body.innerHTML=`<p class="card-name">${escapeHtml(profile.DisplayName||profile.URN||'Unknown')} <span class="badge badge-profile">Profile</span><span class="badge badge-chain">${escapeHtml(blockchain||'')}</span></p><p class="card-bio">${escapeHtml((profile.Bio||'').substring(0,100))}</p><p class="card-meta">${navId?escapeHtml(abbreviateAddress(navId)):''} ${formatDate(profile.CreatedDate)||''}</p>`;
   card.appendChild(body);
 
-  card.addEventListener('click',(e)=>{if(e.target.closest('.share-btn')) return;navigateTo('profile',{profile:urnOrAddr,mainnet});});
+  card.addEventListener('click',(e)=>{if(e.target.closest('.share-btn')) return;if(navId) navigateTo('profile',{profile:navId,mainnet});});
   return card;
 };
 
@@ -1062,6 +1115,37 @@ const performSearch=async(searchText)=>{
 
 const showSearchError=(msg)=>{const el=document.getElementById('searchError');el.textContent=msg;el.style.display='block';setTimeout(()=>{el.style.display='none';},6000);};
 
+// ── URN/object link renderer ───────────────────────────────────────────
+const renderUrnLinkForObj=(urn)=>{
+  if(!urn) return 'None';
+  if(/^IPFS:/i.test(urn)||/^ipfs[:/]+/i.test(urn)){
+    const path=urn.replace(/^ipfs[:/]+/i,'');
+    const hash=path.split(/[/\\]/)[0];
+    const lower=path.toLowerCase();
+    if(lower.endsWith('.zip'))
+      return `<a href="https://ipfs.io/ipfs/${encodeURIComponent(hash)}" target="_blank" rel="noopener">${escapeHtml(urn)}</a>`;
+    return `<a href="https://ipfs.io/ipfs/${encodeURIComponent(hash)}" target="_blank" rel="noopener">${escapeHtml(urn)}</a>`;
+  }
+  if(/^(BTC|LTC|DOG|MZC):/i.test(urn)||/^[A-Za-z0-9]+\/.+/.test(urn)){
+    const parts=urn.split(':').pop().split('/');
+    const txid=parts[0];const filePath=parts[1]||'';
+    const href=filePath?`${BASE_URL}/root/${txid}/${filePath}`:`${BASE_URL}/root/${txid}/MSG1`;
+    return `<a href="${escapeHtml(href)}" target="_blank" rel="noopener">${escapeHtml(urn)}</a>`;
+  }
+  return escapeHtml(urn);
+};
+
+// ── Update OG/Twitter meta tags ────────────────────────────────────────
+const updateMetaTags=(title,description,image,url)=>{
+  const set=(id,content)=>{const el=document.getElementById(id);if(el&&content) el.setAttribute('content',content);};
+  const fullTitle=title?`${title} — bitFossil`:document.title;
+  if(title) document.title=fullTitle;
+  set('og-title',fullTitle); set('og-description',description); set('og-image',image); set('og-url',url||window.location.href);
+  set('tw-title',fullTitle); set('tw-description',description); set('tw-image',image);
+  const card=document.getElementById('tw-card');
+  if(card) card.setAttribute('content',image&&image!=='https://p2fk.io/bitfossil.png'?'summary_large_image':'summary');
+};
+
 // ── Profile view ───────────────────────────────────────────────────────
 const showProfileView=async(identifier,mainnet=true)=>{
   setView('profile');
@@ -1084,39 +1168,99 @@ const showProfileView=async(identifier,mainnet=true)=>{
     }else{
       profile=await fetchProfileByURN(identifier,mainnet,null);
       if(!profile) throw new Error(`Profile not found: ${identifier}`);
-      address=profile.Address||profile['Signed By']||'';
-      if(!address){
-        // Try to resolve address from the profile's URN
-        const urnAddr=profile.URN;
-        if(isAddress(urnAddr)) address=urnAddr;
-      }
+      // Address is in Creators object (key=address) or Address field
+      address=profile.Address||profile['Signed By']||Object.keys(profile.Creators||{})[0]||'';
     }
 
     const imgUrl=getImageUrl(profile.Image,profile.URN);
     const txm=imgUrl.match(/\/root\/([0-9a-fA-F]{64})\//i)?.[1];
     if(txm) state.txidMeta.set(txm,chainToMeta(mainnet?'BTC':'TBTC'));
 
+    // Update meta tags for sharing
+    const displayName=profile.DisplayName||profile.URN||'Unknown Profile';
+    updateMetaTags(displayName,profile.Bio||`On-chain profile on bitFossil`,imgUrl!==fallbackImage?imgUrl:'https://p2fk.io/bitfossil.png');
+
     // Build profile panel
     innerEl.innerHTML='';
     const shareBtn=makeShareBtn('profile',{id:profile.URN||identifier,mainnet});
     innerEl.appendChild(shareBtn);
 
-    const imgEl=document.createElement('img');imgEl.className='profile-panel-img';imgEl.src=fallbackImage;imgEl.alt=profile.DisplayName||'Profile';
+    const imgEl=document.createElement('img');imgEl.className='profile-panel-img';imgEl.src=fallbackImage;imgEl.alt=displayName;
     loadImageWithTimeout(imgUrl).then(u=>{imgEl.src=u;}).catch(()=>{});
     innerEl.appendChild(imgEl);
 
     const info=document.createElement('div');info.className='profile-panel-info';
-    const nameHtml=escapeHtml(profile.DisplayName||profile.URN||'Unknown Profile');
+
+    // Location: profile.Location is an object {quark:...} or a string
+    const locRaw=profile.Location;
+    let locText='';
+    if(locRaw){
+      if(typeof locRaw==='object') locText=locRaw.quark||locRaw.Quark||'';
+      else locText=String(locRaw);
+    }
+    const locHtml=locText?`<p>📍 ${escapeHtml(locText)}</p>`:'';
+
+    // Bio
     const bioHtml=profile.Bio?`<p>${escapeHtml(profile.Bio)}</p>`:'';
-    const locHtml=profile.Location?`<p>📍 ${escapeHtml(profile.Location)}</p>`:'';
-    const linkHtml=profile.Links?`<p>🔗 <a href="${escapeHtml(profile.Links)}" target="_blank" rel="noopener">${escapeHtml(profile.Links)}</a></p>`:'';
+
+    // URL links — profile.URL is an object {label: value} where @xxx = internal profile link
+    let urlHtml='';
+    if(profile.URL&&typeof profile.URL==='object'){
+      const urlEntries=Object.entries(profile.URL);
+      if(urlEntries.length){
+        const linksHtml=urlEntries.map(([k,v])=>{
+          const vs=String(v||'');
+          if(vs.startsWith('@')){
+            const urn=vs.slice(1);
+            return `<span class="profile-url-link internal" data-urn="${escapeHtml(urn)}" title="View profile: ${escapeHtml(urn)}">@${escapeHtml(urn)}</span>`;
+          }
+          return `<a class="profile-url-link" href="${escapeHtml(vs)}" target="_blank" rel="noopener">${escapeHtml(k)}</a>`;
+        }).join('');
+        urlHtml=`<p>🔗 ${linksHtml}</p>`;
+      }
+    }
+
+    // Created date
     const dateHtml=profile.CreatedDate&&!isNullDate(profile.CreatedDate)?`<p>Joined: ${formatDate(profile.CreatedDate)||escapeHtml(profile.CreatedDate)}</p>`:'';
-    const addrHtml=address?`<p class="addr">${escapeHtml(address)}</p>`:'';
-    info.innerHTML=`<h2>${nameHtml}</h2>${bioHtml}${locHtml}${linkHtml}${dateHtml}${addrHtml}`;
+
+    // Changed date
+    const changedHtml=profile.ChangeDate&&!isNullDate(profile.ChangeDate)?`<p>Modified: ${formatDate(profile.ChangeDate)||escapeHtml(profile.ChangeDate)}</p>`:'';
+
+    // Address (copyable)
+    const addrHtml=address?`<p class="addr" style="cursor:pointer;font-family:monospace;font-size:0.75em;color:#666;word-break:break-all;" id="profAddrCopy" title="Click to copy address">${escapeHtml(address)}</p>`:'';
+
+    // Process height placeholder
+    const heightHtml=address?`<p class="profile-height" id="processHeightEl">Process height: <span id="processHeightVal">…</span></p>`:'';
+
+    info.innerHTML=`<h2>${escapeHtml(displayName)}</h2>${bioHtml}${locHtml}${urlHtml}${dateHtml}${changedHtml}${addrHtml}${heightHtml}`;
     innerEl.appendChild(info);
 
     panelEl.style.display='block';
     loadEl.style.display='none';
+
+    // Wire up address copy
+    const addrEl=document.getElementById('profAddrCopy');
+    if(addrEl) addrEl.addEventListener('click',async()=>{
+      try{await navigator.clipboard.writeText(address);}catch{}
+      const prev=addrEl.textContent;addrEl.textContent='✅ Copied!';setTimeout(()=>{addrEl.textContent=prev;},2000);
+    });
+
+    // Wire up internal profile URL links
+    info.querySelectorAll('.profile-url-link.internal').forEach(el=>{
+      el.addEventListener('click',()=>navigateTo('profile',{profile:el.dataset.urn,mainnet}));
+    });
+
+    // Load process height asynchronously
+    if(address){
+      (async()=>{
+        try{
+          const roots=await fetchAPI(`${BASE_URL}/GetRootsByAddress/${encodeURIComponent(address)}?mainnet=${mainnet}&verbose=false`,'',null,30000);
+          const count=Array.isArray(roots)?roots.length:0;
+          const hEl=document.getElementById('processHeightVal');
+          if(hEl) hEl.textContent=count;
+        }catch{}
+      })();
+    }
 
     // Load messages
     state.profileMsgSkip=0;
@@ -1171,12 +1315,202 @@ const loadProfileMessages=async()=>{
 };
 
 // ── Object view ────────────────────────────────────────────────────────
+const formatDateShort=(d)=>{if(!d||isNullDate(d)) return null;try{const x=new Date(d);return isNaN(x)?null:x.toLocaleDateString('en-US',{year:'numeric',month:'short',day:'numeric'});}catch{return null;}};
+const formatDateFull=(d)=>{if(!d||isNullDate(d)) return null;try{const x=new Date(d);return isNaN(x)?null:x.toLocaleString();}catch{return null;}};
+
+const buildObjSection=(title,rows,colDefs)=>{
+  if(!rows||!rows.length) return '';
+  const headerCols=colDefs.map(c=>`<span class="${c.cls||'col-name'}">${escapeHtml(c.label)}</span>`).join('');
+  const bodyRows=rows.map(r=>`<div class="obj-list-row${r._cls?' '+r._cls:''}">${colDefs.map(c=>`<span class="${c.cls||'col-name'}">${r[c.key]||''}</span>`).join('')}</div>`).join('');
+  return `<div class="obj-section"><p class="obj-section-title">${escapeHtml(title)}</p><div class="obj-list"><div class="obj-list-header">${headerCols}</div>${bodyRows}</div></div>`;
+};
+
 const showObjectView=async(identifier,mainnet=true)=>{
   setView('object');
   const loadEl=document.getElementById('objectLoading');
   const errEl=document.getElementById('objectError');
   const detailEl=document.getElementById('objectDetail');
   loadEl.style.display='block';errEl.textContent='';errEl.style.display='none';detailEl.style.display='none';detailEl.innerHTML='';
+
+  const doRender=async(obj)=>{
+    detailEl.innerHTML='';
+    const imgUrl=getImageUrl(obj.Image,obj.URN);
+    const txm=imgUrl.match(/\/root\/([0-9a-fA-F]{64})\//i)?.[1];
+    if(txm) state.txidMeta.set(txm,chainToMeta(mainnet?'BTC':'TBTC'));
+
+    // Update meta tags for sharing
+    updateMetaTags(obj.Name||'Object',obj.Description||'On-chain digital object on bitFossil',imgUrl!==fallbackImage?imgUrl:'https://p2fk.io/bitfossil.png');
+
+    const objectAddress=Object.keys(obj.Creators||{})[0]||identifier||'';
+    const card=document.createElement('div');card.className='object-detail-card';
+
+    card.appendChild(makeShareBtn('object',{id:objectAddress,mainnet}));
+
+    // Header: image + info
+    const header=document.createElement('div');header.className='object-detail-header';
+    const imgEl=document.createElement('img');imgEl.className='object-detail-img';imgEl.src=fallbackImage;imgEl.alt=obj.Name||'Object';
+    loadImageWithTimeout(imgUrl).then(u=>{imgEl.src=u;}).catch(()=>{});
+    header.appendChild(imgEl);
+
+    // Date + lock/unlock info
+    const createdShort=formatDateShort(obj.CreatedDate);
+    const createdFull=formatDateFull(obj.CreatedDate);
+    const isLocked=obj.LockedDate&&!isNullDate(obj.LockedDate)&&obj.LockedDate!=='0001-01-01T00:00:00';
+    const lockedFull=isLocked?formatDateFull(obj.LockedDate):'';
+
+    const info=document.createElement('div');info.className='object-detail-info';
+    const urnLinkHtml=obj.URN?`<div class="urn-link-row">URN: ${renderUrnLinkForObj(obj.URN)}</div>`:'';
+    const descHtml=obj.Description?`<p class="desc">${escapeHtml(obj.Description)}</p>`:'';
+    const keyHtml=obj.Keyword?`<p>Keywords: <span style="color:#03dac6">${escapeHtml(Array.isArray(obj.Keyword)?obj.Keyword.join(', '):String(obj.Keyword))}</span></p>`:'';
+    const dateHtml=createdShort?`<p title="${escapeHtml(createdFull||'')}">Created: ${escapeHtml(createdShort)}</p>`:'';
+    const lockIcon=isLocked?'🔒':'🔓';
+    const lockMsg=isLocked?`Locked: ${escapeHtml(lockedFull||'')}`:'Object is unlocked';
+    const lockHtml=`<span class="obj-lock">${lockIcon}<span class="lock-tooltip">${lockMsg}</span></span>`;
+
+    // Address row (copyable)
+    const addrRowHtml=objectAddress?`<p>Address: <span class="obj-addr-copy" id="objAddrCopy" title="Click to copy">${escapeHtml(abbreviateAddress(objectAddress))}</span></p>`:'';
+
+    info.innerHTML=`<h2>${escapeHtml(obj.Name||'Unnamed Object')}</h2><p><span class="badge badge-object">Object</span><span class="badge badge-chain">${escapeHtml(mainnet?'BTC':'TBTC')}</span> ${lockHtml}</p>${descHtml}${keyHtml}${dateHtml}${addrRowHtml}${urnLinkHtml}`;
+    header.appendChild(info);
+    card.appendChild(header);
+
+    // Refresh button
+    const refreshBtn=document.createElement('button');refreshBtn.className='obj-refresh-btn';refreshBtn.textContent='🔄 Refresh';
+    card.appendChild(refreshBtn);
+
+    // Creators section
+    const creatorEntries=Object.entries(obj.Creators||{}).filter(([addr])=>addr!==objectAddress);
+    if(creatorEntries.length){
+      const secEl=document.createElement('div');secEl.className='obj-section';
+      secEl.innerHTML=`<p class="obj-section-title">Creators</p><div class="obj-list" id="objCreatorsList"><div class="obj-list-row" style="color:#888">Loading…</div></div>`;
+      card.appendChild(secEl);
+      (async()=>{
+        const rows=await Promise.all(creatorEntries.map(async([addr,date])=>{
+          const isUnack=date==='0001-01-01T00:00:00';
+          const p=await fetchProfileByAddress(addr,mainnet,null);
+          const name=p?(p.DisplayName||p.URN||abbreviateAddress(addr)):abbreviateAddress(addr);
+          return `<div class="obj-list-row${isUnack?' unack':''}"><span class="col-name owner-addr" data-addr="${escapeHtml(addr)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(name)}${isUnack?' (unacknowledged)':''}</span></div>`;
+        }));
+        const listEl=document.getElementById('objCreatorsList');
+        if(listEl){listEl.innerHTML=rows.join('');listEl.querySelectorAll('.owner-addr').forEach(el=>el.addEventListener('click',()=>navigateTo('profile',{profile:el.dataset.addr,mainnet})));}
+      })();
+    }
+
+    // Owners section
+    const ownerEntries=Object.entries(obj.Owners||{}).sort((a,b)=>((b[1]?.Item1||b[1]||0)-(a[1]?.Item1||a[1]||0)));
+    if(ownerEntries.length){
+      const secEl=document.createElement('div');secEl.className='obj-section';
+      secEl.innerHTML=`<p class="obj-section-title">Owners</p><div class="obj-list"><div class="obj-list-header"><span class="col-name">Owner</span><span class="col-qty">Units</span></div><div id="objOwnersList"><div class="obj-list-row" style="color:#888">Loading…</div></div></div>`;
+      card.appendChild(secEl);
+      (async()=>{
+        const rows=await Promise.all(ownerEntries.map(async([addr,val])=>{
+          const units=val?.Item1??val??0;
+          if(addr===objectAddress) return `<div class="obj-list-row"><span class="col-name">Primary</span><span class="col-qty">${units}</span></div>`;
+          const p=await fetchProfileByAddress(addr,mainnet,null);
+          const name=p?(p.DisplayName||p.URN||abbreviateAddress(addr)):abbreviateAddress(addr);
+          return `<div class="obj-list-row"><span class="col-name owner-addr" data-addr="${escapeHtml(addr)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(name)}</span><span class="col-qty">${units}</span></div>`;
+        }));
+        const listEl=document.getElementById('objOwnersList');
+        if(listEl){listEl.innerHTML=rows.join('');listEl.querySelectorAll('.owner-addr').forEach(el=>el.addEventListener('click',()=>navigateTo('profile',{profile:el.dataset.addr,mainnet})));}
+      })();
+    }
+
+    // Royalties section
+    const royaltyEntries=Object.entries(obj.Royalties||{});
+    if(royaltyEntries.length){
+      const secEl=document.createElement('div');secEl.className='obj-section';
+      secEl.innerHTML=`<p class="obj-section-title">Royalties</p><div class="obj-list"><div class="obj-list-header"><span class="col-name">Recipient</span><span class="col-pct">%</span></div><div id="objRoyaltiesList"><div class="obj-list-row" style="color:#888">Loading…</div></div></div>`;
+      card.appendChild(secEl);
+      (async()=>{
+        const rows=await Promise.all(royaltyEntries.map(async([addr,pct])=>{
+          const p=await fetchProfileByAddress(addr,mainnet,null);
+          const name=p?(p.DisplayName||p.URN||abbreviateAddress(addr)):abbreviateAddress(addr);
+          return `<div class="obj-list-row"><span class="col-name owner-addr" data-addr="${escapeHtml(addr)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(name)}</span><span class="col-pct">${pct}%</span></div>`;
+        }));
+        const listEl=document.getElementById('objRoyaltiesList');
+        if(listEl){listEl.innerHTML=rows.join('');listEl.querySelectorAll('.owner-addr').forEach(el=>el.addEventListener('click',()=>navigateTo('profile',{profile:el.dataset.addr,mainnet})));}
+      })();
+    }
+
+    // Listings section
+    const listingEntries=obj.Listings?Object.entries(obj.Listings).sort((a,b)=>a[1].Value-b[1].Value):[];
+    if(listingEntries.length){
+      const secEl=document.createElement('div');secEl.className='obj-section';
+      secEl.innerHTML=`<p class="obj-section-title">Listings</p><div class="obj-list"><div class="obj-list-header"><span class="col-name">Seller</span><span class="col-price">Price</span><span class="col-qty">Qty</span></div><div id="objListingsList"><div class="obj-list-row" style="color:#888">Loading…</div></div></div>`;
+      card.appendChild(secEl);
+      (async()=>{
+        const rows=await Promise.all(listingEntries.map(async([addr,listing],i)=>{
+          const p=await fetchProfileByAddress(addr,mainnet,null);
+          const name=p?(p.DisplayName||p.URN||abbreviateAddress(addr)):abbreviateAddress(addr);
+          const qty=listing.Qty??listing.Item1??'';
+          return `<div class="obj-list-row${i===0?' listing-cheapest':''}"><span class="col-name owner-addr" data-addr="${escapeHtml(addr)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(name)}</span><span class="col-price">${escapeHtml(String(listing.Value))} BTC</span><span class="col-qty">${escapeHtml(String(qty))}</span></div>`;
+        }));
+        const listEl=document.getElementById('objListingsList');
+        if(listEl){listEl.innerHTML=rows.join('');listEl.querySelectorAll('.owner-addr').forEach(el=>el.addEventListener('click',()=>navigateTo('profile',{profile:el.dataset.addr,mainnet})));}
+      })();
+    }
+
+    // Changelog / Provenance section
+    const changelog=(obj.ChangeLog||[]).slice().reverse();
+    if(changelog.length){
+      const secEl=document.createElement('div');secEl.className='obj-section';
+      secEl.innerHTML=`<p class="obj-section-title">Provenance</p><div class="obj-list changelog"><div class="obj-list-header"><span class="col-name">Parties</span><span class="col-date">Date</span><span class="col-action">Action</span></div><div id="objChangelog"><div class="obj-list-row" style="color:#888">Loading…</div></div></div>`;
+      card.appendChild(secEl);
+      const actionIcons={mint:'🪙',transfer:'↔️',list:'🏷️',delist:'✖️',lock:'🔒',burn:'🔥',edit:'✏️',create:'✨'};
+      (async()=>{
+        const rows=await Promise.all(changelog.map(async entry=>{
+          try{
+            if(typeof entry==='string'){
+              const [from,to,action,qty,details,status,date]=JSON.parse(entry);
+              const [fp,tp]=await Promise.all([fetchProfileByAddress(from,mainnet,null),fetchProfileByAddress(to,mainnet,null)]);
+              const fn=fp?(fp.DisplayName||fp.URN||abbreviateAddress(from)):abbreviateAddress(from);
+              const tn=tp?(tp.DisplayName||tp.URN||abbreviateAddress(to)):abbreviateAddress(to);
+              const icon=actionIcons[(action||'').toLowerCase()]||'⚙️';
+              const statusCls=status&&status.toLowerCase().includes('success')?'status-success':'status-failed';
+              const ds=formatDateShort(date)||'';
+              const df=formatDateFull(date)||date||'';
+              const dateHtml=ds?`<span class="col-date" title="${escapeHtml(df)}">${escapeHtml(ds)}</span>`:`<span class="col-date"></span>`;
+              const parties=`<span class="owner-addr" data-addr="${escapeHtml(from)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(fn)}</span> → <span class="owner-addr" data-addr="${escapeHtml(to)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(tn)}</span>${qty?` ×${escapeHtml(String(qty))}`:''} ${details?`(${escapeHtml(details)})` :''}`;
+              return `<div class="obj-list-row ${statusCls}"><span class="col-name">${parties}</span>${dateHtml}<span class="col-action">${icon} ${escapeHtml(action||'')}</span></div>`;
+            }
+            const d=entry.Date||'';
+            const ds=formatDateShort(d)||'';
+            const df=formatDateFull(d)||d||'';
+            const dateHtml=ds?`<span class="col-date" title="${escapeHtml(df)}">${escapeHtml(ds)}</span>`:`<span class="col-date"></span>`;
+            return `<div class="obj-list-row"><span class="col-name">${escapeHtml(entry.Description||'No details')}</span>${dateHtml}<span class="col-action">⚙️</span></div>`;
+          }catch{return `<div class="obj-list-row"><span class="col-name" style="color:#888">Invalid provenance entry</span></div>`;}
+        }));
+        const listEl=document.getElementById('objChangelog');
+        if(listEl){listEl.innerHTML=rows.join('');listEl.querySelectorAll('.owner-addr').forEach(el=>el.addEventListener('click',()=>navigateTo('profile',{profile:el.dataset.addr,mainnet})));}
+      })();
+    }
+
+    detailEl.appendChild(card);
+    detailEl.style.display='block';
+    loadEl.style.display='none';
+
+    // Copyable address
+    const addrCopyEl=document.getElementById('objAddrCopy');
+    if(addrCopyEl) addrCopyEl.addEventListener('click',async()=>{
+      try{await navigator.clipboard.writeText(objectAddress);}catch{}
+      const prev=addrCopyEl.textContent;addrCopyEl.textContent='✅ Copied!';setTimeout(()=>{addrCopyEl.textContent=prev;},1600);
+    });
+
+    // Refresh button
+    refreshBtn.addEventListener('click',async()=>{
+      if(!objectAddress){alert('Cannot refresh: no object address');return;}
+      refreshBtn.classList.add('loading');refreshBtn.disabled=true;
+      try{
+        const fresh=await fetchAPI(`${BASE_URL}/GetObjectByAddress/${encodeURIComponent(objectAddress)}?mainnet=${mainnet}&verbose=false`,'Refresh failed',null);
+        const newObj=fresh?.Object||fresh?.object||fresh;
+        if(!newObj||Array.isArray(newObj)) throw new Error('No object data in refresh response');
+        await doRender(newObj);
+      }catch(e){
+        alert('Refresh failed: '+e.message);
+        refreshBtn.classList.remove('loading');refreshBtn.disabled=false;
+      }
+    });
+  };
 
   try{
     let obj=null;
@@ -1188,49 +1522,7 @@ const showObjectView=async(identifier,mainnet=true)=>{
       obj=data?.Object||data?.object||data;
     }
     if(!obj||Array.isArray(obj)) throw new Error(`Object not found: ${identifier}`);
-
-    const imgUrl=getImageUrl(obj.Image,obj.URN);
-    const txm=imgUrl.match(/\/root\/([0-9a-fA-F]{64})\//i)?.[1];
-    if(txm) state.txidMeta.set(txm,chainToMeta(mainnet?'BTC':'TBTC'));
-
-    const card=document.createElement('div');card.className='object-detail-card';
-
-    const objectAddress=Object.keys(obj.Creators||{})[0]||identifier||'';
-    card.appendChild(makeShareBtn('object',{id:objectAddress,mainnet}));
-
-    // Header
-    const header=document.createElement('div');header.className='object-detail-header';
-    const imgEl=document.createElement('img');imgEl.className='object-detail-img';imgEl.src=fallbackImage;imgEl.alt=obj.Name||'Object';
-    loadImageWithTimeout(imgUrl).then(u=>{imgEl.src=u;}).catch(()=>{});
-    header.appendChild(imgEl);
-
-    const info=document.createElement('div');info.className='object-detail-info';
-    const descHtml=obj.Description?`<p class="desc">${escapeHtml(obj.Description)}</p>`:'';
-    const dateHtml=obj.CreatedDate&&!isNullDate(obj.CreatedDate)?`<p>Created: ${formatDate(obj.CreatedDate)||escapeHtml(obj.CreatedDate)}</p>`:'';
-    const keyHtml=obj.Keyword?`<p>Keywords: ${escapeHtml(Array.isArray(obj.Keyword)?obj.Keyword.join(', '):obj.Keyword)}</p>`:'';
-    const urnHtml=obj.URN?`<p class="desc">URN: <code>${escapeHtml(obj.URN)}</code></p>`:'';
-    info.innerHTML=`<h2>${escapeHtml(obj.Name||'Unnamed Object')}</h2><p><span class="badge badge-object">Object</span><span class="badge badge-chain">${escapeHtml(mainnet?'BTC':'TBTC')}</span></p>${descHtml}${dateHtml}${keyHtml}${urnHtml}`;
-    header.appendChild(info);
-    card.appendChild(header);
-
-    // Owners
-    const owners=obj.Owners||obj.Creators||{};
-    const ownerEntries=Object.entries(owners);
-    if(ownerEntries.length){
-      const ownerSec=document.createElement('div');ownerSec.className='object-detail-owners';
-      ownerSec.innerHTML='<h4>Ownership</h4>';
-      ownerEntries.forEach(([addr,units])=>{
-        const row=document.createElement('div');row.className='owner-row';
-        row.innerHTML=`<span class="owner-addr" data-addr="${escapeHtml(addr)}" data-mainnet="${mainnet}" title="View profile">${escapeHtml(abbreviateAddress(addr))}</span><span class="owner-units">${escapeHtml(String(units))} unit${units===1?'':'s'}</span>`;
-        row.querySelector('.owner-addr').addEventListener('click',()=>navigateTo('profile',{profile:addr,mainnet}));
-        ownerSec.appendChild(row);
-      });
-      card.appendChild(ownerSec);
-    }
-
-    detailEl.appendChild(card);
-    detailEl.style.display='block';
-    loadEl.style.display='none';
+    await doRender(obj);
   }catch(e){
     loadEl.style.display='none';
     errEl.textContent='Failed to load object: '+e.message;
@@ -1260,6 +1552,9 @@ const showMessageView=async(txid,mainnet=true,blockchain='BTC')=>{
 
     const bc=chain==='BTC'?(mainnet?'BTC':'BTC-TESTNET'):chain;
     const card=await renderMessageCard(normalized,null,bc,{id:txid,mainnet,blockchain:CHAIN_UPPER_TO_API[chain]||'BTC'});
+    // Update meta tags for sharing the message
+    const msgPreview=(normalized.message||'').replace(/\s+/g,' ').trim().substring(0,160);
+    updateMetaTags(`Message on bitFossil`,msgPreview||'On-chain message on bitFossil','https://p2fk.io/bitfossil.png');
     detailEl.appendChild(card);
     detailEl.style.display='block';
     loadEl.style.display='none';
@@ -1280,6 +1575,11 @@ const setView=(name)=>{
   document.getElementById('filter-bar').style.display=(name==='search')?'':'none';
   // Adjust top padding accordingly
   document.getElementById('main').style.paddingTop=(name==='search')?'98px':'62px';
+  // Reset meta tags for search / home view
+  if(name==='search'){
+    updateMetaTags('bitFossil — On-Chain Social','Discover on-chain messages, profiles, and digital objects on the Bitcoin blockchain.','https://p2fk.io/bitfossil.png','https://p2fk.io/');
+    document.title='bitFossil — On-Chain Social';
+  }
 };
 
 // ── SPA navigation ─────────────────────────────────────────────────────
