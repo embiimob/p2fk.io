@@ -41,12 +41,13 @@ app.UseStaticFiles(new StaticFileOptions
 });
 
 app.UseSwagger();
+app.UseDefaultFiles();
 app.UseStaticFiles();
 app.UseRequestTimeouts();
 app.UseSwaggerUI(options =>
     {
-        //removes the /swagger/ from the path
-        options.RoutePrefix = string.Empty;
+        //swagger docs are served at /API
+        options.RoutePrefix = "API";
 
         //update to incude your own api and version
         options.SwaggerEndpoint("/swagger/v1/swagger.json", "P2FK.IO V1");
@@ -58,12 +59,12 @@ app.UseSwaggerUI(options =>
 
         //update to use your own images and favicons
         options.HeadContent = @"
-        <link rel=""apple-touch-icon"" sizes=""180x180"" href=""./apple-touch-icon.png"" />
-        <link rel=""icon"" type=""image/png"" sizes=""32x32"" href=""./favicon-32x32.png"" />
-        <link rel=""icon"" type=""image/png"" sizes=""16x16"" href=""./favicon-16x16.png"" />
+        <link rel=""apple-touch-icon"" sizes=""180x180"" href=""/apple-touch-icon.png"" />
+        <link rel=""icon"" type=""image/png"" sizes=""32x32"" href=""/favicon-32x32.png"" />
+        <link rel=""icon"" type=""image/png"" sizes=""16x16"" href=""/favicon-16x16.png"" />
         <style>
             .swagger-ui img  {
-                content: url('./HugPuddle.jpg');
+                content: url('/HugPuddle.jpg');
                 width: 50px;
                 height: auto;
             }
