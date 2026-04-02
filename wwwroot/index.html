@@ -492,6 +492,8 @@
     .profile-obj-card .poc-date { font-size: 0.7em; color: #666; }
     .profile-obj-loading { text-align: center; padding: 18px; color: #888; font-size: 0.85em; }
     .profile-obj-empty { text-align: center; padding: 18px; color: #555; font-size: 0.85em; }
+    .obj-load-more-btn { display: block; margin: 10px auto 4px; padding: 6px 18px; background: #2a2a2a; border: 1px solid #444; color: #b0b0b0; border-radius: 5px; cursor: pointer; font-size: 0.82em; }
+    .obj-load-more-btn:hover { background: #333; color: #bb86fc; border-color: #bb86fc; }
 
     /* ── Single message view ───────────────────────────────────────── */
     #view-message .message-card { margin: 0 auto; max-width: 660px; }
@@ -1654,6 +1656,7 @@ const renderObjMiniCard=(obj,mainnet,ownerAddress)=>{
 };
 
 const _tabIdForType={owned:'tabOwned',created:'tabCreated',associated:'tabAssoc'};
+const PROFILE_OBJ_PAGE=20;
 const loadProfileObjects=async(type,address,mainnet)=>{
   const gridEl=document.getElementById('profileObjGrid');
   const statusEl=document.getElementById('profileObjStatus');
@@ -1661,6 +1664,9 @@ const loadProfileObjects=async(type,address,mainnet)=>{
   if(!gridEl||!address) return;
   gridEl.innerHTML='';
   gridEl.style.display='none';
+  // Remove any leftover load-more button from a previous batch
+  const prevBtn=gridEl.parentNode?gridEl.parentNode.querySelector('.poc-load-more'):null;
+  if(prevBtn) prevBtn.remove();
   if(statusEl){statusEl.className='profile-obj-loading';statusEl.textContent='Loading…';statusEl.style.display='block';}
   const sortBy=sortEl?sortEl.value:'newest';
   const endpoints={owned:'GetObjectsOwnedByAddress',created:'GetObjectsCreatedByAddress',associated:'GetObjectsByAddress'};
@@ -1680,10 +1686,26 @@ const loadProfileObjects=async(type,address,mainnet)=>{
       if(statusEl){statusEl.className='profile-obj-empty';statusEl.textContent=`No ${type} objects found.`;statusEl.style.display='block';}
     }else{
       if(statusEl) statusEl.style.display='none';
-      objs.forEach(obj=>{
-        const c=renderObjMiniCard(obj,mainnet,type==='owned'?address:undefined);
-        gridEl.appendChild(c);
-      });
+      let rendered=0;
+      const renderBatch=()=>{
+        const end=Math.min(rendered+PROFILE_OBJ_PAGE,objs.length);
+        for(let i=rendered;i<end;i++){
+          const c=renderObjMiniCard(objs[i],mainnet,type==='owned'?address:undefined);
+          gridEl.appendChild(c);
+        }
+        rendered=end;
+        // Remove any old load-more button before potentially adding a new one
+        const old=gridEl.parentNode.querySelector('.poc-load-more');
+        if(old) old.remove();
+        if(rendered<objs.length){
+          const btn=document.createElement('button');
+          btn.className='obj-load-more-btn poc-load-more';
+          btn.textContent=`Load more (${objs.length-rendered} remaining)`;
+          btn.onclick=()=>renderBatch();
+          gridEl.parentNode.insertBefore(btn,gridEl.nextSibling);
+        }
+      };
+      renderBatch();
       gridEl.style.display='grid';
     }
   }catch(e){
@@ -1945,6 +1967,33 @@ const buildObjSection=(title,rows,colDefs)=>{
   return `<div class="obj-section"><p class="obj-section-title">${escapeHtml(title)}</p><div class="obj-list"><div class="obj-list-header">${headerCols}</div>${bodyRows}</div></div>`;
 };
 
+const OBJ_LIST_PAGE=20;
+// Inject rows HTML into a list container; cap at OBJ_LIST_PAGE with a "Show more" button.
+// wireClicks(tmpContainer) is called on the batch's temp div before nodes are moved to listEl.
+const populateObjList=(listElId,rows,wireClicks)=>{
+  const listEl=document.getElementById(listElId);
+  if(!listEl) return;
+  let shown=0;
+  const renderNextBatch=()=>{
+    const end=Math.min(shown+OBJ_LIST_PAGE,rows.length);
+    const tmp=document.createElement('div');
+    tmp.innerHTML=rows.slice(shown,end).join('');
+    if(wireClicks) wireClicks(tmp);
+    const old=listEl.querySelector('.obj-list-show-more');
+    if(old) old.remove();
+    while(tmp.firstChild) listEl.appendChild(tmp.firstChild);
+    shown=end;
+    if(shown<rows.length){
+      const btn=document.createElement('button');
+      btn.className='obj-load-more-btn obj-list-show-more';
+      btn.textContent=`Show more (${rows.length-shown} remaining)`;
+      btn.onclick=()=>renderNextBatch();
+      listEl.appendChild(btn);
+    }
+  };
+  renderNextBatch();
+};
+
 const showObjectView=async(identifier,mainnet=true)=>{
   setView('object');
   const loadEl=document.getElementById('objectLoading');
@@ -2017,7 +2066,7 @@ const showObjectView=async(identifier,mainnet=true)=>{
           return `<div class="obj-list-row${isUnack?' unack':''}"><span class="col-name owner-addr" data-addr="${escapeHtml(addr)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(name)}${isUnack?' (unacknowledged)':''}</span></div>`;
         }));
         const listEl=document.getElementById('objCreatorsList');
-        if(listEl){listEl.innerHTML=rows.join('');listEl.querySelectorAll('.owner-addr').forEach(el=>el.addEventListener('click',()=>navigateTo('profile',{profile:el.dataset.addr,mainnet})));}
+        if(listEl){listEl.innerHTML='';populateObjList('objCreatorsList',rows,c=>c.querySelectorAll('.owner-addr').forEach(el=>el.addEventListener('click',()=>navigateTo('profile',{profile:el.dataset.addr,mainnet}))));}
       })();
     }
 
@@ -2036,7 +2085,7 @@ const showObjectView=async(identifier,mainnet=true)=>{
           return `<div class="obj-list-row"><span class="col-name owner-addr" data-addr="${escapeHtml(addr)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(name)}</span><span class="col-qty">${units}</span></div>`;
         }));
         const listEl=document.getElementById('objOwnersList');
-        if(listEl){listEl.innerHTML=rows.join('');listEl.querySelectorAll('.owner-addr').forEach(el=>el.addEventListener('click',()=>navigateTo('profile',{profile:el.dataset.addr,mainnet})));}
+        if(listEl){listEl.innerHTML='';populateObjList('objOwnersList',rows,c=>c.querySelectorAll('.owner-addr').forEach(el=>el.addEventListener('click',()=>navigateTo('profile',{profile:el.dataset.addr,mainnet}))));}
       })();
     }
 
@@ -2053,7 +2102,7 @@ const showObjectView=async(identifier,mainnet=true)=>{
           return `<div class="obj-list-row"><span class="col-name owner-addr" data-addr="${escapeHtml(addr)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(name)}</span><span class="col-pct">${pct}%</span></div>`;
         }));
         const listEl=document.getElementById('objRoyaltiesList');
-        if(listEl){listEl.innerHTML=rows.join('');listEl.querySelectorAll('.owner-addr').forEach(el=>el.addEventListener('click',()=>navigateTo('profile',{profile:el.dataset.addr,mainnet})));}
+        if(listEl){listEl.innerHTML='';populateObjList('objRoyaltiesList',rows,c=>c.querySelectorAll('.owner-addr').forEach(el=>el.addEventListener('click',()=>navigateTo('profile',{profile:el.dataset.addr,mainnet}))));}
       })();
     }
 
@@ -2071,7 +2120,7 @@ const showObjectView=async(identifier,mainnet=true)=>{
           return `<div class="obj-list-row${i===0?' listing-cheapest':''}"><span class="col-name owner-addr" data-addr="${escapeHtml(addr)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(name)}</span><span class="col-price">${escapeHtml(String(listing.Value))} BTC</span><span class="col-qty">${escapeHtml(String(qty))}</span></div>`;
         }));
         const listEl=document.getElementById('objListingsList');
-        if(listEl){listEl.innerHTML=rows.join('');listEl.querySelectorAll('.owner-addr').forEach(el=>el.addEventListener('click',()=>navigateTo('profile',{profile:el.dataset.addr,mainnet})));}
+        if(listEl){listEl.innerHTML='';populateObjList('objListingsList',rows,c=>c.querySelectorAll('.owner-addr').forEach(el=>el.addEventListener('click',()=>navigateTo('profile',{profile:el.dataset.addr,mainnet}))));}
       })();
     }
 
@@ -2106,7 +2155,7 @@ const showObjectView=async(identifier,mainnet=true)=>{
           }catch{return `<div class="obj-list-row"><span class="col-name" style="color:#888">Invalid provenance entry</span></div>`;}
         }));
         const listEl=document.getElementById('objChangelog');
-        if(listEl){listEl.innerHTML=rows.join('');listEl.querySelectorAll('.owner-addr').forEach(el=>el.addEventListener('click',()=>navigateTo('profile',{profile:el.dataset.addr,mainnet})));}
+        if(listEl){listEl.innerHTML='';populateObjList('objChangelog',rows,c=>c.querySelectorAll('.owner-addr').forEach(el=>el.addEventListener('click',()=>navigateTo('profile',{profile:el.dataset.addr,mainnet}))));}
       })();
     }
 
