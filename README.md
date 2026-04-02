@@ -8,7 +8,7 @@ The live site at **https://p2fk.io** is the public demo running this exact codeb
 
 ## What does it do?
 
-Sup!? encodes messages, user profiles, and digital objects (NFTs) directly into blockchain transactions using the **Pay-To-Fake-Key (P2FK)** technique — no sidechains, no tokens, no third-party servers.  P2FK.IO reads that on-chain data through the Sup!? CLI and makes it available via a clean HTTP API with an interactive Swagger UI at `/API`.
+Sup!? encodes messages, user profiles, and digital objects (NFTs) directly into blockchain transactions using the **Pay-To-Future-Key (P2FK)** technique — no sidechains, no tokens, no third-party servers.  P2FK.IO reads that on-chain data through the Sup!? CLI and makes it available via a clean HTTP API with an interactive Swagger UI at `/API`.
 
 ---
 
@@ -27,7 +27,7 @@ Sup!? encodes messages, user profiles, and digital objects (NFTs) directly into 
 | 1 | **.NET 8 SDK** | https://dotnet.microsoft.com/en-us/download/dotnet/8.0 |
 | 2 | **ASP.NET Core Windows Hosting Bundle** *(only needed for IIS hosting; not required for `dotnet run`)* | https://dotnet.microsoft.com/en-us/download/dotnet/thank-you/runtime-aspnetcore-8.0.4-windows-hosting-bundle-installer |
 | 3 | **Sup!? CLI** | https://github.com/embiimob/SUP (latest release) |
-| 4 | A synced **Bitcoin Core** node (or whichever blockchains you want to serve) | https://bitcoincore.org |
+| 4 | A synced **Bitcoin Core** node (or whichever blockchains you want to serve) | Included in Sup!? |
 
 ---
 
@@ -41,22 +41,7 @@ Sup!? encodes messages, user profiles, and digital objects (NFTs) directly into 
 
 ---
 
-### Step 2 — Configure Bitcoin Core RPC
-
-Add the following to your `bitcoin.conf` (usually at `%APPDATA%\Bitcoin\bitcoin.conf`):
-
-```
-server=1
-rpcuser=good-user
-rpcpassword=better-password
-rpcport=8332
-```
-
-For testnet add a `[test]` section or use `bitcoin.conf` inside `%APPDATA%\Bitcoin\testnet3\`.
-
----
-
-### Step 3 — Clone and configure P2FK.IO
+### Step 2 — Clone and configure P2FK.IO
 
 ```powershell
 git clone https://github.com/embiimob/p2fk.io.git C:\p2fk.io
