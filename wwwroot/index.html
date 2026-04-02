@@ -684,6 +684,10 @@ const chainToMeta = (blockchain) => {
 // ── Session caches ─────────────────────────────────────────────────────
 const getCachedProfile = (a) => { try{const c=sessionStorage.getItem(`p_${a}`);return c?JSON.parse(c):null;}catch{return null;} };
 const cacheProfile = (a,p) => { try{sessionStorage.setItem(`p_${a}`,JSON.stringify(p));}catch{} };
+const getCachedTransaction=(txid,mainnet,blockchain)=>{try{const c=sessionStorage.getItem(`tx_${txid}_${mainnet}_${blockchain}`);return c?JSON.parse(c):null;}catch{return null;}};
+const cacheTransaction=(txid,mainnet,blockchain,data)=>{try{sessionStorage.setItem(`tx_${txid}_${mainnet}_${blockchain}`,JSON.stringify(data));}catch{}};
+const getCachedObject=(id,mainnet)=>{try{const c=sessionStorage.getItem(`obj_${id}_${mainnet}`);return c?JSON.parse(c):null;}catch{return null;}};
+const cacheObject=(id,mainnet,data)=>{try{sessionStorage.setItem(`obj_${id}_${mainnet}`,JSON.stringify(data));}catch{}};
 
 // ── Image helpers ──────────────────────────────────────────────────────
 const MAX_IMG_CACHE=100;
@@ -714,6 +718,7 @@ const getImageUrl=(image,urn)=>{
 const warmRootCache=async(txid,mainnet,blockchain)=>{
   if(!txid||!/^[0-9a-fA-F]{64}$/.test(txid)) return;
   const c=(blockchain||'BTC').toUpperCase();
+  if(getCachedTransaction(txid,mainnet,c)) return;
   try{await fetch(c!=='BTC'?`${BASE_URL}/GetRootByTransactionID/${txid}?blockchain=${encodeURIComponent(c)}&verbose=false`:`${BASE_URL}/GetRootByTransactionID/${txid}?mainnet=${!!mainnet}&verbose=false`);}catch{}
 };
 
@@ -762,7 +767,9 @@ const fetchProfileByAddress=async(address,mainnet,signal)=>{
 };
 
 const fetchProfileByURN=async(urn,mainnet,signal)=>{
-  try{return await fetchAPI(`${BASE_URL}/GetProfileByURN/${encodeURIComponent(urn)}?mainnet=${mainnet}`,'',signal);}catch{return null;}
+  const cached=getCachedProfile(`urn_${urn}_${mainnet}`);
+  if(cached) return cached;
+  try{const p=await fetchAPI(`${BASE_URL}/GetProfileByURN/${encodeURIComponent(urn)}?mainnet=${mainnet}`,'',signal);if(p) cacheProfile(`urn_${urn}_${mainnet}`,p);return p;}catch{return null;}
 };
 
 // Extract the owner address from any profile object (handles both array and object Creators shapes)
@@ -774,13 +781,18 @@ const _getProfileCreatorAddr=(profile)=>{
   return '';
 };
 // Async URN legitimacy check: returns true if the profile's address matches what GetProfileByURN says
+const _officialCache=new Map();
 const _isOfficialProfile=async(urn,address,mainnet)=>{
   if(!urn||!address) return true; // can't verify → treat as ok
+  const key=`${urn}_${address}_${mainnet}`;
+  if(_officialCache.has(key)) return _officialCache.get(key);
   try{
     const official=await fetchProfileByURN(urn,mainnet,null);
     const officialAddr=_getProfileCreatorAddr(official);
-    if(!officialAddr) return true; // can't determine → treat as ok
-    return officialAddr===address;
+    if(!officialAddr) return true; // can't determine → treat as ok (don't cache uncertain state)
+    const result=officialAddr===address;
+    _officialCache.set(key,result);
+    return result;
   }catch{return true;}
 };
 
@@ -992,7 +1004,7 @@ const renderMessageCard=async(normalized,signal,blockchain,shareParams)=>{
       try{const r=await fetchAPI(`${BASE_URL}/GetRootByTransactionID/${encodeURIComponent(t)}?mainnet=${mn}&blockchain=${ac}`,'',null);
         const root=Array.isArray(r)?r[0]:r;
         const nd=(root&&typeof root==='object')?(root['Block Date']??root.BlockDate??''):'';
-        if(nd&&!isNullDate(nd)){const de=meta.querySelector('.msg-date');if(de)de.textContent=nd;refreshEl.remove();}
+        if(nd&&!isNullDate(nd)){cacheTransaction(t,mn,ac,root);const de=meta.querySelector('.msg-date');if(de)de.textContent=nd;refreshEl.remove();}
         else{refreshEl.textContent='❌';setTimeout(()=>{refreshEl.textContent='🔄 Refresh';refreshEl.style.pointerEvents='';},3000);}
       }catch{refreshEl.textContent='❌';setTimeout(()=>{refreshEl.textContent='🔄 Refresh';refreshEl.style.pointerEvents='';},3000);}
     }
@@ -1353,10 +1365,14 @@ const fetchTextForUrn=async(urn,mainnet)=>{
     if(chainMatch){blockchain=chainMatch[1].toUpperCase();txid=chainMatch[2];}
     else{blockchain='BTC';txid=u;}
     const isBtcFamily=blockchain==='BTC'||blockchain==='TBTC';
-    const url=isBtcFamily
-      ?`${BASE_URL}/GetRootByTransactionID/${encodeURIComponent(txid)}?mainnet=${!!mainnet}`
-      :`${BASE_URL}/GetRootByTransactionID/${encodeURIComponent(txid)}?blockchain=${blockchain}`;
-    const data=await fetchAPI(url,'',null,15000);
+    let data=getCachedTransaction(txid,mainnet,blockchain);
+    if(!data){
+      const url=isBtcFamily
+        ?`${BASE_URL}/GetRootByTransactionID/${encodeURIComponent(txid)}?mainnet=${!!mainnet}`
+        :`${BASE_URL}/GetRootByTransactionID/${encodeURIComponent(txid)}?blockchain=${blockchain}`;
+      data=await fetchAPI(url,'',null,15000);
+      if(data){const bd=data['Block Date']??data.BlockDate??'';if(bd&&!isNullDate(bd)) cacheTransaction(txid,mainnet,blockchain,data);}
+    }
     if(data&&data.Message!=null){
       text=Array.isArray(data.Message)?data.Message.join('\n'):String(data.Message);
     }
@@ -2110,6 +2126,7 @@ const showObjectView=async(identifier,mainnet=true)=>{
         const fresh=await fetchAPI(`${BASE_URL}/GetObjectByAddress/${encodeURIComponent(objectAddress)}?mainnet=${mainnet}&verbose=true`,'Refresh failed',null);
         const newObj=fresh?.Object||fresh?.object||fresh;
         if(!newObj||Array.isArray(newObj)) throw new Error('No object data in refresh response');
+        cacheObject(objectAddress,mainnet,newObj);
         await doRender(newObj);
       }catch(e){
         alert('Refresh failed: '+e.message);
@@ -2121,11 +2138,19 @@ const showObjectView=async(identifier,mainnet=true)=>{
   try{
     let obj=null;
     if(isAddress(identifier)){
-      const data=await fetchAPI(`${BASE_URL}/GetObjectByAddress/${encodeURIComponent(identifier)}?mainnet=${mainnet}&verbose=true`,'',null);
-      obj=data?.Object||data?.object||data;
+      const cached=getCachedObject(identifier,mainnet);
+      if(cached){obj=cached;}else{
+        const data=await fetchAPI(`${BASE_URL}/GetObjectByAddress/${encodeURIComponent(identifier)}?mainnet=${mainnet}&verbose=true`,'',null);
+        obj=data?.Object||data?.object||data;
+        if(obj&&!Array.isArray(obj)) cacheObject(identifier,mainnet,obj);
+      }
     }else{
-      const data=await fetchAPI(`${BASE_URL}/GetObjectByURN/${encodeURIComponent(identifier)}?mainnet=${mainnet}&verbose=true`,'',null);
-      obj=data?.Object||data?.object||data;
+      const cached=getCachedObject(identifier,mainnet);
+      if(cached){obj=cached;}else{
+        const data=await fetchAPI(`${BASE_URL}/GetObjectByURN/${encodeURIComponent(identifier)}?mainnet=${mainnet}&verbose=true`,'',null);
+        obj=data?.Object||data?.object||data;
+        if(obj&&!Array.isArray(obj)) cacheObject(identifier,mainnet,obj);
+      }
     }
     if(!obj||Array.isArray(obj)) throw new Error(`Object not found: ${identifier}`);
     await doRender(obj);
@@ -2146,11 +2171,15 @@ const showMessageView=async(txid,mainnet=true,blockchain='BTC')=>{
 
   try{
     const chain=(blockchain||'BTC').toUpperCase();
-    const url=chain!=='BTC'
-      ?`${BASE_URL}/GetRootByTransactionID/${encodeURIComponent(txid)}?blockchain=${encodeURIComponent(chain)}&verbose=false`
-      :`${BASE_URL}/GetRootByTransactionID/${encodeURIComponent(txid)}?mainnet=${mainnet}&verbose=false`;
-    const data=await fetchAPI(url,'',null);
-    const raw=Array.isArray(data)?data[0]:data;
+    let raw=getCachedTransaction(txid,mainnet,chain);
+    if(!raw){
+      const url=chain!=='BTC'
+        ?`${BASE_URL}/GetRootByTransactionID/${encodeURIComponent(txid)}?blockchain=${encodeURIComponent(chain)}&verbose=false`
+        :`${BASE_URL}/GetRootByTransactionID/${encodeURIComponent(txid)}?mainnet=${mainnet}&verbose=false`;
+      const data=await fetchAPI(url,'',null);
+      raw=Array.isArray(data)?data[0]:data;
+      if(raw){const bd=raw['Block Date']??raw.BlockDate??'';if(bd&&!isNullDate(bd)) cacheTransaction(txid,mainnet,chain,raw);}
+    }
     if(!raw) throw new Error(`Message not found for txid: ${txid}`);
 
     const normalized=normalizeRoot(raw);
