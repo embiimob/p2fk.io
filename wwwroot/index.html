@@ -538,7 +538,6 @@
 
 <!-- ── Filter bar ───────────────────────────────────────────────────── -->
 <div id="filter-bar">
-  <span class="type-label">Types:</span>
   <label title="Messages on-chain"><input type="checkbox" id="chkMessages" checked> Messages</label>
   <label title="User profiles"><input type="checkbox" id="chkProfiles"> Profiles</label>
   <label title="Digital objects (NFTs)"><input type="checkbox" id="chkObjects"> Objects</label>
@@ -549,6 +548,8 @@
   <label title="Litecoin"><input type="checkbox" id="chkLTC"> LTC</label>
   <label title="Dogecoin"><input type="checkbox" id="chkDOG"> DOG</label>
   <label title="Mazacoin"><input type="checkbox" id="chkMZC"> MZC</label>
+  <span class="sep"></span>
+  <label title="System transactions (SEC/OBJ/LST/BRN/PRO/BUY/GIV)"><input type="checkbox" id="chkSystem"> ⚙️</label>
 </div>
 
 <!-- ── Main content ─────────────────────────────────────────────────── -->
@@ -637,6 +638,15 @@ const CHAINS = {
 };
 
 const CHAIN_UPPER_TO_API = { 'BTC':'BTC','TBTC':'BTC','LTC':'LTC','DOG':'DOG','MZC':'MZC' };
+
+// System transaction file types — messages containing these files are hidden by default
+const SYSTEM_EXTS = new Set(['SEC','OBJ','LST','BRN','PRO','BUY','GIV']);
+const isSystemMsg = (files) => (files||[]).some(f => {
+  const u=(f||'').toUpperCase();
+  if(SYSTEM_EXTS.has(u)) return true;
+  const dot=u.lastIndexOf('.');
+  return dot>=0&&SYSTEM_EXTS.has(u.slice(dot+1));
+});
 
 const fallbackImage = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='90' height='90'><rect width='100%' height='100%' fill='%23333'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='white' font-size='11'>No Image</text></svg>";
 
@@ -1147,10 +1157,13 @@ const applyChainFilter=()=>{
   if(document.getElementById('chkLTC').checked) allowed.add('LTC');
   if(document.getElementById('chkDOG').checked) allowed.add('DOG');
   if(document.getElementById('chkMZC').checked) allowed.add('MZC');
+  const showSystem=document.getElementById('chkSystem')?.checked;
   let vis=0;
   document.querySelectorAll('#feed [data-chain]').forEach(c=>{
     const ch=c.dataset.chain;
-    const pass=ch?(allowed.has(ch)):(allowed.has('BTC')||allowed.has('TBTC'));
+    const chainPass=ch?(allowed.has(ch)):(allowed.has('BTC')||allowed.has('TBTC'));
+    const sysPass=showSystem||c.dataset.system!=='true';
+    const pass=chainPass&&sysPass;
     c.style.display=pass?'':'none';
     if(pass) vis++;
   });
@@ -1172,12 +1185,15 @@ const appendResultItems=async(objectResults,profileResults,rootResults,searchId,
     if(!da&&!db) return 0;if(!da) return 1;if(!db) return -1;return db-da;
   });
   const feed=document.getElementById('feed');
+  const showSystem=document.getElementById('chkSystem')?.checked;
   let rendered=0;
   for(const item of items){
     if(state.currentSearchId!==searchId) break;
     if(rendered>=DISPLAY_BATCH_SIZE) break;
     const ch=normalizeChain(item.blockchain);
     if((state.chainCounts[ch]||0)>=MAX_PER_CHAIN) continue;
+    // Skip system messages entirely when System checkbox is unchecked (no render → no flash)
+    if(item.type==='message'&&!showSystem&&isSystemMsg(item.data.files)) continue;
     state.chainCounts[ch]=(state.chainCounts[ch]||0)+1;
     rendered++;
     let card;
@@ -1185,6 +1201,7 @@ const appendResultItems=async(objectResults,profileResults,rootResults,searchId,
     else if(item.type==='profile') card=renderProfileCard(item.raw,item.blockchain);
     else{ card=await renderMessageCard(item.data,signal,item.blockchain); if(state.currentSearchId!==searchId) break; }
     card.dataset.chain=ch;
+    if(item.type==='message'&&isSystemMsg(item.data.files)) card.dataset.system='true';
     feed.appendChild(card);
   }
   return rendered;
@@ -1215,7 +1232,7 @@ const loadMoreBatch=async()=>{
   finally{
     loadEl.style.display='none';loadEl.textContent='Loading…';state.isLoadingMore=false;
     if(state.currentSearchId===searchId&&anyMoreNeeded()){
-      if(countVisible()===0&&(state.autoLoadDepth||0)<6){state.autoLoadDepth=(state.autoLoadDepth||0)+1;setTimeout(()=>loadMoreBatch(),0);}
+      if(countVisible()<DISPLAY_BATCH_SIZE&&(state.autoLoadDepth||0)<6){state.autoLoadDepth=(state.autoLoadDepth||0)+1;setTimeout(()=>loadMoreBatch(),0);}
       else{state.autoLoadDepth=0;scrollObserver.observe(sentinel);}
     }
   }
@@ -1269,17 +1286,17 @@ const performKeywordSearch=async(keyword)=>{
     loadEl.style.display='none';
     const added=await appendResultItems(objectResults,profileResults,rootResults,searchId,signal);
     if(state.currentSearchId!==searchId) return;
-    state.totalDisplayed=added;
-    if(!added){feedEl.innerHTML='<div style="text-align:center;padding:30px;color:#666;">No results for #'+escapeHtml(keyword)+'</div>';document.getElementById('resultCount').style.display='none';}
+    state.totalDisplayed+=added;
+    if(!added&&allExhausted()){feedEl.innerHTML='<div style="text-align:center;padding:30px;color:#666;">No results for #'+escapeHtml(keyword)+'</div>';document.getElementById('resultCount').style.display='none';}
     else applyChainFilter();
   }catch(e){
     if(e.name!=='AbortError'){showSearchError('Keyword search failed: '+e.message);loadEl.style.display='none';}
   }finally{
     state.isSearching=false;btn.disabled=false;btn.textContent='Search';inp.disabled=false;
     loadEl.style.display='none';loadEl.textContent='Loading…';
-    if(state.currentSearchId===searchId&&state.totalDisplayed>0&&anyMoreNeeded()){
-      if(countVisible()===0&&(state.autoLoadDepth||0)<6){state.autoLoadDepth=(state.autoLoadDepth||0)+1;setTimeout(()=>loadMoreBatch(),0);}
-      else scrollObserver.observe(document.getElementById('loadSentinel'));
+    if(state.currentSearchId===searchId&&anyMoreNeeded()){
+      if(countVisible()<DISPLAY_BATCH_SIZE&&(state.autoLoadDepth||0)<6){state.autoLoadDepth=(state.autoLoadDepth||0)+1;setTimeout(()=>loadMoreBatch(),0);}
+      else{state.autoLoadDepth=0;scrollObserver.observe(document.getElementById('loadSentinel'));}
     }
   }
 };
@@ -1332,16 +1349,16 @@ const performSearch=async(searchText)=>{
     document.getElementById('searchLoading').style.display='none';
     const added=await appendResultItems(objectResults,profileResults,rootResults,searchId,signal);
     if(state.currentSearchId!==searchId) return;
-    state.totalDisplayed=added;
-    if(!added){document.getElementById('feed').innerHTML='<div style="text-align:center;padding:30px;color:#666;">No results found.</div>';document.getElementById('resultCount').style.display='none';}
+    state.totalDisplayed+=added;
+    if(!added&&allExhausted()){document.getElementById('feed').innerHTML='<div style="text-align:center;padding:30px;color:#666;">No results found.</div>';document.getElementById('resultCount').style.display='none';}
     else applyChainFilter();
   }catch(e){
     if(e.name!=='AbortError'){showSearchError('Search failed: '+e.message);document.getElementById('searchLoading').style.display='none';}
   }finally{
     state.isSearching=false;btn.disabled=false;btn.textContent='Search';inp.disabled=false;
-    if(state.currentSearchId===searchId&&state.totalDisplayed>0&&anyMoreNeeded()){
-      if(countVisible()===0&&(state.autoLoadDepth||0)<6){state.autoLoadDepth=(state.autoLoadDepth||0)+1;setTimeout(()=>loadMoreBatch(),0);}
-      else scrollObserver.observe(document.getElementById('loadSentinel'));
+    if(state.currentSearchId===searchId&&anyMoreNeeded()){
+      if(countVisible()<DISPLAY_BATCH_SIZE&&(state.autoLoadDepth||0)<6){state.autoLoadDepth=(state.autoLoadDepth||0)+1;setTimeout(()=>loadMoreBatch(),0);}
+      else{state.autoLoadDepth=0;scrollObserver.observe(document.getElementById('loadSentinel'));}
     }
   }
 };
@@ -2177,7 +2194,7 @@ const showObjectView=async(identifier,mainnet=true)=>{
       const secEl=document.createElement('div');secEl.className='obj-section';
       secEl.innerHTML=`<p class="obj-section-title">Provenance</p><div class="obj-list changelog"><div class="obj-list-header"><span class="col-name">Parties</span><span class="col-date">Date</span><span class="col-action">Action</span></div><div id="objChangelog"><div class="obj-list-row" style="color:#888">Loading…</div></div></div>`;
       card.appendChild(secEl);
-      const actionIcons={mint:'🪙',transfer:'↔️',list:'🏷️',delist:'✖️',lock:'🔒',burn:'🔥',edit:'✏️',create:'✨'};
+      const actionIcons={mint:'🪙',transfer:'↔️',list:'🏷️',delist:'✖️',lock:'🔒',burn:'🔥',edit:'✏️',create:'✨',claim:'⚓',buy:'💰',give:'🎁',grant:'🔓'};
       (async()=>{
         const rows=await Promise.all(changelog.map(async entry=>{
           try{
@@ -2186,13 +2203,15 @@ const showObjectView=async(identifier,mainnet=true)=>{
               const [fp,tp]=await Promise.all([fetchProfileByAddress(from,mainnet,null),fetchProfileByAddress(to,mainnet,null)]);
               const fn=fp?(fp.DisplayName||fp.URN||abbreviateAddress(from)):abbreviateAddress(from);
               const tn=tp?(tp.DisplayName||tp.URN||abbreviateAddress(to)):abbreviateAddress(to);
-              const icon=actionIcons[(action||'').toLowerCase()]||'⚙️';
-              const statusCls=status&&status.toLowerCase().includes('success')?'status-success':'status-failed';
+              const isFailed=!status||!status.toLowerCase().startsWith('success');
+              const icon=isFailed?'🚫':(actionIcons[(action||'').toLowerCase()]||'⚙️');
+              const statusTitle=isFailed?escapeHtml(status||'Failed'):'Success';
+              const statusCls=isFailed?'status-failed':'status-success';
               const ds=formatDateShort(date)||'';
               const df=formatDateFull(date)||date||'';
               const dateHtml=ds?`<span class="col-date" title="${escapeHtml(df)}">${escapeHtml(ds)}</span>`:`<span class="col-date"></span>`;
               const parties=`<span class="owner-addr" data-addr="${escapeHtml(from)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(fn)}</span> → <span class="owner-addr" data-addr="${escapeHtml(to)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(tn)}</span>${qty?` ×${escapeHtml(String(qty))}`:''} ${details?`(${escapeHtml(details)})` :''}`;
-              return `<div class="obj-list-row ${statusCls}"><span class="col-name">${parties}</span>${dateHtml}<span class="col-action">${icon} ${escapeHtml(action||'')}</span></div>`;
+              return `<div class="obj-list-row ${statusCls}"><span class="col-name">${parties}</span>${dateHtml}<span class="col-action"><span title="${statusTitle}" style="cursor:default">${icon}</span> ${escapeHtml(action||'')}</span></div>`;
             }
             const d=entry.Date||'';
             const ds=formatDateShort(d)||'';
@@ -2239,14 +2258,14 @@ const showObjectView=async(identifier,mainnet=true)=>{
     if(isAddress(identifier)){
       const cached=getCachedObject(identifier,mainnet);
       if(cached){obj=cached;}else{
-        const data=await fetchAPI(`${BASE_URL}/GetObjectByAddress/${encodeURIComponent(identifier)}?mainnet=${mainnet}&verbose=true`,'',null);
+        const data=await fetchAPI(`${BASE_URL}/GetObjectByAddress/${encodeURIComponent(identifier)}?mainnet=${mainnet}&verbose=false`,'',null);
         obj=data?.Object||data?.object||data;
         if(obj&&!Array.isArray(obj)) cacheObject(identifier,mainnet,obj);
       }
     }else{
       const cached=getCachedObject(identifier,mainnet);
       if(cached){obj=cached;}else{
-        const data=await fetchAPI(`${BASE_URL}/GetObjectByURN/${encodeURIComponent(identifier)}?mainnet=${mainnet}&verbose=true`,'',null);
+        const data=await fetchAPI(`${BASE_URL}/GetObjectByURN/${encodeURIComponent(identifier)}?mainnet=${mainnet}&verbose=false`,'',null);
         obj=data?.Object||data?.object||data;
         if(obj&&!Array.isArray(obj)) cacheObject(identifier,mainnet,obj);
       }
@@ -2408,7 +2427,7 @@ document.getElementById('navbar-search-btn').addEventListener('click',(e)=>{
 document.getElementById('brandHome').addEventListener('click',()=>navigateTo('search',{}));
 
 // ── Chain / type checkbox events ───────────────────────────────────────
-['chkBitcoin','chkTestnet3','chkLTC','chkDOG','chkMZC'].forEach(id=>{
+['chkBitcoin','chkTestnet3','chkLTC','chkDOG','chkMZC','chkSystem'].forEach(id=>{
   document.getElementById(id).addEventListener('change',applyChainFilter);
 });
 ['chkObjects','chkProfiles','chkMessages'].forEach(id=>{
