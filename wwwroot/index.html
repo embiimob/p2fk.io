@@ -697,14 +697,15 @@ const cacheImage=(url,res)=>{if(state.imageCache.size>=MAX_IMG_CACHE){state.imag
 
 const resolveUrnPath=(urn)=>{
   if(!urn) return '';
-  urn=urn.replace(/\\/g,'/').replace(/\s+/g,'');
+  urn=urn.replace(/\\/g,'/');
   const parts=urn.split(':').pop().split('/');
+  const fileParts=parts.slice(1).map(p=>encodeURIComponent(p));
   return /^(BTC|LTC|DOG|MZC):/i.test(urn)||/^[A-Za-z0-9]+\/.+/.test(urn)
-    ?`${BASE_URL}/root/${parts[0]}/${parts[1]||''}`:'';
+    ?`${BASE_URL}/root/${parts[0]}/${fileParts.join('/')||''}`:'';
 };
 
 const getImageUrl=(image,urn)=>{
-  const norm=(v)=>typeof v==='string'?v.replace(/\\/g,'/').replace(/\s+/g,'').trim():null;
+  const norm=(v)=>typeof v==='string'?v.replace(/\\/g,'/').trim():null;
   const resolve=(v)=>{
     if(!v) return null;
     const val=norm(v); if(!val) return null;
@@ -1325,7 +1326,8 @@ const getUrnMediaUrl=(urn)=>{
   if(/^(BTC|LTC|DOG|MZC):/i.test(u)||/^[A-Za-z0-9]+\/.+/.test(u)){
     const parts=u.split(':').pop().split('/');
     if(!parts[0]||!/^[0-9a-fA-F]{64}$/.test(parts[0])) return null;
-    return parts[1]?`${BASE_URL}/root/${parts[0]}/${parts[1]}`:null;
+    const fileParts=parts.slice(1).map(p=>encodeURIComponent(p));
+    return fileParts.length&&fileParts[0]?`${BASE_URL}/root/${parts[0]}/${fileParts.join('/')}`:null;
   }
   return null;
 };
