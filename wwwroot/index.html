@@ -353,10 +353,9 @@
       background: #333;
       flex-shrink: 0;
     }
-    .profile-panel-info { flex: 1; min-width: 0; }
-    .profile-panel-info h2 { margin: 0 0 4px; color: #bb86fc; font-size: 1.1em; }
-    .profile-panel-info p { margin: 2px 0; font-size: 0.85em; color: #b0b0b0; }
-    .profile-panel-info .addr { font-family: monospace; font-size: 0.75em; color: #666; word-break: break-all; }
+    .profile-panel-info { flex: 1; min-width: 0; overflow: hidden; }
+    .profile-panel-info h2 { margin: 0 0 4px; color: #bb86fc; font-size: 1.1em; overflow-wrap: break-word; word-break: break-word; }
+    .profile-panel-info p { margin: 2px 0; font-size: 0.85em; color: #b0b0b0; overflow-wrap: break-word; word-break: break-word; }
     .profile-handle-addr { font-family: monospace; font-size: 0.65em; color: #666; font-weight: normal; vertical-align: middle; cursor: pointer; border-bottom: 1px dotted #444; }
     .profile-handle-addr:hover { color: #03dac6; }
     .profile-msg-thread { display: flex; flex-direction: column; gap: 10px; }
@@ -505,6 +504,8 @@
     @media (max-width: 600px) {
       #navbar .brand span { display: none; }
       .nav-links { gap: 6px; }
+      #search-form { max-width: 220px; }
+      .nav-links a { font-size: 0.72em; padding: 3px 5px; }
       #filter-bar { font-size: 0.72em; gap: 3px 8px; }
       .profile-panel { flex-direction: column; }
       .profile-panel-img { width: 64px; height: 64px; }
@@ -1864,13 +1865,10 @@ const showProfileView=async(identifier,mainnet=true)=>{
     // Changed date
     const changedHtml=profile.ChangeDate&&!isNullDate(profile.ChangeDate)?`<p>Modified: ${formatDate(profile.ChangeDate)||escapeHtml(profile.ChangeDate)}</p>`:'';
 
-    // Address (copyable)
-    const addrHtml=address?`<p class="addr" style="cursor:pointer;font-family:monospace;font-size:0.75em;color:#666;word-break:break-all;" id="profAddrCopy" title="Click to copy address">${escapeHtml(address)}</p>`:'';
-
     // Process height placeholder
     const heightHtml=address?`<p class="profile-height" id="processHeightEl">Process height: <span id="processHeightVal">…</span></p>`:'';
 
-    info.innerHTML=`<h2>${escapeHtml(displayName)}${address?` <span class="profile-handle-addr" id="profAddrInline" title="${escapeHtml(address)}">${escapeHtml(abbreviateAddress(address))}</span>`:''}</h2>${bioHtml}${locHtml}${urlHtml}${dateHtml}${changedHtml}${addrHtml}${heightHtml}`;
+    info.innerHTML=`<h2>${escapeHtml(displayName)}${address?` <span class="profile-handle-addr" id="profAddrInline" title="${escapeHtml(address)}">${escapeHtml(abbreviateAddress(address))}</span>`:''}</h2>${bioHtml}${locHtml}${urlHtml}${dateHtml}${changedHtml}${heightHtml}`;
     innerEl.appendChild(info);
 
     panelEl.style.display='block';
@@ -1889,12 +1887,7 @@ const showProfileView=async(identifier,mainnet=true)=>{
       });
     }
 
-    // Wire up address copy
-    const addrEl=document.getElementById('profAddrCopy');
-    if(addrEl) addrEl.addEventListener('click',async()=>{
-      try{await navigator.clipboard.writeText(address);}catch{}
-      const prev=addrEl.textContent;addrEl.textContent='✅ Copied!';setTimeout(()=>{addrEl.textContent=prev;},2000);
-    });
+    // Wire up address copy (abbreviated address in header)
     const addrInlineEl=document.getElementById('profAddrInline');
     if(addrInlineEl) addrInlineEl.addEventListener('click',async(e)=>{
       e.stopPropagation();
