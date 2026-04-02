@@ -409,6 +409,7 @@ namespace P2FK.IO.Services
                 results.Add(new SearchResultProfile
                 {
                     Blockchain = detectedBlockchain,
+                    Address = address,
                     Profile = profile
                 });
             }

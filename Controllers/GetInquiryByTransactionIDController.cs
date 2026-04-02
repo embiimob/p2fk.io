@@ -17,6 +17,10 @@ namespace P2FK.IO.Controllers
         }
 
         // GET <GetInquiryByTransactionIDController>/5
+        /// <summary>Look up a P2FK inquiry by the transaction ID that created it.</summary>
+        /// <param name="id">64-character hexadecimal transaction ID.</param>
+        /// <param name="mainnet">true = Bitcoin mainnet; false = Bitcoin testnet (default true).</param>
+        /// <param name="verbose">Reserved — always treated as false.</param>
         [HttpGet("{id}")]
         public async Task<ActionResult> Get(string id, bool mainnet = true, bool verbose = false)
         {

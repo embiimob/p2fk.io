@@ -16,6 +16,17 @@ namespace P2FK.IO.Controllers
             _searchService = searchService;
         }
 
+        /// <summary>Full-text search for P2FK objects across the indexed blockchain.</summary>
+        /// <remarks>
+        /// Uses Windows Search to query the local index of on-chain object data.
+        /// Supports wildcard searches (e.g. <c>*</c> returns all indexed objects).
+        /// Chain selection: pass <c>mainnet=false</c> for Bitcoin testnet; pass <c>blockchain=LTC|DOG|MZC</c> for sidechains.
+        /// </remarks>
+        /// <param name="searchString">Search query (max 2048 characters). Use <c>*</c> to return all results.</param>
+        /// <param name="qty">Number of results to return, 1–1000 (default 10).</param>
+        /// <param name="skip">Number of results to skip for pagination (default 0).</param>
+        /// <param name="mainnet">true = Bitcoin mainnet; false = Bitcoin testnet. Ignored when blockchain ≠ BTC.</param>
+        /// <param name="blockchain">Target blockchain: BTC (default), LTC, DOG, or MZC.</param>
         [HttpGet]
         public async Task<ActionResult> Get(string searchString = "", int qty = 10, int skip = 0, bool mainnet = true, string blockchain = "BTC")
         {

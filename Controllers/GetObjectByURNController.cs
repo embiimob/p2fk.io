@@ -17,6 +17,10 @@ namespace P2FK.IO.Controllers
         }
 
         // GET <GetObjectByURNController>/5
+        /// <summary>Look up a single P2FK digital object by its URN (Uniform Resource Name).</summary>
+        /// <remarks>The URN is a human-readable identifier that may include a chain prefix, e.g. <c>BTC:txid/filename</c> or a simple alias.</remarks>
+        /// <param name="urn">Object URN — URL-encode slashes as <c>%2F</c>.</param>
+        /// <param name="mainnet">true = Bitcoin mainnet; false = Bitcoin testnet (default true).</param>
         [HttpGet("{urn}")]
         public async Task<ActionResult> Get(string urn, bool mainnet = true)
         {

@@ -20,6 +20,16 @@ namespace P2FK.IO.Controllers
         }
 
         // GET <GetRootByTransactionIDController>/5
+        /// <summary>Retrieve a single on-chain root record (message / file inscription) by its transaction ID.</summary>
+        /// <remarks>
+        /// A "root" is any P2FK-protocol transaction that carries a message, file attachment, or other payload.
+        /// Pass <c>verbose=true</c> to include the full output address list and file metadata.
+        /// For altchains pass <c>blockchain=LTC|DOG|MZC</c> — the <c>mainnet</c> flag is ignored for non-BTC chains.
+        /// </remarks>
+        /// <param name="id">64-character hexadecimal transaction ID.</param>
+        /// <param name="mainnet">true = Bitcoin mainnet; false = Bitcoin testnet (default true).</param>
+        /// <param name="verbose">true = include extended payload metadata in the response.</param>
+        /// <param name="blockchain">Target blockchain: BTC (default), LTC, DOG, or MZC.</param>
         [HttpGet("{id}")]
         public async Task<ActionResult> Get(string id, bool mainnet = true, bool verbose = false, string blockchain = "BTC")
         {
