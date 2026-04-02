@@ -722,7 +722,7 @@ const warmRootCache=async(txid,mainnet,blockchain)=>{
   try{await fetch(c!=='BTC'?`${BASE_URL}/GetRootByTransactionID/${txid}?blockchain=${encodeURIComponent(c)}&verbose=false`:`${BASE_URL}/GetRootByTransactionID/${txid}?mainnet=${!!mainnet}&verbose=false`);}catch{}
 };
 
-const loadImageWithTimeout=async(url,timeout=90000)=>{
+const loadImageWithTimeout=async(url,timeout=180000)=>{
   if(state.imageCache.has(url)) return state.imageCache.get(url);
   if(url===fallbackImage) return url;
   let cur=url;
@@ -1059,7 +1059,8 @@ const renderProfileCard=(profile,blockchain)=>{
 const renderObjectCard=(obj,blockchain)=>{
   const chainUpper=normalizeChain(blockchain);
   const mainnet=chainUpper!=='TBTC';
-  const imgUrl=getImageUrl(obj.Image,obj.URN);
+  let imgUrl=getImageUrl(obj.Image,obj.URN);
+  if(imgUrl===fallbackImage&&getUrnMediaType(obj.URN)==='image') imgUrl=getUrnMediaUrl(obj.URN)||fallbackImage;
   const txm=imgUrl.match(/\/root\/([0-9a-fA-F]{64})\//i)?.[1];
   if(txm) state.txidMeta.set(txm,chainToMeta(blockchain));
 
@@ -1589,7 +1590,8 @@ const getUrnChainBadge=(urn)=>{
 
 const renderObjMiniCard=(obj,mainnet,ownerAddress)=>{
   const card=document.createElement('div');card.className='profile-obj-card';
-  const imgUrl=getImageUrl(obj.Image,obj.URN);
+  let imgUrl=getImageUrl(obj.Image,obj.URN);
+  if(imgUrl===fallbackImage&&getUrnMediaType(obj.URN)==='image') imgUrl=getUrnMediaUrl(obj.URN)||fallbackImage;
   const imgWrap=document.createElement('div');imgWrap.className='poc-img-wrap';
   const img=document.createElement('img');img.src=fallbackImage;img.alt=obj.Name||'Object';
   // Text-only URNs: render content as an SVG image in the thumbnail
@@ -1952,7 +1954,8 @@ const showObjectView=async(identifier,mainnet=true)=>{
 
   const doRender=async(obj)=>{
     detailEl.innerHTML='';
-    const imgUrl=getImageUrl(obj.Image,obj.URN);
+    let imgUrl=getImageUrl(obj.Image,obj.URN);
+    if(imgUrl===fallbackImage&&getUrnMediaType(obj.URN)==='image') imgUrl=getUrnMediaUrl(obj.URN)||fallbackImage;
     const txm=imgUrl.match(/\/root\/([0-9a-fA-F]{64})\//i)?.[1];
     if(txm) state.txidMeta.set(txm,chainToMeta(mainnet?'BTC':'TBTC'));
 
