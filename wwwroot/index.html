@@ -492,6 +492,8 @@
     .profile-obj-card .poc-date { font-size: 0.7em; color: #666; }
     .profile-obj-loading { text-align: center; padding: 18px; color: #888; font-size: 0.85em; }
     .profile-obj-empty { text-align: center; padding: 18px; color: #555; font-size: 0.85em; }
+    .obj-load-more-btn { display: block; margin: 10px auto 4px; padding: 6px 18px; background: #2a2a2a; border: 1px solid #444; color: #b0b0b0; border-radius: 5px; cursor: pointer; font-size: 0.82em; }
+    .obj-load-more-btn:hover { background: #333; color: #bb86fc; border-color: #bb86fc; }
 
     /* ── Single message view ───────────────────────────────────────── */
     #view-message .message-card { margin: 0 auto; max-width: 660px; }
@@ -684,6 +686,10 @@ const chainToMeta = (blockchain) => {
 // ── Session caches ─────────────────────────────────────────────────────
 const getCachedProfile = (a) => { try{const c=sessionStorage.getItem(`p_${a}`);return c?JSON.parse(c):null;}catch{return null;} };
 const cacheProfile = (a,p) => { try{sessionStorage.setItem(`p_${a}`,JSON.stringify(p));}catch{} };
+const getCachedTransaction=(txid,mainnet,blockchain)=>{try{const c=sessionStorage.getItem(`tx_${txid}_${mainnet}_${blockchain}`);return c?JSON.parse(c):null;}catch{return null;}};
+const cacheTransaction=(txid,mainnet,blockchain,data)=>{try{sessionStorage.setItem(`tx_${txid}_${mainnet}_${blockchain}`,JSON.stringify(data));}catch{}};
+const getCachedObject=(id,mainnet)=>{try{const c=sessionStorage.getItem(`obj_${id}_${mainnet}`);return c?JSON.parse(c):null;}catch{return null;}};
+const cacheObject=(id,mainnet,data)=>{try{sessionStorage.setItem(`obj_${id}_${mainnet}`,JSON.stringify(data));}catch{}};
 
 // ── Image helpers ──────────────────────────────────────────────────────
 const MAX_IMG_CACHE=100;
@@ -691,14 +697,15 @@ const cacheImage=(url,res)=>{if(state.imageCache.size>=MAX_IMG_CACHE){state.imag
 
 const resolveUrnPath=(urn)=>{
   if(!urn) return '';
-  urn=urn.replace(/\\/g,'/').replace(/\s+/g,'');
+  urn=urn.replace(/\\/g,'/');
   const parts=urn.split(':').pop().split('/');
+  const fileParts=parts.slice(1).map(p=>encodeURIComponent(p));
   return /^(BTC|LTC|DOG|MZC):/i.test(urn)||/^[A-Za-z0-9]+\/.+/.test(urn)
-    ?`${BASE_URL}/root/${parts[0]}/${parts[1]||''}`:'';
+    ?`${BASE_URL}/root/${parts[0]}/${fileParts.join('/')||''}`:'';
 };
 
 const getImageUrl=(image,urn)=>{
-  const norm=(v)=>typeof v==='string'?v.replace(/\\/g,'/').replace(/\s+/g,'').trim():null;
+  const norm=(v)=>typeof v==='string'?v.replace(/\\/g,'/').trim():null;
   const resolve=(v)=>{
     if(!v) return null;
     const val=norm(v); if(!val) return null;
@@ -714,10 +721,11 @@ const getImageUrl=(image,urn)=>{
 const warmRootCache=async(txid,mainnet,blockchain)=>{
   if(!txid||!/^[0-9a-fA-F]{64}$/.test(txid)) return;
   const c=(blockchain||'BTC').toUpperCase();
+  if(getCachedTransaction(txid,mainnet,c)) return;
   try{await fetch(c!=='BTC'?`${BASE_URL}/GetRootByTransactionID/${txid}?blockchain=${encodeURIComponent(c)}&verbose=false`:`${BASE_URL}/GetRootByTransactionID/${txid}?mainnet=${!!mainnet}&verbose=false`);}catch{}
 };
 
-const loadImageWithTimeout=async(url,timeout=90000)=>{
+const loadImageWithTimeout=async(url,timeout=180000)=>{
   if(state.imageCache.has(url)) return state.imageCache.get(url);
   if(url===fallbackImage) return url;
   let cur=url;
@@ -762,7 +770,9 @@ const fetchProfileByAddress=async(address,mainnet,signal)=>{
 };
 
 const fetchProfileByURN=async(urn,mainnet,signal)=>{
-  try{return await fetchAPI(`${BASE_URL}/GetProfileByURN/${encodeURIComponent(urn)}?mainnet=${mainnet}`,'',signal);}catch{return null;}
+  const cached=getCachedProfile(`urn_${urn}_${mainnet}`);
+  if(cached) return cached;
+  try{const p=await fetchAPI(`${BASE_URL}/GetProfileByURN/${encodeURIComponent(urn)}?mainnet=${mainnet}`,'',signal);if(p) cacheProfile(`urn_${urn}_${mainnet}`,p);return p;}catch{return null;}
 };
 
 // Extract the owner address from any profile object (handles both array and object Creators shapes)
@@ -774,13 +784,18 @@ const _getProfileCreatorAddr=(profile)=>{
   return '';
 };
 // Async URN legitimacy check: returns true if the profile's address matches what GetProfileByURN says
+const _officialCache=new Map();
 const _isOfficialProfile=async(urn,address,mainnet)=>{
   if(!urn||!address) return true; // can't verify → treat as ok
+  const key=`${urn}_${address}_${mainnet}`;
+  if(_officialCache.has(key)) return _officialCache.get(key);
   try{
     const official=await fetchProfileByURN(urn,mainnet,null);
     const officialAddr=_getProfileCreatorAddr(official);
-    if(!officialAddr) return true; // can't determine → treat as ok
-    return officialAddr===address;
+    if(!officialAddr) return true; // can't determine → treat as ok (don't cache uncertain state)
+    const result=officialAddr===address;
+    _officialCache.set(key,result);
+    return result;
   }catch{return true;}
 };
 
@@ -992,7 +1007,7 @@ const renderMessageCard=async(normalized,signal,blockchain,shareParams)=>{
       try{const r=await fetchAPI(`${BASE_URL}/GetRootByTransactionID/${encodeURIComponent(t)}?mainnet=${mn}&blockchain=${ac}`,'',null);
         const root=Array.isArray(r)?r[0]:r;
         const nd=(root&&typeof root==='object')?(root['Block Date']??root.BlockDate??''):'';
-        if(nd&&!isNullDate(nd)){const de=meta.querySelector('.msg-date');if(de)de.textContent=nd;refreshEl.remove();}
+        if(nd&&!isNullDate(nd)){cacheTransaction(t,mn,ac,root);const de=meta.querySelector('.msg-date');if(de)de.textContent=nd;refreshEl.remove();}
         else{refreshEl.textContent='❌';setTimeout(()=>{refreshEl.textContent='🔄 Refresh';refreshEl.style.pointerEvents='';},3000);}
       }catch{refreshEl.textContent='❌';setTimeout(()=>{refreshEl.textContent='🔄 Refresh';refreshEl.style.pointerEvents='';},3000);}
     }
@@ -1047,7 +1062,8 @@ const renderProfileCard=(profile,blockchain)=>{
 const renderObjectCard=(obj,blockchain)=>{
   const chainUpper=normalizeChain(blockchain);
   const mainnet=chainUpper!=='TBTC';
-  const imgUrl=getImageUrl(obj.Image,obj.URN);
+  let imgUrl=getImageUrl(obj.Image,obj.URN);
+  if(imgUrl===fallbackImage&&getUrnMediaType(obj.URN)==='image') imgUrl=getUrnMediaUrl(obj.URN)||fallbackImage;
   const txm=imgUrl.match(/\/root\/([0-9a-fA-F]{64})\//i)?.[1];
   if(txm) state.txidMeta.set(txm,chainToMeta(blockchain));
 
@@ -1310,7 +1326,8 @@ const getUrnMediaUrl=(urn)=>{
   if(/^(BTC|LTC|DOG|MZC):/i.test(u)||/^[A-Za-z0-9]+\/.+/.test(u)){
     const parts=u.split(':').pop().split('/');
     if(!parts[0]||!/^[0-9a-fA-F]{64}$/.test(parts[0])) return null;
-    return parts[1]?`${BASE_URL}/root/${parts[0]}/${parts[1]}`:null;
+    const fileParts=parts.slice(1).map(p=>encodeURIComponent(p));
+    return fileParts.length&&fileParts[0]?`${BASE_URL}/root/${parts[0]}/${fileParts.join('/')}`:null;
   }
   return null;
 };
@@ -1353,10 +1370,14 @@ const fetchTextForUrn=async(urn,mainnet)=>{
     if(chainMatch){blockchain=chainMatch[1].toUpperCase();txid=chainMatch[2];}
     else{blockchain='BTC';txid=u;}
     const isBtcFamily=blockchain==='BTC'||blockchain==='TBTC';
-    const url=isBtcFamily
-      ?`${BASE_URL}/GetRootByTransactionID/${encodeURIComponent(txid)}?mainnet=${!!mainnet}`
-      :`${BASE_URL}/GetRootByTransactionID/${encodeURIComponent(txid)}?blockchain=${blockchain}`;
-    const data=await fetchAPI(url,'',null,15000);
+    let data=getCachedTransaction(txid,mainnet,blockchain);
+    if(!data){
+      const url=isBtcFamily
+        ?`${BASE_URL}/GetRootByTransactionID/${encodeURIComponent(txid)}?mainnet=${!!mainnet}`
+        :`${BASE_URL}/GetRootByTransactionID/${encodeURIComponent(txid)}?blockchain=${blockchain}`;
+      data=await fetchAPI(url,'',null,15000);
+      if(data){const bd=data['Block Date']??data.BlockDate??'';if(bd&&!isNullDate(bd)) cacheTransaction(txid,mainnet,blockchain,data);}
+    }
     if(data&&data.Message!=null){
       text=Array.isArray(data.Message)?data.Message.join('\n'):String(data.Message);
     }
@@ -1573,7 +1594,8 @@ const getUrnChainBadge=(urn)=>{
 
 const renderObjMiniCard=(obj,mainnet,ownerAddress)=>{
   const card=document.createElement('div');card.className='profile-obj-card';
-  const imgUrl=getImageUrl(obj.Image,obj.URN);
+  let imgUrl=getImageUrl(obj.Image,obj.URN);
+  if(imgUrl===fallbackImage&&getUrnMediaType(obj.URN)==='image') imgUrl=getUrnMediaUrl(obj.URN)||fallbackImage;
   const imgWrap=document.createElement('div');imgWrap.className='poc-img-wrap';
   const img=document.createElement('img');img.src=fallbackImage;img.alt=obj.Name||'Object';
   // Text-only URNs: render content as an SVG image in the thumbnail
@@ -1636,6 +1658,7 @@ const renderObjMiniCard=(obj,mainnet,ownerAddress)=>{
 };
 
 const _tabIdForType={owned:'tabOwned',created:'tabCreated',associated:'tabAssoc'};
+const PROFILE_OBJ_PAGE=20;
 const loadProfileObjects=async(type,address,mainnet)=>{
   const gridEl=document.getElementById('profileObjGrid');
   const statusEl=document.getElementById('profileObjStatus');
@@ -1643,6 +1666,9 @@ const loadProfileObjects=async(type,address,mainnet)=>{
   if(!gridEl||!address) return;
   gridEl.innerHTML='';
   gridEl.style.display='none';
+  // Remove any leftover load-more button from a previous batch
+  const prevBtn=gridEl.parentNode?gridEl.parentNode.querySelector('.poc-load-more'):null;
+  if(prevBtn) prevBtn.remove();
   if(statusEl){statusEl.className='profile-obj-loading';statusEl.textContent='Loading…';statusEl.style.display='block';}
   const sortBy=sortEl?sortEl.value:'newest';
   const endpoints={owned:'GetObjectsOwnedByAddress',created:'GetObjectsCreatedByAddress',associated:'GetObjectsByAddress'};
@@ -1662,10 +1688,26 @@ const loadProfileObjects=async(type,address,mainnet)=>{
       if(statusEl){statusEl.className='profile-obj-empty';statusEl.textContent=`No ${type} objects found.`;statusEl.style.display='block';}
     }else{
       if(statusEl) statusEl.style.display='none';
-      objs.forEach(obj=>{
-        const c=renderObjMiniCard(obj,mainnet,type==='owned'?address:undefined);
-        gridEl.appendChild(c);
-      });
+      let rendered=0;
+      const renderBatch=()=>{
+        const end=Math.min(rendered+PROFILE_OBJ_PAGE,objs.length);
+        for(let i=rendered;i<end;i++){
+          const c=renderObjMiniCard(objs[i],mainnet,type==='owned'?address:undefined);
+          gridEl.appendChild(c);
+        }
+        rendered=end;
+        // Remove any old load-more button before potentially adding a new one
+        const old=gridEl.parentNode.querySelector('.poc-load-more');
+        if(old) old.remove();
+        if(rendered<objs.length){
+          const btn=document.createElement('button');
+          btn.className='obj-load-more-btn poc-load-more';
+          btn.textContent=`Load more (${objs.length-rendered} remaining)`;
+          btn.onclick=()=>renderBatch();
+          gridEl.parentNode.insertBefore(btn,gridEl.nextSibling);
+        }
+      };
+      renderBatch();
       gridEl.style.display='grid';
     }
   }catch(e){
@@ -1927,6 +1969,33 @@ const buildObjSection=(title,rows,colDefs)=>{
   return `<div class="obj-section"><p class="obj-section-title">${escapeHtml(title)}</p><div class="obj-list"><div class="obj-list-header">${headerCols}</div>${bodyRows}</div></div>`;
 };
 
+const OBJ_LIST_PAGE=20;
+// Inject rows HTML into a list container; cap at OBJ_LIST_PAGE with a "Show more" button.
+// wireClicks(tmpContainer) is called on the batch's temp div before nodes are moved to listEl.
+const populateObjList=(listElId,rows,wireClicks)=>{
+  const listEl=document.getElementById(listElId);
+  if(!listEl) return;
+  let shown=0;
+  const renderNextBatch=()=>{
+    const end=Math.min(shown+OBJ_LIST_PAGE,rows.length);
+    const tmp=document.createElement('div');
+    tmp.innerHTML=rows.slice(shown,end).join('');
+    if(wireClicks) wireClicks(tmp);
+    const old=listEl.querySelector('.obj-list-show-more');
+    if(old) old.remove();
+    while(tmp.firstChild) listEl.appendChild(tmp.firstChild);
+    shown=end;
+    if(shown<rows.length){
+      const btn=document.createElement('button');
+      btn.className='obj-load-more-btn obj-list-show-more';
+      btn.textContent=`Show more (${rows.length-shown} remaining)`;
+      btn.onclick=()=>renderNextBatch();
+      listEl.appendChild(btn);
+    }
+  };
+  renderNextBatch();
+};
+
 const showObjectView=async(identifier,mainnet=true)=>{
   setView('object');
   const loadEl=document.getElementById('objectLoading');
@@ -1936,7 +2005,8 @@ const showObjectView=async(identifier,mainnet=true)=>{
 
   const doRender=async(obj)=>{
     detailEl.innerHTML='';
-    const imgUrl=getImageUrl(obj.Image,obj.URN);
+    let imgUrl=getImageUrl(obj.Image,obj.URN);
+    if(imgUrl===fallbackImage&&getUrnMediaType(obj.URN)==='image') imgUrl=getUrnMediaUrl(obj.URN)||fallbackImage;
     const txm=imgUrl.match(/\/root\/([0-9a-fA-F]{64})\//i)?.[1];
     if(txm) state.txidMeta.set(txm,chainToMeta(mainnet?'BTC':'TBTC'));
 
@@ -1998,7 +2068,7 @@ const showObjectView=async(identifier,mainnet=true)=>{
           return `<div class="obj-list-row${isUnack?' unack':''}"><span class="col-name owner-addr" data-addr="${escapeHtml(addr)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(name)}${isUnack?' (unacknowledged)':''}</span></div>`;
         }));
         const listEl=document.getElementById('objCreatorsList');
-        if(listEl){listEl.innerHTML=rows.join('');listEl.querySelectorAll('.owner-addr').forEach(el=>el.addEventListener('click',()=>navigateTo('profile',{profile:el.dataset.addr,mainnet})));}
+        if(listEl){listEl.innerHTML='';populateObjList('objCreatorsList',rows,c=>c.querySelectorAll('.owner-addr').forEach(el=>el.addEventListener('click',()=>navigateTo('profile',{profile:el.dataset.addr,mainnet}))));}
       })();
     }
 
@@ -2017,7 +2087,7 @@ const showObjectView=async(identifier,mainnet=true)=>{
           return `<div class="obj-list-row"><span class="col-name owner-addr" data-addr="${escapeHtml(addr)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(name)}</span><span class="col-qty">${units}</span></div>`;
         }));
         const listEl=document.getElementById('objOwnersList');
-        if(listEl){listEl.innerHTML=rows.join('');listEl.querySelectorAll('.owner-addr').forEach(el=>el.addEventListener('click',()=>navigateTo('profile',{profile:el.dataset.addr,mainnet})));}
+        if(listEl){listEl.innerHTML='';populateObjList('objOwnersList',rows,c=>c.querySelectorAll('.owner-addr').forEach(el=>el.addEventListener('click',()=>navigateTo('profile',{profile:el.dataset.addr,mainnet}))));}
       })();
     }
 
@@ -2034,7 +2104,7 @@ const showObjectView=async(identifier,mainnet=true)=>{
           return `<div class="obj-list-row"><span class="col-name owner-addr" data-addr="${escapeHtml(addr)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(name)}</span><span class="col-pct">${pct}%</span></div>`;
         }));
         const listEl=document.getElementById('objRoyaltiesList');
-        if(listEl){listEl.innerHTML=rows.join('');listEl.querySelectorAll('.owner-addr').forEach(el=>el.addEventListener('click',()=>navigateTo('profile',{profile:el.dataset.addr,mainnet})));}
+        if(listEl){listEl.innerHTML='';populateObjList('objRoyaltiesList',rows,c=>c.querySelectorAll('.owner-addr').forEach(el=>el.addEventListener('click',()=>navigateTo('profile',{profile:el.dataset.addr,mainnet}))));}
       })();
     }
 
@@ -2052,7 +2122,7 @@ const showObjectView=async(identifier,mainnet=true)=>{
           return `<div class="obj-list-row${i===0?' listing-cheapest':''}"><span class="col-name owner-addr" data-addr="${escapeHtml(addr)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(name)}</span><span class="col-price">${escapeHtml(String(listing.Value))} BTC</span><span class="col-qty">${escapeHtml(String(qty))}</span></div>`;
         }));
         const listEl=document.getElementById('objListingsList');
-        if(listEl){listEl.innerHTML=rows.join('');listEl.querySelectorAll('.owner-addr').forEach(el=>el.addEventListener('click',()=>navigateTo('profile',{profile:el.dataset.addr,mainnet})));}
+        if(listEl){listEl.innerHTML='';populateObjList('objListingsList',rows,c=>c.querySelectorAll('.owner-addr').forEach(el=>el.addEventListener('click',()=>navigateTo('profile',{profile:el.dataset.addr,mainnet}))));}
       })();
     }
 
@@ -2087,7 +2157,7 @@ const showObjectView=async(identifier,mainnet=true)=>{
           }catch{return `<div class="obj-list-row"><span class="col-name" style="color:#888">Invalid provenance entry</span></div>`;}
         }));
         const listEl=document.getElementById('objChangelog');
-        if(listEl){listEl.innerHTML=rows.join('');listEl.querySelectorAll('.owner-addr').forEach(el=>el.addEventListener('click',()=>navigateTo('profile',{profile:el.dataset.addr,mainnet})));}
+        if(listEl){listEl.innerHTML='';populateObjList('objChangelog',rows,c=>c.querySelectorAll('.owner-addr').forEach(el=>el.addEventListener('click',()=>navigateTo('profile',{profile:el.dataset.addr,mainnet}))));}
       })();
     }
 
@@ -2110,6 +2180,7 @@ const showObjectView=async(identifier,mainnet=true)=>{
         const fresh=await fetchAPI(`${BASE_URL}/GetObjectByAddress/${encodeURIComponent(objectAddress)}?mainnet=${mainnet}&verbose=true`,'Refresh failed',null);
         const newObj=fresh?.Object||fresh?.object||fresh;
         if(!newObj||Array.isArray(newObj)) throw new Error('No object data in refresh response');
+        cacheObject(objectAddress,mainnet,newObj);
         await doRender(newObj);
       }catch(e){
         alert('Refresh failed: '+e.message);
@@ -2121,11 +2192,19 @@ const showObjectView=async(identifier,mainnet=true)=>{
   try{
     let obj=null;
     if(isAddress(identifier)){
-      const data=await fetchAPI(`${BASE_URL}/GetObjectByAddress/${encodeURIComponent(identifier)}?mainnet=${mainnet}&verbose=true`,'',null);
-      obj=data?.Object||data?.object||data;
+      const cached=getCachedObject(identifier,mainnet);
+      if(cached){obj=cached;}else{
+        const data=await fetchAPI(`${BASE_URL}/GetObjectByAddress/${encodeURIComponent(identifier)}?mainnet=${mainnet}&verbose=true`,'',null);
+        obj=data?.Object||data?.object||data;
+        if(obj&&!Array.isArray(obj)) cacheObject(identifier,mainnet,obj);
+      }
     }else{
-      const data=await fetchAPI(`${BASE_URL}/GetObjectByURN/${encodeURIComponent(identifier)}?mainnet=${mainnet}&verbose=true`,'',null);
-      obj=data?.Object||data?.object||data;
+      const cached=getCachedObject(identifier,mainnet);
+      if(cached){obj=cached;}else{
+        const data=await fetchAPI(`${BASE_URL}/GetObjectByURN/${encodeURIComponent(identifier)}?mainnet=${mainnet}&verbose=true`,'',null);
+        obj=data?.Object||data?.object||data;
+        if(obj&&!Array.isArray(obj)) cacheObject(identifier,mainnet,obj);
+      }
     }
     if(!obj||Array.isArray(obj)) throw new Error(`Object not found: ${identifier}`);
     await doRender(obj);
@@ -2146,11 +2225,15 @@ const showMessageView=async(txid,mainnet=true,blockchain='BTC')=>{
 
   try{
     const chain=(blockchain||'BTC').toUpperCase();
-    const url=chain!=='BTC'
-      ?`${BASE_URL}/GetRootByTransactionID/${encodeURIComponent(txid)}?blockchain=${encodeURIComponent(chain)}&verbose=false`
-      :`${BASE_URL}/GetRootByTransactionID/${encodeURIComponent(txid)}?mainnet=${mainnet}&verbose=false`;
-    const data=await fetchAPI(url,'',null);
-    const raw=Array.isArray(data)?data[0]:data;
+    let raw=getCachedTransaction(txid,mainnet,chain);
+    if(!raw){
+      const url=chain!=='BTC'
+        ?`${BASE_URL}/GetRootByTransactionID/${encodeURIComponent(txid)}?blockchain=${encodeURIComponent(chain)}&verbose=false`
+        :`${BASE_URL}/GetRootByTransactionID/${encodeURIComponent(txid)}?mainnet=${mainnet}&verbose=false`;
+      const data=await fetchAPI(url,'',null);
+      raw=Array.isArray(data)?data[0]:data;
+      if(raw){const bd=raw['Block Date']??raw.BlockDate??'';if(bd&&!isNullDate(bd)) cacheTransaction(txid,mainnet,chain,raw);}
+    }
     if(!raw) throw new Error(`Message not found for txid: ${txid}`);
 
     const normalized=normalizeRoot(raw);
