@@ -121,6 +121,9 @@ app.UseSwaggerUI(options =>
         // Inject the P2FK dark theme stylesheet
         options.InjectStylesheet("/swagger-dark.css");
 
+        // Inject the copyright footer
+        options.InjectJavascript("/swagger-footer.js");
+
 
     }
     );
