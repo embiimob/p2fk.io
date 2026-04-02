@@ -452,6 +452,10 @@
     .obj-preview .preview-pdf { width: 100%; aspect-ratio: 1/1; border: none; display: block; }
     .obj-preview-placeholder { text-align: center; padding: 18px; color: #888; font-size: 0.85em; }
     .obj-preview-placeholder a { color: #bb86fc; }
+    .preview-audio-wrap { position: relative; width: 100%; }
+    .preview-audio-wrap .preview-audio-bg { width: 100%; max-height: 260px; object-fit: cover; display: block; opacity: 0.45; filter: blur(2px); }
+    .preview-audio-wrap audio { position: absolute; bottom: 0; left: 0; right: 0; width: 100%; z-index: 2; }
+    .preview-audio-wrap.no-thumb audio { position: static; }
 
     /* ── Object detail name + address header ────────────────────────── */
     .obj-name-row { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 2px; }
@@ -473,9 +477,8 @@
     .profile-obj-card .poc-img-wrap { position: relative; }
     .profile-obj-card img { width: 100%; height: 110px; object-fit: cover; display: block; background: #333; }
     .poc-chain-badge { position: absolute; top: 4px; left: 4px; background: rgba(0,0,0,0.72); color: #03dac6; font-size: 0.65em; font-family: monospace; padding: 1px 5px; border-radius: 3px; pointer-events: none; }
-    .poc-price-badge { position: absolute; bottom: 4px; right: 4px; background: rgba(26,58,42,0.92); color: #03dac6; font-size: 0.68em; font-family: monospace; padding: 2px 6px; border-radius: 3px; pointer-events: none; }
+    .poc-price-badge { display: block; text-align: right; background: transparent; color: #03dac6; font-size: 0.7em; font-family: monospace; padding: 2px 0 0; pointer-events: none; }
     .poc-owned-badge { position: absolute; bottom: 4px; right: 4px; background: rgba(98,0,234,0.85); color: #fff; font-size: 0.68em; font-family: monospace; padding: 2px 6px; border-radius: 3px; pointer-events: none; }
-    .poc-price-badge.has-owned { right: 62px; }
     .not-official-banner { display: block; background: #cf0000; color: #fff; font-size: 0.75em; font-weight: bold; text-align: center; padding: 3px 6px; letter-spacing: 0.04em; border-radius: 3px; margin-top: 4px; pointer-events: none; }
     .not-official-overlay { position: absolute; top: 0; left: 0; right: 0; background: rgba(180,0,0,0.88); color: #fff; font-size: 0.82em; font-weight: bold; text-align: center; padding: 4px 6px; letter-spacing: 0.05em; pointer-events: none; }
     .profile-obj-card .poc-body { padding: 6px 8px; }
@@ -1333,6 +1336,7 @@ const getUrnMediaType=(urn)=>{
   if(/\.html?$/.test(lo)) return 'html';
   if(/\.glb$/.test(lo)) return 'model';
   if(/\.gltf$/.test(lo)) return 'model';
+  if(/\.(png|jpe?g|gif|webp|svg|avif|bmp)$/.test(lo)) return 'image';
   return null;
 };
 
@@ -1403,9 +1407,11 @@ const generateTextImage=(text,width,height)=>{
 };
 
 // ── Build URN media preview element ─────────────────────────────────
-const buildUrnPreviewEl=(urn,objectAddress,mainnet,blockchain)=>{
+const buildUrnPreviewEl=(urn,objectAddress,mainnet,blockchain,imgUrl)=>{
   const mtype=getUrnMediaType(urn);
-  if(!mtype) return null;
+  // If the URN has no special media type but there's an image, show the image in the preview
+  const hasThumb=imgUrl&&imgUrl!==fallbackImage;
+  if(!mtype&&!hasThumb) return null;
 
   const wrap=document.createElement('div');
   wrap.className='obj-preview';
@@ -1423,18 +1429,40 @@ const buildUrnPreviewEl=(urn,objectAddress,mainnet,blockchain)=>{
     return wrap;
   }
 
+  if(!mtype&&hasThumb){
+    // Only an image, no URN media — render as full-size preview
+    const imgEl=document.createElement('img');imgEl.className='preview-img';imgEl.alt='Preview';imgEl.src=fallbackImage;
+    loadImageWithTimeout(imgUrl).then(u=>{imgEl.src=u;}).catch(()=>{});
+    wrap.appendChild(imgEl);
+    return wrap;
+  }
+
   const mediaUrl=getUrnMediaUrl(urn);
   if(!mediaUrl) return null;
 
-  if(mtype==='video'){
+  if(mtype==='image'){
+    const imgEl=document.createElement('img');imgEl.className='preview-img';imgEl.alt='Preview';imgEl.src=fallbackImage;
+    loadImageWithTimeout(mediaUrl).then(u=>{imgEl.src=u;}).catch(()=>{imgEl.src=mediaUrl;});
+    wrap.appendChild(imgEl);
+  }else if(mtype==='video'){
     const v=document.createElement('video');
     v.controls=true;v.preload='auto';v.crossOrigin='anonymous';
     v.src=mediaUrl;
     wrap.appendChild(v);
   }else if(mtype==='audio'){
+    const aWrap=document.createElement('div');
+    if(hasThumb){
+      aWrap.className='preview-audio-wrap';
+      const bgImg=document.createElement('img');bgImg.className='preview-audio-bg';bgImg.alt='';bgImg.src=fallbackImage;
+      loadImageWithTimeout(imgUrl).then(u=>{bgImg.src=u;}).catch(()=>{});
+      aWrap.appendChild(bgImg);
+    }else{
+      aWrap.className='preview-audio-wrap no-thumb';
+    }
     const a=document.createElement('audio');
     a.controls=true;a.preload='metadata';a.src=mediaUrl;
-    wrap.appendChild(a);
+    aWrap.appendChild(a);
+    wrap.appendChild(aWrap);
   }else if(mtype==='pdf'){
     const ifr=document.createElement('iframe');
     ifr.className='preview-pdf';ifr.src=mediaUrl;ifr.title='PDF Preview';
@@ -1456,6 +1484,7 @@ const buildUrnPreviewEl=(urn,objectAddress,mainnet,blockchain)=>{
     wrap.appendChild(ifr);
   }else if(mtype==='model'){
     const mv=document.createElement('model-viewer');
+    console.log('[GLB] Attempting to load model-viewer src:', mediaUrl, '| urn:', urn);
     mv.setAttribute('src',mediaUrl);
     mv.setAttribute('camera-controls','');
     mv.setAttribute('auto-rotate','');
@@ -1472,9 +1501,14 @@ const buildUrnPreviewEl=(urn,objectAddress,mainnet,blockchain)=>{
     const mvLoader=document.createElement('div');
     mvLoader.style.cssText='position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.75);color:#03dac6;padding:7px 18px;border-radius:6px;font-size:0.85em;pointer-events:none;z-index:2;';
     mvLoader.textContent='Loading 3D…';
-    const mvTimeout=setTimeout(()=>{if(mvLoader.style.display!=='none'){mvLoader.style.color='#ff5252';mvLoader.textContent='⚠ Model load timed out';}},120000);
-    mv.addEventListener('load',()=>{clearTimeout(mvTimeout);mvLoader.style.display='none';});
-    mv.addEventListener('error',()=>{clearTimeout(mvTimeout);mvLoader.style.color='#ff5252';mvLoader.textContent='⚠ Failed to load 3D model';});
+    const mvTimeout=setTimeout(()=>{
+      if(mvLoader.style.display!=='none'){
+        console.warn('[GLB] model-viewer load timed out (120s) for src:', mediaUrl);
+        mvLoader.style.color='#ff5252';mvLoader.textContent='⚠ Model load timed out';
+      }
+    },120000);
+    mv.addEventListener('load',()=>{console.log('[GLB] model-viewer loaded successfully:', mediaUrl);clearTimeout(mvTimeout);mvLoader.style.display='none';});
+    mv.addEventListener('error',(e)=>{console.error('[GLB] model-viewer error for src:', mediaUrl, e);clearTimeout(mvTimeout);mvLoader.style.color='#ff5252';mvLoader.textContent='⚠ Failed to load 3D model';});
     mvWrap.appendChild(mv);
     mvWrap.appendChild(mvLoader);
     wrap.appendChild(mvWrap);
@@ -1573,17 +1607,10 @@ const renderObjMiniCard=(obj,mainnet,ownerAddress)=>{
     ownedBadge.textContent=`×${ownedQty}`;
     imgWrap.appendChild(ownedBadge);
   }
-  // Price badge: absolute bottom-right of image (shift left if owned badge is also present)
-  if(lowestPrice!==null){
-    const priceBadge=document.createElement('span');
-    priceBadge.className='poc-price-badge'+(ownedQty!==null&&ownedQty>0?' has-owned':'');
-    priceBadge.textContent=`${lowestPrice} BTC`;
-    imgWrap.appendChild(priceBadge);
-  }
   card.appendChild(imgWrap);
 
   const body=document.createElement('div');body.className='poc-body';
-  body.innerHTML=`<div class="poc-name">${escapeHtml(obj.Name||'Unnamed')}</div>${collectionAddr?`<div class="poc-creator${isCollUnack?' poc-unack':''}" data-addr="${escapeHtml(collectionAddr)}">…</div>`:''}${additionalAddr?`<div class="poc-creator${isAddlUnack?' poc-unack':''}" data-addr="${escapeHtml(additionalAddr)}">…</div>`:''}${totalUnits?`<div class="poc-units">${totalUnits} unit${totalUnits===1?'':'s'}</div>`:''}${obj.CreatedDate&&!isNullDate(obj.CreatedDate)?`<div class="poc-date">${formatDate(obj.CreatedDate)||''}</div>`:''}`;
+  body.innerHTML=`<div class="poc-name">${escapeHtml(obj.Name||'Unnamed')}</div>${collectionAddr?`<div class="poc-creator${isCollUnack?' poc-unack':''}" data-addr="${escapeHtml(collectionAddr)}">…</div>`:''}${additionalAddr?`<div class="poc-creator${isAddlUnack?' poc-unack':''}" data-addr="${escapeHtml(additionalAddr)}">…</div>`:''}${totalUnits?`<div class="poc-units">${totalUnits} unit${totalUnits===1?'':'s'}</div>`:''}${obj.CreatedDate&&!isNullDate(obj.CreatedDate)?`<div class="poc-date">${formatDate(obj.CreatedDate)||''}</div>`:''}${lowestPrice!==null?`<div class="poc-price-badge">${lowestPrice} BTC</div>`:''}`;
   card.appendChild(body);
   card.addEventListener('click',()=>{if(objectAddress) navigateTo('object',{object:objectAddress,mainnet});});
 
@@ -1921,8 +1948,8 @@ const showObjectView=async(identifier,mainnet=true)=>{
 
     card.appendChild(makeShareBtn('object',{id:objectAddress,mainnet}));
 
-    // URN media preview at the top (video, audio, PDF, HTML, GLB)
-    const previewEl=buildUrnPreviewEl(obj.URN,objectAddress,mainnet,mainnet?'BTC':'TBTC');
+    // URN media preview at the top (video, audio, PDF, HTML, GLB, image)
+    const previewEl=buildUrnPreviewEl(obj.URN,objectAddress,mainnet,mainnet?'BTC':'TBTC',imgUrl);
     if(previewEl) card.appendChild(previewEl);
 
     // Header: image + info
