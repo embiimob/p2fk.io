@@ -473,7 +473,11 @@
     .profile-obj-card .poc-img-wrap { position: relative; }
     .profile-obj-card img { width: 100%; height: 110px; object-fit: cover; display: block; background: #333; }
     .poc-chain-badge { position: absolute; top: 4px; left: 4px; background: rgba(0,0,0,0.72); color: #03dac6; font-size: 0.65em; font-family: monospace; padding: 1px 5px; border-radius: 3px; pointer-events: none; }
-    .poc-price-badge { display: inline-block; background: #1a3a2a; color: #03dac6; font-size: 0.7em; font-family: monospace; padding: 2px 6px; border-radius: 3px; margin-top: 4px; }
+    .poc-price-badge { position: absolute; bottom: 4px; right: 4px; background: rgba(26,58,42,0.92); color: #03dac6; font-size: 0.68em; font-family: monospace; padding: 2px 6px; border-radius: 3px; pointer-events: none; }
+    .poc-owned-badge { position: absolute; bottom: 4px; right: 4px; background: rgba(98,0,234,0.85); color: #fff; font-size: 0.68em; font-family: monospace; padding: 2px 6px; border-radius: 3px; pointer-events: none; }
+    .poc-price-badge.has-owned { right: 62px; }
+    .not-official-banner { display: block; background: #cf0000; color: #fff; font-size: 0.75em; font-weight: bold; text-align: center; padding: 3px 6px; letter-spacing: 0.04em; border-radius: 3px; margin-top: 4px; pointer-events: none; }
+    .not-official-overlay { position: absolute; top: 0; left: 0; right: 0; background: rgba(180,0,0,0.88); color: #fff; font-size: 0.82em; font-weight: bold; text-align: center; padding: 4px 6px; letter-spacing: 0.05em; pointer-events: none; }
     .profile-obj-card .poc-body { padding: 6px 8px; }
     .profile-obj-card .poc-name { font-size: 0.82em; color: #e0e0e0; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .profile-obj-card .poc-creator { font-size: 0.68em; color: #bb86fc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
@@ -758,6 +762,25 @@ const fetchProfileByURN=async(urn,mainnet,signal)=>{
   try{return await fetchAPI(`${BASE_URL}/GetProfileByURN/${encodeURIComponent(urn)}?mainnet=${mainnet}`,'',signal);}catch{return null;}
 };
 
+// Extract the owner address from any profile object (handles both array and object Creators shapes)
+const _getProfileCreatorAddr=(profile)=>{
+  if(!profile) return '';
+  const c=profile.Creators;
+  if(Array.isArray(c)) return c.find(a=>typeof a==='string'&&a.length>10)||'';
+  if(c&&typeof c==='object') return Object.keys(c).find(k=>k!=='0'&&k.length>10)||'';
+  return '';
+};
+// Async URN legitimacy check: returns true if the profile's address matches what GetProfileByURN says
+const _isOfficialProfile=async(urn,address,mainnet)=>{
+  if(!urn||!address) return true; // can't verify → treat as ok
+  try{
+    const official=await fetchProfileByURN(urn,mainnet,null);
+    const officialAddr=_getProfileCreatorAddr(official);
+    if(!officialAddr) return true; // can't determine → treat as ok
+    return officialAddr===address;
+  }catch{return true;}
+};
+
 // ── File utilities ─────────────────────────────────────────────────────
 const getFileCardIcon=(ext)=>{
   if(/^(zip|tar|gz|bz2|xz|rar|7z|tgz)$/.test(ext)) return '📦';
@@ -1000,6 +1023,18 @@ const renderProfileCard=(profile,blockchain)=>{
   const body=document.createElement('div');body.className='card-body';
   body.innerHTML=`<p class="card-name">${escapeHtml(profile.DisplayName||profile.URN||'Unknown')} <span class="badge badge-profile">Profile</span><span class="badge badge-chain">${escapeHtml(blockchain||'')}</span></p><p class="card-bio">${escapeHtml((profile.Bio||'').substring(0,100))}</p><p class="card-meta">${navId?escapeHtml(abbreviateAddress(navId)):''} ${formatDate(profile.CreatedDate)||''}</p>`;
   card.appendChild(body);
+
+  // Async URN verification: if the address doesn't match GetProfileByURN Creators → show NOT OFFICIAL
+  if(profile.URN&&address){
+    _isOfficialProfile(profile.URN,address,mainnet).then(official=>{
+      if(!official){
+        const banner=document.createElement('span');
+        banner.className='not-official-banner';
+        banner.textContent='[ NOT OFFICIAL ]';
+        body.appendChild(banner);
+      }
+    });
+  }
 
   card.addEventListener('click',(e)=>{if(e.target.closest('.share-btn')) return;if(navId) navigateTo('profile',{profile:navId,mainnet});});
   return card;
@@ -1437,7 +1472,7 @@ const buildUrnPreviewEl=(urn,objectAddress,mainnet,blockchain)=>{
     const mvLoader=document.createElement('div');
     mvLoader.style.cssText='position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.75);color:#03dac6;padding:7px 18px;border-radius:6px;font-size:0.85em;pointer-events:none;z-index:2;';
     mvLoader.textContent='Loading 3D…';
-    const mvTimeout=setTimeout(()=>{if(mvLoader.style.display!=='none'){mvLoader.style.color='#ff5252';mvLoader.textContent='⚠ Model load timed out';}},15000);
+    const mvTimeout=setTimeout(()=>{if(mvLoader.style.display!=='none'){mvLoader.style.color='#ff5252';mvLoader.textContent='⚠ Model load timed out';}},120000);
     mv.addEventListener('load',()=>{clearTimeout(mvTimeout);mvLoader.style.display='none';});
     mv.addEventListener('error',()=>{clearTimeout(mvTimeout);mvLoader.style.color='#ff5252';mvLoader.textContent='⚠ Failed to load 3D model';});
     mvWrap.appendChild(mv);
@@ -1502,7 +1537,7 @@ const getUrnChainBadge=(urn)=>{
   return null;
 };
 
-const renderObjMiniCard=(obj,mainnet)=>{
+const renderObjMiniCard=(obj,mainnet,ownerAddress)=>{
   const card=document.createElement('div');card.className='profile-obj-card';
   const imgUrl=getImageUrl(obj.Image,obj.URN);
   const imgWrap=document.createElement('div');imgWrap.className='poc-img-wrap';
@@ -1518,7 +1553,6 @@ const renderObjMiniCard=(obj,mainnet)=>{
   const chainBadge=getUrnChainBadge(obj.URN)||(mainnet?'BTC':'TBTC');
   const chainBadgeEl=document.createElement('span');chainBadgeEl.className='poc-chain-badge';chainBadgeEl.textContent=chainBadge;
   imgWrap.appendChild(chainBadgeEl);
-  card.appendChild(imgWrap);
 
   // Creators: index 0 = object address (navigation only), index 1 = collection, index 2 = additional creator
   const creatorKeys=Object.keys(obj.Creators||{});
@@ -1530,8 +1564,26 @@ const renderObjMiniCard=(obj,mainnet)=>{
 
   const totalUnits=obj.Owners?Object.values(obj.Owners).reduce((s,v)=>s+(v?.Item1??v??0),0):0;
   const lowestPrice=obj.Listings&&Object.keys(obj.Listings).length?Math.min(...Object.values(obj.Listings).map(l=>l.Value)):null;
+
+  // Owned qty badge: bottom-right of image when ownerAddress is provided
+  const ownedQty=(ownerAddress&&obj.Owners)?(obj.Owners[ownerAddress]?.Item1??null):null;
+  if(ownedQty!==null&&ownedQty>0){
+    const ownedBadge=document.createElement('span');
+    ownedBadge.className='poc-owned-badge';
+    ownedBadge.textContent=`×${ownedQty}`;
+    imgWrap.appendChild(ownedBadge);
+  }
+  // Price badge: absolute bottom-right of image (shift left if owned badge is also present)
+  if(lowestPrice!==null){
+    const priceBadge=document.createElement('span');
+    priceBadge.className='poc-price-badge'+(ownedQty!==null&&ownedQty>0?' has-owned':'');
+    priceBadge.textContent=`${lowestPrice} BTC`;
+    imgWrap.appendChild(priceBadge);
+  }
+  card.appendChild(imgWrap);
+
   const body=document.createElement('div');body.className='poc-body';
-  body.innerHTML=`<div class="poc-name">${escapeHtml(obj.Name||'Unnamed')}</div>${collectionAddr?`<div class="poc-creator${isCollUnack?' poc-unack':''}" data-addr="${escapeHtml(collectionAddr)}">…</div>`:''}${additionalAddr?`<div class="poc-creator${isAddlUnack?' poc-unack':''}" data-addr="${escapeHtml(additionalAddr)}">…</div>`:''}${totalUnits?`<div class="poc-units">${totalUnits} unit${totalUnits===1?'':'s'}</div>`:''}${obj.CreatedDate&&!isNullDate(obj.CreatedDate)?`<div class="poc-date">${formatDate(obj.CreatedDate)||''}</div>`:''}${lowestPrice!==null?`<div class="poc-price-badge">${lowestPrice} BTC</div>`:''}`;
+  body.innerHTML=`<div class="poc-name">${escapeHtml(obj.Name||'Unnamed')}</div>${collectionAddr?`<div class="poc-creator${isCollUnack?' poc-unack':''}" data-addr="${escapeHtml(collectionAddr)}">…</div>`:''}${additionalAddr?`<div class="poc-creator${isAddlUnack?' poc-unack':''}" data-addr="${escapeHtml(additionalAddr)}">…</div>`:''}${totalUnits?`<div class="poc-units">${totalUnits} unit${totalUnits===1?'':'s'}</div>`:''}${obj.CreatedDate&&!isNullDate(obj.CreatedDate)?`<div class="poc-date">${formatDate(obj.CreatedDate)||''}</div>`:''}`;
   card.appendChild(body);
   card.addEventListener('click',()=>{if(objectAddress) navigateTo('object',{object:objectAddress,mainnet});});
 
@@ -1584,7 +1636,7 @@ const loadProfileObjects=async(type,address,mainnet)=>{
     }else{
       if(statusEl) statusEl.style.display='none';
       objs.forEach(obj=>{
-        const c=renderObjMiniCard(obj,mainnet);
+        const c=renderObjMiniCard(obj,mainnet,type==='owned'?address:undefined);
         gridEl.appendChild(c);
       });
       gridEl.style.display='grid';
@@ -1702,6 +1754,19 @@ const showProfileView=async(identifier,mainnet=true)=>{
 
     panelEl.style.display='block';
     loadEl.style.display='none';
+
+    // Async URN legitimacy check: verify Creators address from GetProfileByURN matches this address
+    if(profile.URN&&address){
+      _isOfficialProfile(profile.URN,address,mainnet).then(official=>{
+        if(!official){
+          const banner=document.createElement('div');
+          banner.style.cssText='background:#cf0000;color:#fff;font-size:1em;font-weight:bold;text-align:center;padding:7px 12px;border-radius:5px;letter-spacing:0.06em;margin-top:8px;';
+          banner.textContent='[ NOT OFFICIAL ]';
+          // Insert at the top of the info block so it's immediately visible
+          info.insertBefore(banner,info.firstChild);
+        }
+      });
+    }
 
     // Wire up address copy
     const addrEl=document.getElementById('profAddrCopy');
