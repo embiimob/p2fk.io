@@ -549,7 +549,7 @@
   <label title="Dogecoin"><input type="checkbox" id="chkDOG"> DOG</label>
   <label title="Mazacoin"><input type="checkbox" id="chkMZC"> MZC</label>
   <span class="sep"></span>
-  <label title="System transactions (SEC/OBJ/LST/BRN/PRO/BUY)"><input type="checkbox" id="chkSystem"> System</label>
+  <label title="System transactions (SEC/OBJ/LST/BRN/PRO/BUY/GIV)"><input type="checkbox" id="chkSystem"> ⚙️</label>
 </div>
 
 <!-- ── Main content ─────────────────────────────────────────────────── -->
@@ -640,7 +640,7 @@ const CHAINS = {
 const CHAIN_UPPER_TO_API = { 'BTC':'BTC','TBTC':'BTC','LTC':'LTC','DOG':'DOG','MZC':'MZC' };
 
 // System transaction file types — messages containing these files are hidden by default
-const SYSTEM_EXTS = new Set(['SEC','OBJ','LST','BRN','PRO','BUY']);
+const SYSTEM_EXTS = new Set(['SEC','OBJ','LST','BRN','PRO','BUY','GIV']);
 const isSystemMsg = (files) => (files||[]).some(f => {
   const u=(f||'').toUpperCase();
   if(SYSTEM_EXTS.has(u)) return true;
@@ -1185,12 +1185,15 @@ const appendResultItems=async(objectResults,profileResults,rootResults,searchId,
     if(!da&&!db) return 0;if(!da) return 1;if(!db) return -1;return db-da;
   });
   const feed=document.getElementById('feed');
+  const showSystem=document.getElementById('chkSystem')?.checked;
   let rendered=0;
   for(const item of items){
     if(state.currentSearchId!==searchId) break;
     if(rendered>=DISPLAY_BATCH_SIZE) break;
     const ch=normalizeChain(item.blockchain);
     if((state.chainCounts[ch]||0)>=MAX_PER_CHAIN) continue;
+    // Skip system messages entirely when System checkbox is unchecked (no render → no flash)
+    if(item.type==='message'&&!showSystem&&isSystemMsg(item.data.files)) continue;
     state.chainCounts[ch]=(state.chainCounts[ch]||0)+1;
     rendered++;
     let card;
@@ -2191,7 +2194,7 @@ const showObjectView=async(identifier,mainnet=true)=>{
       const secEl=document.createElement('div');secEl.className='obj-section';
       secEl.innerHTML=`<p class="obj-section-title">Provenance</p><div class="obj-list changelog"><div class="obj-list-header"><span class="col-name">Parties</span><span class="col-date">Date</span><span class="col-action">Action</span></div><div id="objChangelog"><div class="obj-list-row" style="color:#888">Loading…</div></div></div>`;
       card.appendChild(secEl);
-      const actionIcons={mint:'🪙',transfer:'↔️',list:'🏷️',delist:'✖️',lock:'🔒',burn:'🔥',edit:'✏️',create:'✨',claim:'⚓',buy:'💰'};
+      const actionIcons={mint:'🪙',transfer:'↔️',list:'🏷️',delist:'✖️',lock:'🔒',burn:'🔥',edit:'✏️',create:'✨',claim:'⚓',buy:'💰',give:'🎁',grant:'🔓'};
       (async()=>{
         const rows=await Promise.all(changelog.map(async entry=>{
           try{
