@@ -921,10 +921,10 @@ const fmtVotes=(n)=>{if(n==null)return'—';const v=Number(n);return isFinite(v)
 const renderPollCard=(el,queAddr,queText,endBlock,answers,mainnet,downloadUrl)=>{
   const optHtml=answers.map(a=>`<div class="poll-option" data-addr="${escapeHtml(a.addr)}"><div class="poll-option-text">${escapeHtml(a.text)}</div><div class="poll-bar-row"><div class="poll-bar-wrap"><div class="poll-bar"></div></div><span class="poll-count">—</span></div></div>`).join('');
   const endHtml=endBlock?`<div class="poll-end">Ends at block ${escapeHtml(String(endBlock))}</div>`:'';
-  el.innerHTML=`<div class="poll-card"><div class="poll-header"><span class="poll-badge">📊 Poll</span><span class="poll-status"></span></div><div class="poll-question">${escapeHtml(queText)}</div>${endHtml}<div class="poll-gate" style="display:none"></div><div class="poll-options">${optHtml}</div><div class="poll-total" style="display:none"></div><button class="poll-vote-btn" style="display:none">Refresh Votes</button><div class="poll-error" style="display:none"></div></div>`;
-  // Shared helper: populate vote bars from AnswerData
+  el.innerHTML=`<div class="poll-card"><div class="poll-header"><span class="poll-badge">📊 Poll</span><span class="poll-status"></span></div><div class="poll-question">${escapeHtml(queText)}</div>${endHtml}<div class="poll-gate" style="display:none"></div><div class="poll-options">${optHtml}</div><div class="poll-total" style="display:none"></div><button class="poll-vote-btn" style="display:none">Count Votes</button><div class="poll-error" style="display:none"></div></div>`;
+  // Populate vote bars from AnswerData (works for both verbose and non-verbose once totals are present)
   const applyVoteData=(r)=>{
-    if(!r||!Array.isArray(r.AnswerData)||!r.AnswerData.length) return;
+    if(!r||!Array.isArray(r.AnswerData)||!r.AnswerData.length) return false;
     const totMap={};
     r.AnswerData.forEach(a=>{totMap[a.Address]={votes:(a.TotalVotes||0)+(a.TotalGatedVotes||0),value:(a.TotalValue||0)+(a.TotalGatedValue||0)};});
     const grandTotal=r.AnswerData.reduce((s,a)=>s+(a.TotalVotes||0)+(a.TotalGatedVotes||0),0);
@@ -934,7 +934,7 @@ const renderPollCard=(el,queAddr,queText,endBlock,answers,mainnet,downloadUrl)=>
       const pct=grandTotal>0?(t.votes/grandTotal*100).toFixed(1):'0.0';
       const bar=opt.querySelector('.poll-bar');
       bar.style.width=`${pct}%`;
-      if(t.votes===maxVotes&&t.votes>0) bar.classList.add('winner');
+      if(t.votes===maxVotes&&t.votes>0) bar.classList.add('winner'); else bar.classList.remove('winner');
       const cEl=opt.querySelector('.poll-count');
       cEl.textContent=`${fmtVotes(t.votes)} (${pct}%)`;cEl.classList.add('has-votes');
     });
@@ -943,8 +943,28 @@ const renderPollCard=(el,queAddr,queText,endBlock,answers,mainnet,downloadUrl)=>
     const totalEl=el.querySelector('.poll-total');
     totalEl.textContent=`Total: ${fmtVotes(gTotal)} votes${gVal?' · '+fmtVotes(gVal)+' value':''}`;
     totalEl.style.display='';
+    return gTotal>0;
   };
-  // Single fetch for status, gates, and last-known vote totals
+  const btn=el.querySelector('.poll-vote-btn');
+  const errEl=el.querySelector('.poll-error');
+  // verbose=true fetch used by button (count/refresh)
+  const runVerboseFetch=async(label)=>{
+    btn.disabled=true;btn.textContent='⏳ Calculating…';errEl.style.display='none';
+    try{
+      const r=await fetchAPI(`${BASE_URL}/GetInquiryByAddress/${encodeURIComponent(queAddr)}?mainnet=${mainnet}&verbose=true`,'',null,180000);
+      if(!r||typeof r!=='object') throw new Error('No data returned');
+      applyVoteData(r);
+      // After a successful verbose run: open polls keep the Refresh button; closed polls hide it
+      const stillOpen=r.status==='open';
+      if(stillOpen){btn.textContent='Refresh Votes';btn.disabled=false;}
+      else{btn.style.display='none';btn.disabled=false;}
+    }catch(e){
+      errEl.textContent='Failed: '+(e.message||'Unknown error');errEl.style.display='';
+      btn.textContent=label;btn.disabled=false;
+    }
+  };
+  btn.addEventListener('click',()=>runVerboseFetch(btn.textContent));
+  // Initial load: verbose=false for fast metadata + any cached totals
   fetchAPI(`${BASE_URL}/GetInquiryByAddress/${encodeURIComponent(queAddr)}?mainnet=${mainnet}&verbose=false`,'',null,15000).then(r=>{
     if(!r||typeof r!=='object') return;
     const statusEl=el.querySelector('.poll-status');
@@ -957,26 +977,15 @@ const renderPollCard=(el,queAddr,queText,endBlock,answers,mainnet,downloadUrl)=>
     if(Array.isArray(r.AuthorizedByGate)&&r.AuthorizedByGate.length) gates.push(`Authorized: ${r.AuthorizedByGate.length} address${r.AuthorizedByGate.length>1?'es':''}`);
     if(r.RequireSignature) gates.push('Signature required');
     if(gates.length){const g=el.querySelector('.poll-gate');g.textContent='🔒 '+gates.join(' · ');g.style.display='';}
-    // Pre-populate vote bars from returned totals
-    applyVoteData(r);
-    // Only open polls need a Refresh button
-    if(isOpen) el.querySelector('.poll-vote-btn').style.display='';
+    const hasTotals=applyVoteData(r);
+    // Button visibility rules:
+    //   OPEN poll                         → always show "Count Votes" (verbose=true for fresh count)
+    //   CLOSED, no totals yet             → show "Calculate" (verbose=true to compute final totals)
+    //   CLOSED, totals already present    → no button (final results displayed)
+    if(isOpen){btn.textContent='Count Votes';btn.style.display='';}
+    else if(!hasTotals){btn.textContent='Calculate';btn.style.display='';}
+    // else: closed + has totals → button stays hidden
   }).catch(()=>{});
-  // Refresh Votes button (only shown for open polls)
-  const btn=el.querySelector('.poll-vote-btn');
-  const errEl=el.querySelector('.poll-error');
-  btn.addEventListener('click',async()=>{
-    btn.disabled=true;btn.textContent='⏳ Refreshing…';errEl.style.display='none';
-    try{
-      const r=await fetchAPI(`${BASE_URL}/GetInquiryByAddress/${encodeURIComponent(queAddr)}?mainnet=${mainnet}&verbose=false`,'',null,15000);
-      if(!r||typeof r!=='object') throw new Error('No data returned');
-      applyVoteData(r);
-      btn.textContent='Refresh Votes';btn.disabled=false;
-    }catch(e){
-      errEl.textContent='Failed: '+(e.message||'Unknown error');errEl.style.display='';
-      btn.textContent='Refresh Votes';btn.disabled=false;
-    }
-  });
 };
 
 // ── Attachment renderer ────────────────────────────────────────────────
