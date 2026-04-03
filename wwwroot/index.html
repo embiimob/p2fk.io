@@ -921,50 +921,60 @@ const fmtVotes=(n)=>{if(n==null)return'—';const v=Number(n);return isFinite(v)
 const renderPollCard=(el,queAddr,queText,endBlock,answers,mainnet,downloadUrl)=>{
   const optHtml=answers.map(a=>`<div class="poll-option" data-addr="${escapeHtml(a.addr)}"><div class="poll-option-text">${escapeHtml(a.text)}</div><div class="poll-bar-row"><div class="poll-bar-wrap"><div class="poll-bar"></div></div><span class="poll-count">—</span></div></div>`).join('');
   const endHtml=endBlock?`<div class="poll-end">Ends at block ${escapeHtml(String(endBlock))}</div>`:'';
-  el.innerHTML=`<div class="poll-card"><div class="poll-header"><span class="poll-badge">📊 Poll</span><span class="poll-status"></span></div><div class="poll-question">${escapeHtml(queText)}</div>${endHtml}<div class="poll-gate" style="display:none"></div><div class="poll-options">${optHtml}</div><div class="poll-total" style="display:none"></div><button class="poll-vote-btn">Count Votes</button><div class="poll-error" style="display:none"></div></div>`;
-  // Fetch non-verbose metadata for gates/status asynchronously
+  el.innerHTML=`<div class="poll-card"><div class="poll-header"><span class="poll-badge">📊 Poll</span><span class="poll-status"></span></div><div class="poll-question">${escapeHtml(queText)}</div>${endHtml}<div class="poll-gate" style="display:none"></div><div class="poll-options">${optHtml}</div><div class="poll-total" style="display:none"></div><button class="poll-vote-btn" style="display:none">Refresh Votes</button><div class="poll-error" style="display:none"></div></div>`;
+  // Shared helper: populate vote bars from AnswerData
+  const applyVoteData=(r)=>{
+    if(!r||!Array.isArray(r.AnswerData)||!r.AnswerData.length) return;
+    const totMap={};
+    r.AnswerData.forEach(a=>{totMap[a.Address]={votes:(a.TotalVotes||0)+(a.TotalGatedVotes||0),value:(a.TotalValue||0)+(a.TotalGatedValue||0)};});
+    const grandTotal=r.AnswerData.reduce((s,a)=>s+(a.TotalVotes||0)+(a.TotalGatedVotes||0),0);
+    const maxVotes=Math.max(...r.AnswerData.map(a=>(a.TotalVotes||0)+(a.TotalGatedVotes||0)),1);
+    el.querySelectorAll('.poll-option').forEach(opt=>{
+      const t=totMap[opt.dataset.addr];if(!t) return;
+      const pct=grandTotal>0?(t.votes/grandTotal*100).toFixed(1):'0.0';
+      const bar=opt.querySelector('.poll-bar');
+      bar.style.width=`${pct}%`;
+      if(t.votes===maxVotes&&t.votes>0) bar.classList.add('winner');
+      const cEl=opt.querySelector('.poll-count');
+      cEl.textContent=`${fmtVotes(t.votes)} (${pct}%)`;cEl.classList.add('has-votes');
+    });
+    const gTotal=(r.TotalVotes||0)+(r.TotalGatedVotes||0);
+    const gVal=(r.TotalValue||0)+(r.TotalGatedValue||0);
+    const totalEl=el.querySelector('.poll-total');
+    totalEl.textContent=`Total: ${fmtVotes(gTotal)} votes${gVal?' · '+fmtVotes(gVal)+' value':''}`;
+    totalEl.style.display='';
+  };
+  // Single fetch for status, gates, and last-known vote totals
   fetchAPI(`${BASE_URL}/GetInquiryByAddress/${encodeURIComponent(queAddr)}?mainnet=${mainnet}&verbose=false`,'',null,15000).then(r=>{
     if(!r||typeof r!=='object') return;
     const statusEl=el.querySelector('.poll-status');
-    if(r.status){const open=r.status==='open';statusEl.textContent=open?'OPEN':'CLOSED';statusEl.className=`poll-status-badge ${open?'poll-status-open':'poll-status-closed'}`;}
+    const isOpen=r.status==='open';
+    if(r.status){statusEl.textContent=isOpen?'OPEN':'CLOSED';statusEl.className=`poll-status-badge ${isOpen?'poll-status-open':'poll-status-closed'}`;}
     if(r.MaxBlockHeight&&!endBlock){const d=el.querySelector('.poll-end');if(d)d.textContent=`Ends at block ${r.MaxBlockHeight.toLocaleString()}`;}
     const gates=[];
-    if(r.OwnsObjectGate) gates.push(`Must own object: ${abbreviateAddress(String(r.OwnsObjectGate))}`);
-    if(r.OwnsCreatedByGate) gates.push(`Created by: ${abbreviateAddress(String(r.OwnsCreatedByGate))}`);
+    if(r.OwnsObjectGate){const arr=Array.isArray(r.OwnsObjectGate)?r.OwnsObjectGate:[r.OwnsObjectGate];if(arr.length) gates.push(`Must own object: ${arr.map(a=>abbreviateAddress(String(a))).join(', ')}`);}
+    if(r.OwnsCreatedByGate){const arr=Array.isArray(r.OwnsCreatedByGate)?r.OwnsCreatedByGate:[r.OwnsCreatedByGate];if(arr.length) gates.push(`Created by: ${arr.map(a=>abbreviateAddress(String(a))).join(', ')}`);}
     if(Array.isArray(r.AuthorizedByGate)&&r.AuthorizedByGate.length) gates.push(`Authorized: ${r.AuthorizedByGate.length} address${r.AuthorizedByGate.length>1?'es':''}`);
     if(r.RequireSignature) gates.push('Signature required');
     if(gates.length){const g=el.querySelector('.poll-gate');g.textContent='🔒 '+gates.join(' · ');g.style.display='';}
+    // Pre-populate vote bars from returned totals
+    applyVoteData(r);
+    // Only open polls need a Refresh button
+    if(isOpen) el.querySelector('.poll-vote-btn').style.display='';
   }).catch(()=>{});
-  // Count Votes button
+  // Refresh Votes button (only shown for open polls)
   const btn=el.querySelector('.poll-vote-btn');
   const errEl=el.querySelector('.poll-error');
   btn.addEventListener('click',async()=>{
-    btn.disabled=true;btn.textContent='⏳ Counting…';errEl.style.display='none';
+    btn.disabled=true;btn.textContent='⏳ Refreshing…';errEl.style.display='none';
     try{
-      const r=await fetchAPI(`${BASE_URL}/GetInquiryByAddress/${encodeURIComponent(queAddr)}?mainnet=${mainnet}&verbose=true`,'',null,180000);
-      if(!r||!Array.isArray(r.AnswerData)) throw new Error('No answer data returned');
-      const totMap={};
-      r.AnswerData.forEach(a=>{totMap[a.Address]={votes:(a.TotalVotes||0)+(a.TotalGatedVotes||0),value:(a.TotalValue||0)+(a.TotalGatedValue||0)};});
-      const grandTotal=r.AnswerData.reduce((s,a)=>s+(a.TotalVotes||0)+(a.TotalGatedVotes||0),0);
-      const maxVotes=Math.max(...r.AnswerData.map(a=>(a.TotalVotes||0)+(a.TotalGatedVotes||0)),1);
-      el.querySelectorAll('.poll-option').forEach(opt=>{
-        const t=totMap[opt.dataset.addr];if(!t) return;
-        const pct=grandTotal>0?(t.votes/grandTotal*100).toFixed(1):'0.0';
-        const bar=opt.querySelector('.poll-bar');
-        bar.style.width=`${pct}%`;
-        if(t.votes===maxVotes&&t.votes>0) bar.classList.add('winner');
-        const cEl=opt.querySelector('.poll-count');
-        cEl.textContent=`${fmtVotes(t.votes)} (${pct}%)`;cEl.classList.add('has-votes');
-      });
-      const gTotal=(r.TotalVotes||0)+(r.TotalGatedVotes||0);
-      const gVal=(r.TotalValue||0)+(r.TotalGatedValue||0);
-      const totalEl=el.querySelector('.poll-total');
-      totalEl.textContent=`Total: ${fmtVotes(gTotal)} votes${gVal?' · '+fmtVotes(gVal)+' value':''}`;
-      totalEl.style.display='';
-      btn.textContent='🔄 Refresh Votes';btn.disabled=false;
+      const r=await fetchAPI(`${BASE_URL}/GetInquiryByAddress/${encodeURIComponent(queAddr)}?mainnet=${mainnet}&verbose=false`,'',null,15000);
+      if(!r||typeof r!=='object') throw new Error('No data returned');
+      applyVoteData(r);
+      btn.textContent='Refresh Votes';btn.disabled=false;
     }catch(e){
       errEl.textContent='Failed: '+(e.message||'Unknown error');errEl.style.display='';
-      btn.textContent='Count Votes';btn.disabled=false;
+      btn.textContent='Refresh Votes';btn.disabled=false;
     }
   });
 };
@@ -1211,20 +1221,8 @@ const renderObjectCard=(obj,blockchain)=>{
 // ── Search pagination helpers ──────────────────────────────────────────
 const allExhausted=()=>Object.values(state.pagination).every(p=>p.exhausted)&&state.buffer.length===0;
 const anyMoreNeeded=()=>Object.values(state.pagination).some(p=>!p.exhausted)||state.buffer.length>0;
-// Returns true only if there is pending data (buffer or non-exhausted pagination slots) for
-// chains that are currently checked — prevents infinite auto-load when all loaded cards are hidden.
-const hasMoreForVisibleChains=()=>{
-  const allowed=new Set();
-  if(document.getElementById('chkBitcoin').checked)  allowed.add('BTC');
-  if(document.getElementById('chkTestnet3').checked) allowed.add('TBTC');
-  if(document.getElementById('chkLTC').checked)      allowed.add('LTC');
-  if(document.getElementById('chkDOG').checked)      allowed.add('DOG');
-  if(document.getElementById('chkMZC').checked)      allowed.add('MZC');
-  if(state.buffer.some(item=>allowed.has(normalizeChain(item.blockchain)))) return true;
-  return Object.entries(state.pagination).some(([key,p])=>!p.exhausted&&allowed.has(key.split(':')[1]));
-};
+const updateResultCount=()=>{const n=state.totalDisplayed;const rc=document.getElementById('resultCount');if(n){rc.textContent=`${n} result${n===1?'':'s'} found`;rc.style.display='block';}};
 const endpointForType=(type)=>type==='objects'?'GetKnownObjectsBySearchString':type==='profiles'?'GetKnownProfilesBySearchString':'GetKnownRootsBySearchString';
-const countVisible=()=>{let n=0;document.querySelectorAll('#feed [data-chain]').forEach(c=>{if(c.style.display!=='none')n++;});return n;};
 
 const fetchNextPage=async(signal)=>{
   const pending=Object.entries(state.pagination).filter(([,p])=>!p.exhausted);
@@ -1264,48 +1262,6 @@ const fetchNextPage=async(signal)=>{
     }
   });
   return{objectResults,profileResults,rootResults};
-};
-
-// ── Chain filter ───────────────────────────────────────────────────────
-const applyChainFilter=(userInteraction=false)=>{
-  const allowed=new Set();
-  if(document.getElementById('chkBitcoin').checked) allowed.add('BTC');
-  if(document.getElementById('chkTestnet3').checked) allowed.add('TBTC');
-  if(document.getElementById('chkLTC').checked) allowed.add('LTC');
-  if(document.getElementById('chkDOG').checked) allowed.add('DOG');
-  if(document.getElementById('chkMZC').checked) allowed.add('MZC');
-  const showSystem=document.getElementById('chkSystem')?.checked;
-  let vis=0;
-  document.querySelectorAll('#feed [data-chain]').forEach(c=>{
-    const ch=c.dataset.chain;
-    const chainPass=ch?(allowed.has(ch)):(allowed.has('BTC')||allowed.has('TBTC'));
-    const sysPass=showSystem||c.dataset.system!=='true';
-    const pass=chainPass&&sysPass;
-    c.style.display=pass?'':'none';
-    if(pass) vis++;
-  });
-  const total=state.totalDisplayed;
-  const rc=document.getElementById('resultCount');
-  if(total){rc.textContent=vis===total?`${vis} result${vis===1?'':'s'} found`:`${vis} of ${total} result${total===1?'':'s'} match filters`;rc.style.display='block';}
-  if(userInteraction){
-    if(vis===0){
-      // Page collapsed — stop sentinel from triggering loadMoreBatch for now-hidden chains
-      scrollObserver.unobserve(document.getElementById('loadSentinel'));
-      if(allowed.size>0&&!state.isSearching){
-        if(hasMoreForVisibleChains()){
-          // Pending pages exist for a visible chain — drain them
-          setTimeout(()=>loadMoreBatch(),0);
-        }else{
-          // No data for the checked chains — run a fresh search with the new selection
-          setTimeout(()=>performSearch(state.lastSearchText||'*'),0);
-        }
-      }
-    }
-    // vis > 0: leave the sentinel as-is so scroll-to-load-more continues normally
-  }else{
-    // Internal call from loadMoreBatch: only auto-load if there is data for visible chains
-    if(vis===0&&anyMoreNeeded()&&hasMoreForVisibleChains()&&!state.isLoadingMore&&!state.isSearching) setTimeout(()=>loadMoreBatch(),0);
-  }
 };
 
 // ── Append search results ──────────────────────────────────────────────
@@ -1361,7 +1317,7 @@ const loadMoreBatch=async()=>{
   const searchId=state.currentSearchId;
   const signal=state.abortController?.signal;
   const loadEl=document.getElementById('searchLoading');
-  loadEl.textContent=countVisible()===0?'Searching deeper…':'Loading more…';
+  loadEl.textContent=state.totalDisplayed===0?'Searching deeper…':'Loading more…';
   loadEl.style.display='block';
   try{
     // Drain the buffer first; only fetch from the API when it is empty
@@ -1374,12 +1330,12 @@ const loadMoreBatch=async()=>{
     const added=await appendResultItems(objectResults,profileResults,rootResults,searchId,signal);
     if(state.currentSearchId!==searchId) return;
     state.totalDisplayed+=added;
-    applyChainFilter();
+    updateResultCount();
   }catch(e){if(e.name!=='AbortError') showSearchError('Failed to load more: '+e.message);}
   finally{
     loadEl.style.display='none';loadEl.textContent='Loading…';state.isLoadingMore=false;
-    if(state.currentSearchId===searchId&&anyMoreNeeded()&&hasMoreForVisibleChains()){
-      if(countVisible()<DISPLAY_BATCH_SIZE&&(state.autoLoadDepth||0)<6){state.autoLoadDepth=(state.autoLoadDepth||0)+1;setTimeout(()=>loadMoreBatch(),0);}
+    if(state.currentSearchId===searchId&&anyMoreNeeded()){
+      if(state.totalDisplayed<DISPLAY_BATCH_SIZE&&(state.autoLoadDepth||0)<6){state.autoLoadDepth=(state.autoLoadDepth||0)+1;setTimeout(()=>loadMoreBatch(),0);}
       else{state.autoLoadDepth=0;scrollObserver.observe(sentinel);}
     }
   }
@@ -1435,13 +1391,13 @@ const performKeywordSearch=async(keyword)=>{
     if(state.currentSearchId!==searchId) return;
     state.totalDisplayed+=added;
     if(!added&&allExhausted()){feedEl.innerHTML='<div style="text-align:center;padding:30px;color:#666;">No results for #'+escapeHtml(keyword)+'</div>';document.getElementById('resultCount').style.display='none';}
-    else applyChainFilter();
+    else updateResultCount();
   }catch(e){
     if(e.name!=='AbortError'){showSearchError('Keyword search failed: '+e.message);loadEl.style.display='none';}
   }finally{
     if(state.currentSearchId===searchId){state.isSearching=false;btn.disabled=false;btn.textContent='Search';inp.disabled=false;loadEl.style.display='none';loadEl.textContent='Loading…';}
-    if(state.currentSearchId===searchId&&anyMoreNeeded()&&hasMoreForVisibleChains()){
-      if(countVisible()<DISPLAY_BATCH_SIZE&&(state.autoLoadDepth||0)<6){state.autoLoadDepth=(state.autoLoadDepth||0)+1;setTimeout(()=>loadMoreBatch(),0);}
+    if(state.currentSearchId===searchId&&anyMoreNeeded()){
+      if(state.totalDisplayed<DISPLAY_BATCH_SIZE&&(state.autoLoadDepth||0)<6){state.autoLoadDepth=(state.autoLoadDepth||0)+1;setTimeout(()=>loadMoreBatch(),0);}
       else{state.autoLoadDepth=0;scrollObserver.observe(document.getElementById('loadSentinel'));}
     }
   }
@@ -1497,13 +1453,13 @@ const performSearch=async(searchText)=>{
     if(state.currentSearchId!==searchId) return;
     state.totalDisplayed+=added;
     if(!added&&allExhausted()){document.getElementById('feed').innerHTML='<div style="text-align:center;padding:30px;color:#666;">No results found.</div>';document.getElementById('resultCount').style.display='none';}
-    else applyChainFilter();
+    else updateResultCount();
   }catch(e){
     if(e.name!=='AbortError'){showSearchError('Search failed: '+e.message);document.getElementById('searchLoading').style.display='none';}
   }finally{
     if(state.currentSearchId===searchId){state.isSearching=false;btn.disabled=false;btn.textContent='Search';inp.disabled=false;}
-    if(state.currentSearchId===searchId&&anyMoreNeeded()&&hasMoreForVisibleChains()){
-      if(countVisible()<DISPLAY_BATCH_SIZE&&(state.autoLoadDepth||0)<6){state.autoLoadDepth=(state.autoLoadDepth||0)+1;setTimeout(()=>loadMoreBatch(),0);}
+    if(state.currentSearchId===searchId&&anyMoreNeeded()){
+      if(state.totalDisplayed<DISPLAY_BATCH_SIZE&&(state.autoLoadDepth||0)<6){state.autoLoadDepth=(state.autoLoadDepth||0)+1;setTimeout(()=>loadMoreBatch(),0);}
       else{state.autoLoadDepth=0;scrollObserver.observe(document.getElementById('loadSentinel'));}
     }
   }
