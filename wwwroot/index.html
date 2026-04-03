@@ -1002,6 +1002,7 @@ const renderAttachments=(container,attachments,links,blockchain)=>{
       })();
       continue;
     }
+    const ext=(filename.match(/\.([^.]+)$/)||[])[1]?.toLowerCase()||'';
     const isImg=/^(jpg|jpeg|png|gif|webp|bmp|svg|avif)$/.test(ext);
     const isAud=/^(mp3|wav|ogg|flac|webm|aac|m4a|opus)$/.test(ext);
     const isVid=/^(mp4|avi|mov)$/.test(ext);
