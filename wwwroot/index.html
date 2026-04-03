@@ -1183,10 +1183,25 @@ const applyChainFilter=(userInteraction=false)=>{
   const total=state.totalDisplayed;
   const rc=document.getElementById('resultCount');
   if(total){rc.textContent=vis===total?`${vis} result${vis===1?'':'s'} found`:`${vis} of ${total} result${total===1?'':'s'} match filters`;rc.style.display='block';}
-  // Stop any active auto-load / scroll-sentinel when user changes chain selection
-  if(userInteraction) scrollObserver.unobserve(document.getElementById('loadSentinel'));
-  // Only auto-load more during an active search flow, not when the user is toggling checkboxes
-  if(!userInteraction&&vis===0&&anyMoreNeeded()&&hasMoreForVisibleChains()&&!state.isLoadingMore&&!state.isSearching) setTimeout(()=>loadMoreBatch(),0);
+  if(userInteraction){
+    if(vis===0){
+      // Page collapsed — stop sentinel from triggering loadMoreBatch for now-hidden chains
+      scrollObserver.unobserve(document.getElementById('loadSentinel'));
+      if(allowed.size>0&&!state.isSearching){
+        if(hasMoreForVisibleChains()){
+          // Pending pages exist for a visible chain — drain them
+          setTimeout(()=>loadMoreBatch(),0);
+        }else{
+          // No data for the checked chains — run a fresh search with the new selection
+          setTimeout(()=>performSearch(state.lastSearchText||'*'),0);
+        }
+      }
+    }
+    // vis > 0: leave the sentinel as-is so scroll-to-load-more continues normally
+  }else{
+    // Internal call from loadMoreBatch: only auto-load if there is data for visible chains
+    if(vis===0&&anyMoreNeeded()&&hasMoreForVisibleChains()&&!state.isLoadingMore&&!state.isSearching) setTimeout(()=>loadMoreBatch(),0);
+  }
 };
 
 // ── Append search results ──────────────────────────────────────────────
