@@ -921,7 +921,7 @@ const fmtVotes=(n)=>{if(n==null)return'—';const v=Number(n);return isFinite(v)
 const renderPollCard=(el,queAddr,queText,endBlock,answers,mainnet,downloadUrl)=>{
   const optHtml=answers.map(a=>`<div class="poll-option" data-addr="${escapeHtml(a.addr)}"><div class="poll-option-text">${escapeHtml(a.text)}</div><div class="poll-bar-row"><div class="poll-bar-wrap"><div class="poll-bar"></div></div><span class="poll-count">—</span></div></div>`).join('');
   const endHtml=endBlock?`<div class="poll-end">Ends at block ${escapeHtml(String(endBlock))}</div>`:'';
-  el.innerHTML=`<div class="poll-card"><div class="poll-header"><span class="poll-badge">📊 Poll</span><span class="poll-status"></span></div><div class="poll-question">${escapeHtml(queText)}</div>${endHtml}<div class="poll-gate" style="display:none"></div><div class="poll-options">${optHtml}</div><div class="poll-total" style="display:none"></div><button class="poll-vote-btn" style="display:none">Count Votes</button><div class="poll-error" style="display:none"></div></div>`;
+  el.innerHTML=`<div class="poll-card"><div class="poll-header"><span class="poll-badge">📊 Poll</span><span class="poll-status"></span></div><div class="poll-question">${escapeHtml(queText)}</div>${endHtml}<div class="poll-gate" style="display:none"></div><div class="poll-options">${optHtml}</div><div class="poll-total" style="display:none"></div><button class="poll-vote-btn" style="display:none">Calculate</button><div class="poll-error" style="display:none"></div></div>`;
   // Populate vote bars from AnswerData (works for both verbose and non-verbose once totals are present)
   const applyVoteData=(r)=>{
     if(!r||!Array.isArray(r.AnswerData)||!r.AnswerData.length) return false;
@@ -947,24 +947,25 @@ const renderPollCard=(el,queAddr,queText,endBlock,answers,mainnet,downloadUrl)=>
   };
   const btn=el.querySelector('.poll-vote-btn');
   const errEl=el.querySelector('.poll-error');
-  // verbose=true fetch used by button (count/refresh)
-  const runVerboseFetch=async(label)=>{
+  btn.textContent='Calculate';
+  // verbose=true fetch — triggered by the Calculate button for both open and closed polls
+  const runVerboseFetch=async()=>{
     btn.disabled=true;btn.textContent='⏳ Calculating…';errEl.style.display='none';
     try{
       const r=await fetchAPI(`${BASE_URL}/GetInquiryByAddress/${encodeURIComponent(queAddr)}?mainnet=${mainnet}&verbose=true`,'',null,180000);
       if(!r||typeof r!=='object') throw new Error('No data returned');
       applyVoteData(r);
-      // After a successful verbose run: open polls keep the Refresh button; closed polls hide it
+      // Keep button visible for open polls (votes can still change); hide for closed polls (totals are final)
       const stillOpen=r.status==='open';
-      if(stillOpen){btn.textContent='Refresh Votes';btn.disabled=false;}
-      else{btn.style.display='none';btn.disabled=false;}
+      btn.textContent='Calculate';btn.disabled=false;
+      if(!stillOpen) btn.style.display='none';
     }catch(e){
       errEl.textContent='Failed: '+(e.message||'Unknown error');errEl.style.display='';
-      btn.textContent=label;btn.disabled=false;
+      btn.textContent='Calculate';btn.disabled=false;
     }
   };
-  btn.addEventListener('click',()=>runVerboseFetch(btn.textContent));
-  // Initial load: verbose=false for fast metadata + any cached totals
+  btn.addEventListener('click',runVerboseFetch);
+  // Initial load: verbose=false (fast; returns cached totals if a verbose run has been done before)
   fetchAPI(`${BASE_URL}/GetInquiryByAddress/${encodeURIComponent(queAddr)}?mainnet=${mainnet}&verbose=false`,'',null,15000).then(r=>{
     if(!r||typeof r!=='object') return;
     const statusEl=el.querySelector('.poll-status');
@@ -977,14 +978,13 @@ const renderPollCard=(el,queAddr,queText,endBlock,answers,mainnet,downloadUrl)=>
     if(Array.isArray(r.AuthorizedByGate)&&r.AuthorizedByGate.length) gates.push(`Authorized: ${r.AuthorizedByGate.length} address${r.AuthorizedByGate.length>1?'es':''}`);
     if(r.RequireSignature) gates.push('Signature required');
     if(gates.length){const g=el.querySelector('.poll-gate');g.textContent='🔒 '+gates.join(' · ');g.style.display='';}
-    const hasTotals=applyVoteData(r);
-    // Button visibility rules:
-    //   OPEN poll                         → always show "Count Votes" (verbose=true for fresh count)
-    //   CLOSED, no totals yet             → show "Calculate" (verbose=true to compute final totals)
-    //   CLOSED, totals already present    → no button (final results displayed)
-    if(isOpen){btn.textContent='Count Votes';btn.style.display='';}
-    else if(!hasTotals){btn.textContent='Calculate';btn.style.display='';}
-    // else: closed + has totals → button stays hidden
+    let hasTotals=false;
+    try{hasTotals=applyVoteData(r);}catch(_){}
+    // Button visibility:
+    //   OPEN poll → always show Calculate (votes can still arrive)
+    //   CLOSED, no totals yet → show Calculate (verbose=true needed to compute final results)
+    //   CLOSED, totals already present → hide button (results are final)
+    if(isOpen||!hasTotals) btn.style.display='';
   }).catch(()=>{});
 };
 
