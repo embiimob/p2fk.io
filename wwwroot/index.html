@@ -1107,6 +1107,18 @@ const renderObjectCard=(obj,blockchain)=>{
 // ── Search pagination helpers ──────────────────────────────────────────
 const allExhausted=()=>Object.values(state.pagination).every(p=>p.exhausted)&&state.buffer.length===0;
 const anyMoreNeeded=()=>Object.values(state.pagination).some(p=>!p.exhausted)||state.buffer.length>0;
+// Returns true only if there is pending data (buffer or non-exhausted pagination slots) for
+// chains that are currently checked — prevents infinite auto-load when all loaded cards are hidden.
+const hasMoreForVisibleChains=()=>{
+  const allowed=new Set();
+  if(document.getElementById('chkBitcoin').checked)  allowed.add('BTC');
+  if(document.getElementById('chkTestnet3').checked) allowed.add('TBTC');
+  if(document.getElementById('chkLTC').checked)      allowed.add('LTC');
+  if(document.getElementById('chkDOG').checked)      allowed.add('DOG');
+  if(document.getElementById('chkMZC').checked)      allowed.add('MZC');
+  if(state.buffer.some(item=>allowed.has(normalizeChain(item.blockchain)))) return true;
+  return Object.entries(state.pagination).some(([key,p])=>!p.exhausted&&allowed.has(key.split(':')[1]));
+};
 const endpointForType=(type)=>type==='objects'?'GetKnownObjectsBySearchString':type==='profiles'?'GetKnownProfilesBySearchString':'GetKnownRootsBySearchString';
 const countVisible=()=>{let n=0;document.querySelectorAll('#feed [data-chain]').forEach(c=>{if(c.style.display!=='none')n++;});return n;};
 
@@ -1171,8 +1183,10 @@ const applyChainFilter=(userInteraction=false)=>{
   const total=state.totalDisplayed;
   const rc=document.getElementById('resultCount');
   if(total){rc.textContent=vis===total?`${vis} result${vis===1?'':'s'} found`:`${vis} of ${total} result${total===1?'':'s'} match filters`;rc.style.display='block';}
+  // Stop any active auto-load / scroll-sentinel when user changes chain selection
+  if(userInteraction) scrollObserver.unobserve(document.getElementById('loadSentinel'));
   // Only auto-load more during an active search flow, not when the user is toggling checkboxes
-  if(!userInteraction&&vis===0&&anyMoreNeeded()&&!state.isLoadingMore&&!state.isSearching) setTimeout(()=>loadMoreBatch(),0);
+  if(!userInteraction&&vis===0&&anyMoreNeeded()&&hasMoreForVisibleChains()&&!state.isLoadingMore&&!state.isSearching) setTimeout(()=>loadMoreBatch(),0);
 };
 
 // ── Append search results ──────────────────────────────────────────────
@@ -1245,7 +1259,7 @@ const loadMoreBatch=async()=>{
   }catch(e){if(e.name!=='AbortError') showSearchError('Failed to load more: '+e.message);}
   finally{
     loadEl.style.display='none';loadEl.textContent='Loading…';state.isLoadingMore=false;
-    if(state.currentSearchId===searchId&&anyMoreNeeded()){
+    if(state.currentSearchId===searchId&&anyMoreNeeded()&&hasMoreForVisibleChains()){
       if(countVisible()<DISPLAY_BATCH_SIZE&&(state.autoLoadDepth||0)<6){state.autoLoadDepth=(state.autoLoadDepth||0)+1;setTimeout(()=>loadMoreBatch(),0);}
       else{state.autoLoadDepth=0;scrollObserver.observe(sentinel);}
     }
@@ -1308,7 +1322,7 @@ const performKeywordSearch=async(keyword)=>{
   }finally{
     state.isSearching=false;btn.disabled=false;btn.textContent='Search';inp.disabled=false;
     loadEl.style.display='none';loadEl.textContent='Loading…';
-    if(state.currentSearchId===searchId&&anyMoreNeeded()){
+    if(state.currentSearchId===searchId&&anyMoreNeeded()&&hasMoreForVisibleChains()){
       if(countVisible()<DISPLAY_BATCH_SIZE&&(state.autoLoadDepth||0)<6){state.autoLoadDepth=(state.autoLoadDepth||0)+1;setTimeout(()=>loadMoreBatch(),0);}
       else{state.autoLoadDepth=0;scrollObserver.observe(document.getElementById('loadSentinel'));}
     }
@@ -1370,7 +1384,7 @@ const performSearch=async(searchText)=>{
     if(e.name!=='AbortError'){showSearchError('Search failed: '+e.message);document.getElementById('searchLoading').style.display='none';}
   }finally{
     state.isSearching=false;btn.disabled=false;btn.textContent='Search';inp.disabled=false;
-    if(state.currentSearchId===searchId&&anyMoreNeeded()){
+    if(state.currentSearchId===searchId&&anyMoreNeeded()&&hasMoreForVisibleChains()){
       if(countVisible()<DISPLAY_BATCH_SIZE&&(state.autoLoadDepth||0)<6){state.autoLoadDepth=(state.autoLoadDepth||0)+1;setTimeout(()=>loadMoreBatch(),0);}
       else{state.autoLoadDepth=0;scrollObserver.observe(document.getElementById('loadSentinel'));}
     }
