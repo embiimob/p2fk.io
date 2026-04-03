@@ -1335,8 +1335,7 @@ const performKeywordSearch=async(keyword)=>{
   }catch(e){
     if(e.name!=='AbortError'){showSearchError('Keyword search failed: '+e.message);loadEl.style.display='none';}
   }finally{
-    state.isSearching=false;btn.disabled=false;btn.textContent='Search';inp.disabled=false;
-    loadEl.style.display='none';loadEl.textContent='Loading…';
+    if(state.currentSearchId===searchId){state.isSearching=false;btn.disabled=false;btn.textContent='Search';inp.disabled=false;loadEl.style.display='none';loadEl.textContent='Loading…';}
     if(state.currentSearchId===searchId&&anyMoreNeeded()&&hasMoreForVisibleChains()){
       if(countVisible()<DISPLAY_BATCH_SIZE&&(state.autoLoadDepth||0)<6){state.autoLoadDepth=(state.autoLoadDepth||0)+1;setTimeout(()=>loadMoreBatch(),0);}
       else{state.autoLoadDepth=0;scrollObserver.observe(document.getElementById('loadSentinel'));}
@@ -1398,7 +1397,7 @@ const performSearch=async(searchText)=>{
   }catch(e){
     if(e.name!=='AbortError'){showSearchError('Search failed: '+e.message);document.getElementById('searchLoading').style.display='none';}
   }finally{
-    state.isSearching=false;btn.disabled=false;btn.textContent='Search';inp.disabled=false;
+    if(state.currentSearchId===searchId){state.isSearching=false;btn.disabled=false;btn.textContent='Search';inp.disabled=false;}
     if(state.currentSearchId===searchId&&anyMoreNeeded()&&hasMoreForVisibleChains()){
       if(countVisible()<DISPLAY_BATCH_SIZE&&(state.autoLoadDepth||0)<6){state.autoLoadDepth=(state.autoLoadDepth||0)+1;setTimeout(()=>loadMoreBatch(),0);}
       else{state.autoLoadDepth=0;scrollObserver.observe(document.getElementById('loadSentinel'));}
@@ -2430,6 +2429,11 @@ window.addEventListener('popstate',(e)=>{
 // ── Navbar search ──────────────────────────────────────────────────────
 // ── Smart search: @username → profile, #keyword → object search ─────
 const handleNavSearch=async()=>{
+  // User action always cancels any in-progress auto-triggered search
+  if(state.isSearching){
+    if(state.abortController) state.abortController.abort();
+    state.isSearching=false;
+  }
   const raw=document.getElementById('navbar-search-input').value.trim();
   if(!raw){navigateTo('search',{});return;}
   if(raw.startsWith('@')){
