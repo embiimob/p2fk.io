@@ -624,7 +624,7 @@
 
 // ── Constants ──────────────────────────────────────────────────────────
 const BASE_URL = 'https://p2fk.io';
-const API_FETCH_BATCH_SIZE = 20;
+const API_FETCH_BATCH_SIZE = 200;
 const DISPLAY_BATCH_SIZE = 20;
 const MAX_PER_CHAIN = 1000;
 const MSG_PAGE_SIZE = 20;
@@ -660,6 +660,7 @@ const state = {
   txidMeta: new Map(),
   lastSearchText: '',
   pagination: {},
+  buffer: [],
   totalDisplayed: 0,
   chainCounts: {},
   keywordMode: false,
@@ -1104,8 +1105,20 @@ const renderObjectCard=(obj,blockchain)=>{
 };
 
 // ── Search pagination helpers ──────────────────────────────────────────
-const allExhausted=()=>Object.values(state.pagination).every(p=>p.exhausted);
-const anyMoreNeeded=()=>Object.values(state.pagination).some(p=>!p.exhausted);
+const allExhausted=()=>Object.values(state.pagination).every(p=>p.exhausted)&&state.buffer.length===0;
+const anyMoreNeeded=()=>Object.values(state.pagination).some(p=>!p.exhausted)||state.buffer.length>0;
+// Returns true only if there is pending data (buffer or non-exhausted pagination slots) for
+// chains that are currently checked — prevents infinite auto-load when all loaded cards are hidden.
+const hasMoreForVisibleChains=()=>{
+  const allowed=new Set();
+  if(document.getElementById('chkBitcoin').checked)  allowed.add('BTC');
+  if(document.getElementById('chkTestnet3').checked) allowed.add('TBTC');
+  if(document.getElementById('chkLTC').checked)      allowed.add('LTC');
+  if(document.getElementById('chkDOG').checked)      allowed.add('DOG');
+  if(document.getElementById('chkMZC').checked)      allowed.add('MZC');
+  if(state.buffer.some(item=>allowed.has(normalizeChain(item.blockchain)))) return true;
+  return Object.entries(state.pagination).some(([key,p])=>!p.exhausted&&allowed.has(key.split(':')[1]));
+};
 const endpointForType=(type)=>type==='objects'?'GetKnownObjectsBySearchString':type==='profiles'?'GetKnownProfilesBySearchString':'GetKnownRootsBySearchString';
 const countVisible=()=>{let n=0;document.querySelectorAll('#feed [data-chain]').forEach(c=>{if(c.style.display!=='none')n++;});return n;};
 
@@ -1150,7 +1163,7 @@ const fetchNextPage=async(signal)=>{
 };
 
 // ── Chain filter ───────────────────────────────────────────────────────
-const applyChainFilter=()=>{
+const applyChainFilter=(userInteraction=false)=>{
   const allowed=new Set();
   if(document.getElementById('chkBitcoin').checked) allowed.add('BTC');
   if(document.getElementById('chkTestnet3').checked) allowed.add('TBTC');
@@ -1170,32 +1183,55 @@ const applyChainFilter=()=>{
   const total=state.totalDisplayed;
   const rc=document.getElementById('resultCount');
   if(total){rc.textContent=vis===total?`${vis} result${vis===1?'':'s'} found`:`${vis} of ${total} result${total===1?'':'s'} match filters`;rc.style.display='block';}
-  if(vis===0&&anyMoreNeeded()&&!state.isLoadingMore&&!state.isSearching) setTimeout(()=>loadMoreBatch(),0);
+  if(userInteraction){
+    if(vis===0){
+      // Page collapsed — stop sentinel from triggering loadMoreBatch for now-hidden chains
+      scrollObserver.unobserve(document.getElementById('loadSentinel'));
+      if(allowed.size>0&&!state.isSearching){
+        if(hasMoreForVisibleChains()){
+          // Pending pages exist for a visible chain — drain them
+          setTimeout(()=>loadMoreBatch(),0);
+        }else{
+          // No data for the checked chains — run a fresh search with the new selection
+          setTimeout(()=>performSearch(state.lastSearchText||'*'),0);
+        }
+      }
+    }
+    // vis > 0: leave the sentinel as-is so scroll-to-load-more continues normally
+  }else{
+    // Internal call from loadMoreBatch: only auto-load if there is data for visible chains
+    if(vis===0&&anyMoreNeeded()&&hasMoreForVisibleChains()&&!state.isLoadingMore&&!state.isSearching) setTimeout(()=>loadMoreBatch(),0);
+  }
 };
 
 // ── Append search results ──────────────────────────────────────────────
 const appendResultItems=async(objectResults,profileResults,rootResults,searchId,signal)=>{
-  const items=[];
-  for(const r of(objectResults||[])){const o=r.Object||r.object;if(!o||!o.Name) continue;items.push({type:'object',raw:o,blockchain:r.Blockchain||r.blockchain||''});}
-  for(const r of(profileResults||[])){const p=r.Profile||r.profile;if(!p) continue;if(!p.DisplayName&&!p.URN) continue;if(r.Address||r.address) p._address=r.Address||r.address;items.push({type:'profile',raw:p,blockchain:r.Blockchain||r.blockchain||''});}
-  for(const r of(rootResults||[])){const root=r.Root||r.root;if(!root) continue;const n=normalizeRoot(root);if(!n) continue;items.push({type:'message',data:n,blockchain:r.Blockchain||r.blockchain||''});}
-  items.sort((a,b)=>{
+  // Normalize newly fetched items and add them to the shared buffer
+  for(const r of(objectResults||[])){const o=r.Object||r.object;if(!o||!o.Name) continue;state.buffer.push({type:'object',raw:o,blockchain:r.Blockchain||r.blockchain||''});}
+  for(const r of(profileResults||[])){const p=r.Profile||r.profile;if(!p) continue;if(!p.DisplayName&&!p.URN) continue;if(r.Address||r.address) p._address=r.Address||r.address;state.buffer.push({type:'profile',raw:p,blockchain:r.Blockchain||r.blockchain||''});}
+  for(const r of(rootResults||[])){const root=r.Root||r.root;if(!root) continue;const n=normalizeRoot(root);if(!n) continue;state.buffer.push({type:'message',data:n,blockchain:r.Blockchain||r.blockchain||''});}
+  // Keep buffer sorted by date descending so we always display the newest first
+  state.buffer.sort((a,b)=>{
     const getD=item=>{if(item.type==='message') return new Date(item.data.blockDate||0);return new Date(item.raw?.CreatedDate||0);};
     const da=getD(a).getTime(),db=getD(b).getTime();
     if(!da&&!db) return 0;if(!da) return 1;if(!db) return -1;return db-da;
   });
+  // Render up to DISPLAY_BATCH_SIZE items from the front of the buffer
   const feed=document.getElementById('feed');
   const showSystem=document.getElementById('chkSystem')?.checked;
   let rendered=0;
-  for(const item of items){
+  let idx=0;
+  while(idx<state.buffer.length&&rendered<DISPLAY_BATCH_SIZE){
     if(state.currentSearchId!==searchId) break;
-    if(rendered>=DISPLAY_BATCH_SIZE) break;
+    const item=state.buffer[idx];
     const ch=normalizeChain(item.blockchain);
-    if((state.chainCounts[ch]||0)>=MAX_PER_CHAIN) continue;
+    // Discard saturated-chain items immediately (don't keep re-checking them)
+    if((state.chainCounts[ch]||0)>=MAX_PER_CHAIN){idx++;continue;}
     // Skip system messages entirely when System checkbox is unchecked (no render → no flash)
-    if(item.type==='message'&&!showSystem&&isSystemMsg(item.data.files)) continue;
+    if(item.type==='message'&&!showSystem&&isSystemMsg(item.data.files)){idx++;continue;}
     state.chainCounts[ch]=(state.chainCounts[ch]||0)+1;
     rendered++;
+    idx++;  // advance before async work so the splice below always covers this item
     let card;
     if(item.type==='object') card=renderObjectCard(item.raw,item.blockchain);
     else if(item.type==='profile') card=renderProfileCard(item.raw,item.blockchain);
@@ -1204,6 +1240,8 @@ const appendResultItems=async(objectResults,profileResults,rootResults,searchId,
     if(item.type==='message'&&isSystemMsg(item.data.files)) card.dataset.system='true';
     feed.appendChild(card);
   }
+  // Remove all examined items from the buffer in a single O(n) operation
+  state.buffer.splice(0,idx);
   return rendered;
 };
 
@@ -1222,8 +1260,13 @@ const loadMoreBatch=async()=>{
   loadEl.textContent=countVisible()===0?'Searching deeper…':'Loading more…';
   loadEl.style.display='block';
   try{
-    const{objectResults,profileResults,rootResults}=await fetchNextPage(signal);
-    if(state.currentSearchId!==searchId) return;
+    // Drain the buffer first; only fetch from the API when it is empty
+    let objectResults=[],profileResults=[],rootResults=[];
+    if(state.buffer.length===0){
+      const fetched=await fetchNextPage(signal);
+      if(state.currentSearchId!==searchId) return;
+      objectResults=fetched.objectResults;profileResults=fetched.profileResults;rootResults=fetched.rootResults;
+    }
     const added=await appendResultItems(objectResults,profileResults,rootResults,searchId,signal);
     if(state.currentSearchId!==searchId) return;
     state.totalDisplayed+=added;
@@ -1231,7 +1274,7 @@ const loadMoreBatch=async()=>{
   }catch(e){if(e.name!=='AbortError') showSearchError('Failed to load more: '+e.message);}
   finally{
     loadEl.style.display='none';loadEl.textContent='Loading…';state.isLoadingMore=false;
-    if(state.currentSearchId===searchId&&anyMoreNeeded()){
+    if(state.currentSearchId===searchId&&anyMoreNeeded()&&hasMoreForVisibleChains()){
       if(countVisible()<DISPLAY_BATCH_SIZE&&(state.autoLoadDepth||0)<6){state.autoLoadDepth=(state.autoLoadDepth||0)+1;setTimeout(()=>loadMoreBatch(),0);}
       else{state.autoLoadDepth=0;scrollObserver.observe(sentinel);}
     }
@@ -1279,7 +1322,7 @@ const performKeywordSearch=async(keyword)=>{
     if(wantProfiles) pagination[`profiles:${chainKey}`]={skip:0,exhausted:false};
     if(wantMessages) pagination[`messages:${chainKey}`]={skip:0,exhausted:false};
     state.keywordMode=true;state.keywordAddress=addr;state.keywordMainnet=isMainnet;
-    state.lastSearchText='#'+keyword;state.pagination=pagination;state.totalDisplayed=0;state.chainCounts={};state.autoLoadDepth=0;
+    state.lastSearchText='#'+keyword;state.pagination=pagination;state.totalDisplayed=0;state.chainCounts={};state.buffer=[];state.autoLoadDepth=0;
     loadEl.textContent='Loading…';
     const{objectResults,profileResults,rootResults}=await fetchNextPage(signal);
     if(state.currentSearchId!==searchId) return;
@@ -1292,9 +1335,8 @@ const performKeywordSearch=async(keyword)=>{
   }catch(e){
     if(e.name!=='AbortError'){showSearchError('Keyword search failed: '+e.message);loadEl.style.display='none';}
   }finally{
-    state.isSearching=false;btn.disabled=false;btn.textContent='Search';inp.disabled=false;
-    loadEl.style.display='none';loadEl.textContent='Loading…';
-    if(state.currentSearchId===searchId&&anyMoreNeeded()){
+    if(state.currentSearchId===searchId){state.isSearching=false;btn.disabled=false;btn.textContent='Search';inp.disabled=false;loadEl.style.display='none';loadEl.textContent='Loading…';}
+    if(state.currentSearchId===searchId&&anyMoreNeeded()&&hasMoreForVisibleChains()){
       if(countVisible()<DISPLAY_BATCH_SIZE&&(state.autoLoadDepth||0)<6){state.autoLoadDepth=(state.autoLoadDepth||0)+1;setTimeout(()=>loadMoreBatch(),0);}
       else{state.autoLoadDepth=0;scrollObserver.observe(document.getElementById('loadSentinel'));}
     }
@@ -1341,7 +1383,7 @@ const performSearch=async(searchText)=>{
     if(wantMessages) pagination[`messages:${key}`]={skip:0,exhausted:false,params};
   });
 
-  state.lastSearchText=text;state.pagination=pagination;state.totalDisplayed=0;state.chainCounts={};state.autoLoadDepth=0;
+  state.lastSearchText=text;state.pagination=pagination;state.totalDisplayed=0;state.chainCounts={};state.buffer=[];state.autoLoadDepth=0;
 
   try{
     const{objectResults,profileResults,rootResults}=await fetchNextPage(signal);
@@ -1355,8 +1397,8 @@ const performSearch=async(searchText)=>{
   }catch(e){
     if(e.name!=='AbortError'){showSearchError('Search failed: '+e.message);document.getElementById('searchLoading').style.display='none';}
   }finally{
-    state.isSearching=false;btn.disabled=false;btn.textContent='Search';inp.disabled=false;
-    if(state.currentSearchId===searchId&&anyMoreNeeded()){
+    if(state.currentSearchId===searchId){state.isSearching=false;btn.disabled=false;btn.textContent='Search';inp.disabled=false;}
+    if(state.currentSearchId===searchId&&anyMoreNeeded()&&hasMoreForVisibleChains()){
       if(countVisible()<DISPLAY_BATCH_SIZE&&(state.autoLoadDepth||0)<6){state.autoLoadDepth=(state.autoLoadDepth||0)+1;setTimeout(()=>loadMoreBatch(),0);}
       else{state.autoLoadDepth=0;scrollObserver.observe(document.getElementById('loadSentinel'));}
     }
@@ -2387,6 +2429,11 @@ window.addEventListener('popstate',(e)=>{
 // ── Navbar search ──────────────────────────────────────────────────────
 // ── Smart search: @username → profile, #keyword → object search ─────
 const handleNavSearch=async()=>{
+  // User action always cancels any in-progress auto-triggered search
+  if(state.isSearching){
+    if(state.abortController) state.abortController.abort();
+    state.isSearching=false;
+  }
   const raw=document.getElementById('navbar-search-input').value.trim();
   if(!raw){navigateTo('search',{});return;}
   if(raw.startsWith('@')){
@@ -2428,13 +2475,10 @@ document.getElementById('brandHome').addEventListener('click',()=>navigateTo('se
 
 // ── Chain / type checkbox events ───────────────────────────────────────
 ['chkBitcoin','chkTestnet3','chkLTC','chkDOG','chkMZC','chkSystem'].forEach(id=>{
-  document.getElementById(id).addEventListener('change',applyChainFilter);
+  document.getElementById(id).addEventListener('change',()=>applyChainFilter(true));
 });
-['chkObjects','chkProfiles','chkMessages'].forEach(id=>{
-  document.getElementById(id).addEventListener('change',()=>{
-    if(state.currentView==='search') performSearch(state.lastSearchText||'*');
-  });
-});
+// Type checkboxes (Objects/Profiles/Messages) no longer auto-search on change.
+// The updated selection is picked up when the user submits a new search.
 
 // ── Profile load more ──────────────────────────────────────────────────
 document.getElementById('profileMsgLoadMore').addEventListener('click',()=>loadProfileMessages());
