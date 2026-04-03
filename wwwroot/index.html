@@ -1151,7 +1151,7 @@ const fetchNextPage=async(signal)=>{
 };
 
 // ── Chain filter ───────────────────────────────────────────────────────
-const applyChainFilter=()=>{
+const applyChainFilter=(userInteraction=false)=>{
   const allowed=new Set();
   if(document.getElementById('chkBitcoin').checked) allowed.add('BTC');
   if(document.getElementById('chkTestnet3').checked) allowed.add('TBTC');
@@ -1171,7 +1171,8 @@ const applyChainFilter=()=>{
   const total=state.totalDisplayed;
   const rc=document.getElementById('resultCount');
   if(total){rc.textContent=vis===total?`${vis} result${vis===1?'':'s'} found`:`${vis} of ${total} result${total===1?'':'s'} match filters`;rc.style.display='block';}
-  if(vis===0&&anyMoreNeeded()&&!state.isLoadingMore&&!state.isSearching) setTimeout(()=>loadMoreBatch(),0);
+  // Only auto-load more during an active search flow, not when the user is toggling checkboxes
+  if(!userInteraction&&vis===0&&anyMoreNeeded()&&!state.isLoadingMore&&!state.isSearching) setTimeout(()=>loadMoreBatch(),0);
 };
 
 // ── Append search results ──────────────────────────────────────────────
@@ -2441,13 +2442,10 @@ document.getElementById('brandHome').addEventListener('click',()=>navigateTo('se
 
 // ── Chain / type checkbox events ───────────────────────────────────────
 ['chkBitcoin','chkTestnet3','chkLTC','chkDOG','chkMZC','chkSystem'].forEach(id=>{
-  document.getElementById(id).addEventListener('change',applyChainFilter);
+  document.getElementById(id).addEventListener('change',()=>applyChainFilter(true));
 });
-['chkObjects','chkProfiles','chkMessages'].forEach(id=>{
-  document.getElementById(id).addEventListener('change',()=>{
-    if(state.currentView==='search') performSearch(state.lastSearchText||'*');
-  });
-});
+// Type checkboxes (Objects/Profiles/Messages) no longer auto-search on change.
+// The updated selection is picked up when the user submits a new search.
 
 // ── Profile load more ──────────────────────────────────────────────────
 document.getElementById('profileMsgLoadMore').addEventListener('click',()=>loadProfileMessages());
