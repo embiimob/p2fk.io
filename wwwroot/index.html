@@ -871,6 +871,7 @@ const parseMessage=async(messageText,mainnet,signal)=>{
   attMatches.forEach(m=>{
     const c=m.slice(2,-2).replace(/\s+/g,'').trim();
     if(c.match(/^-?\d+$/)||c.match(/#[\w\s#]+/)||c.match(/^#[\w\s]+$/)) return;
+    if(!/^IPFS:/i.test(c)&&!/^[0-9a-f]{64}(?:[/\\]|$)/i.test(c)&&!/^https?:\/\//i.test(c)) return;
     if(/^https?:\/\//i.test(c)) links.push(c);
     else attachments.push(c);
   });
