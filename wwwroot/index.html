@@ -313,7 +313,32 @@
     .file-card-download { flex-shrink: 0; padding: 5px 10px; background: #6200ea; color: #fff; border-radius: 4px; font-size: 0.78em; text-decoration: none; }
     .file-card-download:hover { background: #bb86fc; color: #121212; }
 
-    /* ── Profile view ──────────────────────────────────────────────── */
+    /* ── Poll cards ────────────────────────────────────────────────── */
+    .poll-card { background: #181818; border: 1px solid #444; border-radius: 8px; padding: 12px 14px; }
+    .poll-card:hover { border-color: #bb86fc; }
+    .poll-header { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+    .poll-badge { background: #2a1a3a; color: #bb86fc; border: 1px solid #bb86fc; font-size: 0.72em; font-weight: bold; padding: 2px 7px; border-radius: 4px; }
+    .poll-status-badge { font-size: 0.7em; font-weight: bold; padding: 2px 7px; border-radius: 4px; border: 1px solid; }
+    .poll-status-open { background: #1a2a1a; color: #4caf50; border-color: #4caf50; }
+    .poll-status-closed { background: #2a1a1a; color: #cf6679; border-color: #cf6679; }
+    .poll-question { font-size: 0.95em; font-weight: bold; color: #e0e0e0; margin-bottom: 5px; }
+    .poll-end { font-size: 0.72em; color: #666; margin-bottom: 8px; }
+    .poll-gate { font-size: 0.75em; color: #888; background: #1a1a2a; border: 1px solid #2a2a44; border-radius: 4px; padding: 4px 8px; margin-bottom: 8px; }
+    .poll-options { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+    .poll-option { background: #1e1e1e; border-radius: 6px; padding: 8px 10px; }
+    .poll-option-text { font-size: 0.85em; color: #e0e0e0; margin-bottom: 5px; }
+    .poll-bar-row { display: flex; align-items: center; gap: 8px; }
+    .poll-bar-wrap { flex: 1; background: #2a2a2a; border-radius: 4px; height: 8px; overflow: hidden; }
+    .poll-bar { height: 100%; background: linear-gradient(90deg,#6200ea,#bb86fc); border-radius: 4px; width: 0; transition: width 0.6s ease; }
+    .poll-bar.winner { background: linear-gradient(90deg,#018786,#03dac6); }
+    .poll-count { font-size: 0.75em; color: #666; min-width: 80px; text-align: right; font-family: monospace; white-space: nowrap; }
+    .poll-count.has-votes { color: #bb86fc; }
+    .poll-total { font-size: 0.75em; color: #888; text-align: right; margin-bottom: 6px; }
+    .poll-vote-btn { display: block; width: 100%; padding: 7px; background: #2a1a3a; border: 1px solid #bb86fc; color: #bb86fc; border-radius: 5px; cursor: pointer; font-size: 0.82em; font-weight: bold; transition: all 0.2s; }
+    .poll-vote-btn:hover { background: #3a2a4a; }
+    .poll-vote-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .poll-loading { text-align: center; padding: 14px; color: #888; font-size: 0.82em; }
+    .poll-error { font-size: 0.75em; color: #cf6679; text-align: center; padding: 3px 0; margin-top: 4px; }
     #view-profile, #view-object, #view-message {
       max-width: 720px;
       margin: 0 auto;
@@ -647,6 +672,7 @@ const isSystemMsg = (files) => (files||[]).some(f => {
   const dot=u.lastIndexOf('.');
   return dot>=0&&SYSTEM_EXTS.has(u.slice(dot+1));
 });
+const isEmptyMsg=(msg,files)=>!msg?.trim()&&!(files?.length);
 
 const fallbackImage = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='90' height='90'><rect width='100%' height='100%' fill='%23333'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='white' font-size='11'>No Image</text></svg>";
 
@@ -890,6 +916,59 @@ const parseMessage=async(messageText,mainnet,signal)=>{
   return{cleanMessage:clean,attachments:parsedAtt,links:parsedLinks};
 };
 
+// ── Poll card renderer ─────────────────────────────────────────────────
+const fmtVotes=(n)=>{if(n==null)return'—';const v=Number(n);return isFinite(v)?v.toLocaleString():'—';};
+const renderPollCard=(el,queAddr,queText,endBlock,answers,mainnet,downloadUrl)=>{
+  const optHtml=answers.map(a=>`<div class="poll-option" data-addr="${escapeHtml(a.addr)}"><div class="poll-option-text">${escapeHtml(a.text)}</div><div class="poll-bar-row"><div class="poll-bar-wrap"><div class="poll-bar"></div></div><span class="poll-count">—</span></div></div>`).join('');
+  const endHtml=endBlock?`<div class="poll-end">Ends at block ${escapeHtml(String(endBlock))}</div>`:'';
+  el.innerHTML=`<div class="poll-card"><div class="poll-header"><span class="poll-badge">📊 Poll</span><span class="poll-status"></span></div><div class="poll-question">${escapeHtml(queText)}</div>${endHtml}<div class="poll-gate" style="display:none"></div><div class="poll-options">${optHtml}</div><div class="poll-total" style="display:none"></div><button class="poll-vote-btn">Count Votes</button><div class="poll-error" style="display:none"></div></div>`;
+  // Fetch non-verbose metadata for gates/status asynchronously
+  fetchAPI(`${BASE_URL}/GetInquiryByAddress/${encodeURIComponent(queAddr)}?mainnet=${mainnet}&verbose=false`,'',null,15000).then(r=>{
+    if(!r||typeof r!=='object') return;
+    const statusEl=el.querySelector('.poll-status');
+    if(r.status){const open=r.status==='open';statusEl.textContent=open?'OPEN':'CLOSED';statusEl.className=`poll-status-badge ${open?'poll-status-open':'poll-status-closed'}`;}
+    if(r.MaxBlockHeight&&!endBlock){const d=el.querySelector('.poll-end');if(d)d.textContent=`Ends at block ${r.MaxBlockHeight.toLocaleString()}`;}
+    const gates=[];
+    if(r.OwnsObjectGate) gates.push(`Must own object: ${abbreviateAddress(String(r.OwnsObjectGate))}`);
+    if(r.OwnsCreatedByGate) gates.push(`Created by: ${abbreviateAddress(String(r.OwnsCreatedByGate))}`);
+    if(Array.isArray(r.AuthorizedByGate)&&r.AuthorizedByGate.length) gates.push(`Authorized: ${r.AuthorizedByGate.length} address${r.AuthorizedByGate.length>1?'es':''}`);
+    if(r.RequireSignature) gates.push('Signature required');
+    if(gates.length){const g=el.querySelector('.poll-gate');g.textContent='🔒 '+gates.join(' · ');g.style.display='';}
+  }).catch(()=>{});
+  // Count Votes button
+  const btn=el.querySelector('.poll-vote-btn');
+  const errEl=el.querySelector('.poll-error');
+  btn.addEventListener('click',async()=>{
+    btn.disabled=true;btn.textContent='⏳ Counting…';errEl.style.display='none';
+    try{
+      const r=await fetchAPI(`${BASE_URL}/GetInquiryByAddress/${encodeURIComponent(queAddr)}?mainnet=${mainnet}&verbose=true`,'',null,180000);
+      if(!r||!Array.isArray(r.AnswerData)) throw new Error('No answer data returned');
+      const totMap={};
+      r.AnswerData.forEach(a=>{totMap[a.Address]={votes:(a.TotalVotes||0)+(a.TotalGatedVotes||0),value:(a.TotalValue||0)+(a.TotalGatedValue||0)};});
+      const grandTotal=r.AnswerData.reduce((s,a)=>s+(a.TotalVotes||0)+(a.TotalGatedVotes||0),0);
+      const maxVotes=Math.max(...r.AnswerData.map(a=>(a.TotalVotes||0)+(a.TotalGatedVotes||0)),1);
+      el.querySelectorAll('.poll-option').forEach(opt=>{
+        const t=totMap[opt.dataset.addr];if(!t) return;
+        const pct=grandTotal>0?(t.votes/grandTotal*100).toFixed(1):'0.0';
+        const bar=opt.querySelector('.poll-bar');
+        bar.style.width=`${pct}%`;
+        if(t.votes===maxVotes&&t.votes>0) bar.classList.add('winner');
+        const cEl=opt.querySelector('.poll-count');
+        cEl.textContent=`${fmtVotes(t.votes)} (${pct}%)`;cEl.classList.add('has-votes');
+      });
+      const gTotal=(r.TotalVotes||0)+(r.TotalGatedVotes||0);
+      const gVal=(r.TotalValue||0)+(r.TotalGatedValue||0);
+      const totalEl=el.querySelector('.poll-total');
+      totalEl.textContent=`Total: ${fmtVotes(gTotal)} votes${gVal?' · '+fmtVotes(gVal)+' value':''}`;
+      totalEl.style.display='';
+      btn.textContent='🔄 Refresh Votes';btn.disabled=false;
+    }catch(e){
+      errEl.textContent='Failed: '+(e.message||'Unknown error');errEl.style.display='';
+      btn.textContent='Count Votes';btn.disabled=false;
+    }
+  });
+};
+
 // ── Attachment renderer ────────────────────────────────────────────────
 const renderAttachments=(container,attachments,links,blockchain)=>{
   const audioMime={mp3:'audio/mpeg',wav:'audio/wav',ogg:'audio/ogg',flac:'audio/flac',webm:'audio/webm',aac:'audio/aac',m4a:'audio/mp4',opus:'audio/opus'};
@@ -899,7 +978,30 @@ const renderAttachments=(container,attachments,links,blockchain)=>{
     const isTx=/^[0-9a-f]{64}$/i.test(hash);
     const url=isTx?`${BASE_URL}/root/${hash}/${encodeURIComponent(filename)}`:`https://ipfs.io/ipfs/${hash}`;
     if(isTx) state.txidMeta.set(hash,chainToMeta(blockchain));
-    const ext=(filename.match(/\.([^.]+)$/)||[])[1]?.toLowerCase()||'';
+    // INQ poll card
+    if(filename.toUpperCase()==='INQ'&&isTx){
+      const el=document.createElement('div');
+      el.innerHTML='<div class="poll-loading">Loading poll…</div>';
+      container.appendChild(el);
+      const chainUpper=(blockchain||'').toUpperCase();
+      const pollMainnet=chainUpper!=='TBTC';
+      (async()=>{
+        try{
+          const res=await fetch(url);if(!res.ok) throw new Error(res.status);
+          const d=await res.json();
+          if(!d||typeof d!=='object'||!d.que||!d.ans) throw new Error('bad format');
+          const queAddr=Object.keys(d.que)[0]||'';
+          const queText=String(Object.values(d.que)[0]||'');
+          const endBlock=d.end||null;
+          const answers=Object.entries(d.ans).map(([addr,text])=>({addr,text:String(text)}));
+          renderPollCard(el,queAddr,queText,endBlock,answers,pollMainnet,url);
+        }catch{
+          el.innerHTML=`<div class="file-card"><div class="file-card-icon">🗳️</div><div class="file-card-info"><div class="file-card-name" title="INQ">INQ</div><div class="file-card-meta"><span>Poll File</span> · <span class="file-card-size">Fetching…</span></div></div><a class="file-card-download" href="${url}" target="_blank" rel="noopener">Download</a></div>`;
+          fetchFileSize(url,el.querySelector('.file-card-size'));
+        }
+      })();
+      continue;
+    }
     const isImg=/^(jpg|jpeg|png|gif|webp|bmp|svg|avif)$/.test(ext);
     const isAud=/^(mp3|wav|ogg|flac|webm|aac|m4a|opus)$/.test(ext);
     const isVid=/^(mp4|avi|mov)$/.test(ext);
@@ -1229,7 +1331,7 @@ const appendResultItems=async(objectResults,profileResults,rootResults,searchId,
     // Discard saturated-chain items immediately (don't keep re-checking them)
     if((state.chainCounts[ch]||0)>=MAX_PER_CHAIN){idx++;continue;}
     // Skip system messages entirely when System checkbox is unchecked (no render → no flash)
-    if(item.type==='message'&&!showSystem&&isSystemMsg(item.data.files)){idx++;continue;}
+    if(item.type==='message'&&!showSystem&&(isSystemMsg(item.data.files)||isEmptyMsg(item.data.message,item.data.files))){idx++;continue;}
     state.chainCounts[ch]=(state.chainCounts[ch]||0)+1;
     rendered++;
     idx++;  // advance before async work so the splice below always covers this item
@@ -1238,7 +1340,7 @@ const appendResultItems=async(objectResults,profileResults,rootResults,searchId,
     else if(item.type==='profile') card=renderProfileCard(item.raw,item.blockchain);
     else{ card=await renderMessageCard(item.data,signal,item.blockchain); if(state.currentSearchId!==searchId) break; }
     card.dataset.chain=ch;
-    if(item.type==='message'&&isSystemMsg(item.data.files)) card.dataset.system='true';
+    if(item.type==='message'&&(isSystemMsg(item.data.files)||isEmptyMsg(item.data.message,item.data.files))) card.dataset.system='true';
     feed.appendChild(card);
   }
   // Remove all examined items from the buffer in a single O(n) operation
@@ -2472,14 +2574,30 @@ document.getElementById('navbar-search-btn').addEventListener('click',(e)=>{
   handleNavSearch();
 });
 
-document.getElementById('brandHome').addEventListener('click',()=>navigateTo('search',{}));
-
-// ── Chain / type checkbox events ───────────────────────────────────────
-['chkBitcoin','chkTestnet3','chkLTC','chkDOG','chkMZC','chkSystem'].forEach(id=>{
-  document.getElementById(id).addEventListener('change',()=>applyChainFilter(true));
+document.getElementById('brandHome').addEventListener('click',()=>{
+  const isSearchView=document.getElementById('filter-bar').style.display!=='none';
+  if(!isSearchView){
+    // Not on search view — navigate back to search, showing the filter bar
+    navigateTo('search',{});
+  }else{
+    // Already on search view — reset to defaults and run a fresh * search
+    document.getElementById('chkMessages').checked=true;
+    document.getElementById('chkProfiles').checked=false;
+    document.getElementById('chkObjects').checked=false;
+    document.getElementById('chkBitcoin').checked=false;
+    document.getElementById('chkTestnet3').checked=true;
+    document.getElementById('chkLTC').checked=false;
+    document.getElementById('chkDOG').checked=false;
+    document.getElementById('chkMZC').checked=false;
+    document.getElementById('chkSystem').checked=false;
+    document.getElementById('navbar-search-input').value='';
+    navigateTo('search',{});
+  }
 });
-// Type checkboxes (Objects/Profiles/Messages) no longer auto-search on change.
-// The updated selection is picked up when the user submits a new search.
+
+// ── Checkbox events — type and chain checkboxes are passive; search only
+// runs when the user presses Enter or clicks the Search button.
+// (no change listeners needed — performSearch reads all checkbox state on submit)
 
 // ── Profile load more ──────────────────────────────────────────────────
 document.getElementById('profileMsgLoadMore').addEventListener('click',()=>loadProfileMessages());

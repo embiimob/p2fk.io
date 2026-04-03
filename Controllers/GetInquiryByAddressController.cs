@@ -20,11 +20,10 @@ namespace P2FK.IO.Controllers
         /// <summary>Look up a single P2FK inquiry by its object address.</summary>
         /// <param name="address">Object address for the inquiry (26–34 base58 characters).</param>
         /// <param name="mainnet">true = Bitcoin mainnet; false = Bitcoin testnet (default true).</param>
-        /// <param name="verbose">Reserved — always treated as false.</param>
+        /// <param name="verbose">false = fast metadata only; true = include vote counts (slow).</param>
         [HttpGet("{address}")]
         public async Task<ActionResult> Get(string address, bool mainnet = true, bool verbose = false)
         {
-            verbose = false; // Force verbose off - third party callers causing issues with verbose mode
             // Regular expression for cryptocurrency address validation
             string pattern = @"^[a-zA-Z0-9][a-km-zA-HJ-NP-Z1-9]{25,34}$";
             if (Regex.IsMatch(address, pattern))
