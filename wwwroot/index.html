@@ -624,7 +624,7 @@
 
 // ── Constants ──────────────────────────────────────────────────────────
 const BASE_URL = 'https://p2fk.io';
-const API_FETCH_BATCH_SIZE = 20;
+const API_FETCH_BATCH_SIZE = 200;
 const DISPLAY_BATCH_SIZE = 20;
 const MAX_PER_CHAIN = 1000;
 const MSG_PAGE_SIZE = 20;
@@ -660,6 +660,7 @@ const state = {
   txidMeta: new Map(),
   lastSearchText: '',
   pagination: {},
+  buffer: [],
   totalDisplayed: 0,
   chainCounts: {},
   keywordMode: false,
@@ -1104,8 +1105,8 @@ const renderObjectCard=(obj,blockchain)=>{
 };
 
 // ── Search pagination helpers ──────────────────────────────────────────
-const allExhausted=()=>Object.values(state.pagination).every(p=>p.exhausted);
-const anyMoreNeeded=()=>Object.values(state.pagination).some(p=>!p.exhausted);
+const allExhausted=()=>Object.values(state.pagination).every(p=>p.exhausted)&&state.buffer.length===0;
+const anyMoreNeeded=()=>Object.values(state.pagination).some(p=>!p.exhausted)||state.buffer.length>0;
 const endpointForType=(type)=>type==='objects'?'GetKnownObjectsBySearchString':type==='profiles'?'GetKnownProfilesBySearchString':'GetKnownRootsBySearchString';
 const countVisible=()=>{let n=0;document.querySelectorAll('#feed [data-chain]').forEach(c=>{if(c.style.display!=='none')n++;});return n;};
 
@@ -1175,27 +1176,32 @@ const applyChainFilter=()=>{
 
 // ── Append search results ──────────────────────────────────────────────
 const appendResultItems=async(objectResults,profileResults,rootResults,searchId,signal)=>{
-  const items=[];
-  for(const r of(objectResults||[])){const o=r.Object||r.object;if(!o||!o.Name) continue;items.push({type:'object',raw:o,blockchain:r.Blockchain||r.blockchain||''});}
-  for(const r of(profileResults||[])){const p=r.Profile||r.profile;if(!p) continue;if(!p.DisplayName&&!p.URN) continue;if(r.Address||r.address) p._address=r.Address||r.address;items.push({type:'profile',raw:p,blockchain:r.Blockchain||r.blockchain||''});}
-  for(const r of(rootResults||[])){const root=r.Root||r.root;if(!root) continue;const n=normalizeRoot(root);if(!n) continue;items.push({type:'message',data:n,blockchain:r.Blockchain||r.blockchain||''});}
-  items.sort((a,b)=>{
+  // Normalize newly fetched items and add them to the shared buffer
+  for(const r of(objectResults||[])){const o=r.Object||r.object;if(!o||!o.Name) continue;state.buffer.push({type:'object',raw:o,blockchain:r.Blockchain||r.blockchain||''});}
+  for(const r of(profileResults||[])){const p=r.Profile||r.profile;if(!p) continue;if(!p.DisplayName&&!p.URN) continue;if(r.Address||r.address) p._address=r.Address||r.address;state.buffer.push({type:'profile',raw:p,blockchain:r.Blockchain||r.blockchain||''});}
+  for(const r of(rootResults||[])){const root=r.Root||r.root;if(!root) continue;const n=normalizeRoot(root);if(!n) continue;state.buffer.push({type:'message',data:n,blockchain:r.Blockchain||r.blockchain||''});}
+  // Keep buffer sorted by date descending so we always display the newest first
+  state.buffer.sort((a,b)=>{
     const getD=item=>{if(item.type==='message') return new Date(item.data.blockDate||0);return new Date(item.raw?.CreatedDate||0);};
     const da=getD(a).getTime(),db=getD(b).getTime();
     if(!da&&!db) return 0;if(!da) return 1;if(!db) return -1;return db-da;
   });
+  // Render up to DISPLAY_BATCH_SIZE items from the front of the buffer
   const feed=document.getElementById('feed');
   const showSystem=document.getElementById('chkSystem')?.checked;
   let rendered=0;
-  for(const item of items){
+  let idx=0;
+  while(idx<state.buffer.length&&rendered<DISPLAY_BATCH_SIZE){
     if(state.currentSearchId!==searchId) break;
-    if(rendered>=DISPLAY_BATCH_SIZE) break;
+    const item=state.buffer[idx];
     const ch=normalizeChain(item.blockchain);
-    if((state.chainCounts[ch]||0)>=MAX_PER_CHAIN) continue;
+    // Discard saturated-chain items immediately (don't keep re-checking them)
+    if((state.chainCounts[ch]||0)>=MAX_PER_CHAIN){idx++;continue;}
     // Skip system messages entirely when System checkbox is unchecked (no render → no flash)
-    if(item.type==='message'&&!showSystem&&isSystemMsg(item.data.files)) continue;
+    if(item.type==='message'&&!showSystem&&isSystemMsg(item.data.files)){idx++;continue;}
     state.chainCounts[ch]=(state.chainCounts[ch]||0)+1;
     rendered++;
+    idx++;  // advance before async work so the splice below always covers this item
     let card;
     if(item.type==='object') card=renderObjectCard(item.raw,item.blockchain);
     else if(item.type==='profile') card=renderProfileCard(item.raw,item.blockchain);
@@ -1204,6 +1210,8 @@ const appendResultItems=async(objectResults,profileResults,rootResults,searchId,
     if(item.type==='message'&&isSystemMsg(item.data.files)) card.dataset.system='true';
     feed.appendChild(card);
   }
+  // Remove all examined items from the buffer in a single O(n) operation
+  state.buffer.splice(0,idx);
   return rendered;
 };
 
@@ -1222,8 +1230,13 @@ const loadMoreBatch=async()=>{
   loadEl.textContent=countVisible()===0?'Searching deeper…':'Loading more…';
   loadEl.style.display='block';
   try{
-    const{objectResults,profileResults,rootResults}=await fetchNextPage(signal);
-    if(state.currentSearchId!==searchId) return;
+    // Drain the buffer first; only fetch from the API when it is empty
+    let objectResults=[],profileResults=[],rootResults=[];
+    if(state.buffer.length===0){
+      const fetched=await fetchNextPage(signal);
+      if(state.currentSearchId!==searchId) return;
+      objectResults=fetched.objectResults;profileResults=fetched.profileResults;rootResults=fetched.rootResults;
+    }
     const added=await appendResultItems(objectResults,profileResults,rootResults,searchId,signal);
     if(state.currentSearchId!==searchId) return;
     state.totalDisplayed+=added;
@@ -1279,7 +1292,7 @@ const performKeywordSearch=async(keyword)=>{
     if(wantProfiles) pagination[`profiles:${chainKey}`]={skip:0,exhausted:false};
     if(wantMessages) pagination[`messages:${chainKey}`]={skip:0,exhausted:false};
     state.keywordMode=true;state.keywordAddress=addr;state.keywordMainnet=isMainnet;
-    state.lastSearchText='#'+keyword;state.pagination=pagination;state.totalDisplayed=0;state.chainCounts={};state.autoLoadDepth=0;
+    state.lastSearchText='#'+keyword;state.pagination=pagination;state.totalDisplayed=0;state.chainCounts={};state.buffer=[];state.autoLoadDepth=0;
     loadEl.textContent='Loading…';
     const{objectResults,profileResults,rootResults}=await fetchNextPage(signal);
     if(state.currentSearchId!==searchId) return;
@@ -1341,7 +1354,7 @@ const performSearch=async(searchText)=>{
     if(wantMessages) pagination[`messages:${key}`]={skip:0,exhausted:false,params};
   });
 
-  state.lastSearchText=text;state.pagination=pagination;state.totalDisplayed=0;state.chainCounts={};state.autoLoadDepth=0;
+  state.lastSearchText=text;state.pagination=pagination;state.totalDisplayed=0;state.chainCounts={};state.buffer=[];state.autoLoadDepth=0;
 
   try{
     const{objectResults,profileResults,rootResults}=await fetchNextPage(signal);
