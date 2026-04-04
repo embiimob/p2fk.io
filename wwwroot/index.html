@@ -664,15 +664,7 @@ const CHAINS = {
 
 const CHAIN_UPPER_TO_API = { 'BTC':'BTC','TBTC':'BTC','LTC':'LTC','DOG':'DOG','MZC':'MZC' };
 
-// System transaction file types — messages containing these files are hidden by default
-const SYSTEM_EXTS = new Set(['SEC','OBJ','LST','BRN','PRO','BUY','GIV']);
-const isSystemMsg = (files) => (files||[]).some(f => {
-  const u=(f||'').toUpperCase();
-  if(SYSTEM_EXTS.has(u)) return true;
-  const dot=u.lastIndexOf('.');
-  return dot>=0&&SYSTEM_EXTS.has(u.slice(dot+1));
-});
-const isEmptyMsg=(msg,files)=>!msg?.trim()&&!(files?.length);
+
 
 const fallbackImage = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='90' height='90'><rect width='100%' height='100%' fill='%23333'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='white' font-size='11'>No Image</text></svg>";
 
@@ -1348,7 +1340,6 @@ const appendResultItems=async(objectResults,profileResults,rootResults,searchId,
     else if(item.type==='profile') card=renderProfileCard(item.raw,item.blockchain);
     else{ card=await renderMessageCard(item.data,signal,item.blockchain); if(state.currentSearchId!==searchId) break; }
     card.dataset.chain=ch;
-    if(item.type==='message'&&(isSystemMsg(item.data.files)||isEmptyMsg(item.data.message,item.data.files))) card.dataset.system='true';
     feed.appendChild(card);
   }
   // Remove all examined items from the buffer in a single O(n) operation
