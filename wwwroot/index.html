@@ -1044,8 +1044,7 @@ const renderAttachments=(container,attachments,links,blockchain)=>{
       const el=document.createElement('div');
       el.innerHTML='<div class="poll-loading">Loading poll…</div>';
       container.appendChild(el);
-      const chainUpper=(blockchain||'').toUpperCase();
-      const pollMainnet=chainUpper!=='TBTC';
+      const pollMainnet=chainToMeta(blockchain).mainnet;
       console.log('[INQ] detected INQ file txid:',hash,'blockchain:',blockchain,'pollMainnet:',pollMainnet,'url:',url);
       (async()=>{
         try{
