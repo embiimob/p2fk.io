@@ -1289,7 +1289,7 @@ const fetchNextPage=async(signal)=>{
       if(type==='profiles') return fetchAPI(`${BASE_URL}/GetProfileByAddress/${encodeURIComponent(addr)}?mainnet=${mn}`,'',signal).catch(()=>null);
       return fetchAPI(`${BASE_URL}/GetPublicMessagesByAddress/${encodeURIComponent(addr)}?mainnet=${mn}&skip=${p.skip}&qty=${API_FETCH_BATCH_SIZE}`,'',signal).catch(()=>[]);
     }
-    return fetchAPI(`${BASE_URL}/${endpointForType(type)}?searchString=${encodeURIComponent(state.lastSearchText)}&qty=${API_FETCH_BATCH_SIZE}&skip=${p.skip}&${p.params}&showSystemFiles=${document.getElementById('chkSystem').checked}`,'',signal).catch(()=>[]);
+    return fetchAPI(`${BASE_URL}/${endpointForType(type)}?searchString=${encodeURIComponent(state.lastSearchText)}&qty=${API_FETCH_BATCH_SIZE}&skip=${p.skip}&${p.params}&showSystemFiles=${document.getElementById('chkSystem')?.checked??false}`,'',signal).catch(()=>[]);
   }));
   pending.forEach(([key],i)=>{
     const[type]=key.split(':',2);
