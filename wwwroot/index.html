@@ -313,7 +313,32 @@
     .file-card-download { flex-shrink: 0; padding: 5px 10px; background: #6200ea; color: #fff; border-radius: 4px; font-size: 0.78em; text-decoration: none; }
     .file-card-download:hover { background: #bb86fc; color: #121212; }
 
-    /* ── Profile view ──────────────────────────────────────────────── */
+    /* ── Poll cards ────────────────────────────────────────────────── */
+    .poll-card { background: #181818; border: 1px solid #444; border-radius: 8px; padding: 12px 14px; }
+    .poll-card:hover { border-color: #bb86fc; }
+    .poll-header { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+    .poll-badge { background: #2a1a3a; color: #bb86fc; border: 1px solid #bb86fc; font-size: 0.72em; font-weight: bold; padding: 2px 7px; border-radius: 4px; }
+    .poll-status-badge { font-size: 0.7em; font-weight: bold; padding: 2px 7px; border-radius: 4px; border: 1px solid; }
+    .poll-status-open { background: #1a2a1a; color: #4caf50; border-color: #4caf50; }
+    .poll-status-closed { background: #2a1a1a; color: #cf6679; border-color: #cf6679; }
+    .poll-question { font-size: 0.95em; font-weight: bold; color: #e0e0e0; margin-bottom: 5px; }
+    .poll-end { font-size: 0.72em; color: #666; margin-bottom: 8px; }
+    .poll-gate { font-size: 0.75em; color: #888; background: #1a1a2a; border: 1px solid #2a2a44; border-radius: 4px; padding: 4px 8px; margin-bottom: 8px; }
+    .poll-options { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+    .poll-option { background: #1e1e1e; border-radius: 6px; padding: 8px 10px; }
+    .poll-option-text { font-size: 0.85em; color: #e0e0e0; margin-bottom: 5px; }
+    .poll-bar-row { display: flex; align-items: center; gap: 8px; }
+    .poll-bar-wrap { flex: 1; background: #2a2a2a; border-radius: 4px; height: 8px; overflow: hidden; }
+    .poll-bar { height: 100%; background: linear-gradient(90deg,#6200ea,#bb86fc); border-radius: 4px; width: 0; transition: width 0.6s ease; }
+    .poll-bar.winner { background: linear-gradient(90deg,#018786,#03dac6); }
+    .poll-count { font-size: 0.75em; color: #666; min-width: 80px; text-align: right; font-family: monospace; white-space: nowrap; }
+    .poll-count.has-votes { color: #bb86fc; }
+    .poll-total { font-size: 0.75em; color: #888; text-align: right; margin-bottom: 6px; }
+    .poll-vote-btn { display: block; width: 100%; padding: 7px; background: #2a1a3a; border: 1px solid #bb86fc; color: #bb86fc; border-radius: 5px; cursor: pointer; font-size: 0.82em; font-weight: bold; transition: all 0.2s; }
+    .poll-vote-btn:hover { background: #3a2a4a; }
+    .poll-vote-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .poll-loading { text-align: center; padding: 14px; color: #888; font-size: 0.82em; }
+    .poll-error { font-size: 0.75em; color: #cf6679; text-align: center; padding: 3px 0; margin-top: 4px; }
     #view-profile, #view-object, #view-message {
       max-width: 720px;
       margin: 0 auto;
@@ -623,7 +648,7 @@
 'use strict';
 
 // ── Constants ──────────────────────────────────────────────────────────
-const BASE_URL = 'https://p2fk.io';
+const BASE_URL = window.location.origin;
 const API_FETCH_BATCH_SIZE = 200;
 const DISPLAY_BATCH_SIZE = 20;
 const MAX_PER_CHAIN = 1000;
@@ -647,6 +672,7 @@ const isSystemMsg = (files) => (files||[]).some(f => {
   const dot=u.lastIndexOf('.');
   return dot>=0&&SYSTEM_EXTS.has(u.slice(dot+1));
 });
+const isEmptyMsg=(msg,files)=>!msg?.trim()&&!(files?.length);
 
 const fallbackImage = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='90' height='90'><rect width='100%' height='100%' fill='%23333'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='white' font-size='11'>No Image</text></svg>";
 
@@ -871,6 +897,7 @@ const parseMessage=async(messageText,mainnet,signal)=>{
   attMatches.forEach(m=>{
     const c=m.slice(2,-2).replace(/\s+/g,'').trim();
     if(c.match(/^-?\d+$/)||c.match(/#[\w\s#]+/)||c.match(/^#[\w\s]+$/)) return;
+    if(!/^IPFS:/i.test(c)&&!/^[0-9a-f]{64}(?:[/\\]|$)/i.test(c)&&!/^https?:\/\//i.test(c)) return;
     if(/^https?:\/\//i.test(c)) links.push(c);
     else attachments.push(c);
   });
@@ -889,6 +916,120 @@ const parseMessage=async(messageText,mainnet,signal)=>{
   return{cleanMessage:clean,attachments:parsedAtt,links:parsedLinks};
 };
 
+// ── Poll card renderer ─────────────────────────────────────────────────
+const fmtVotes=(n)=>{if(n==null)return'—';const v=Number(n);return isFinite(v)?v.toLocaleString():'—';};
+const renderPollCard=(el,queAddr,queText,endBlock,answers,mainnet,downloadUrl)=>{
+  console.log('[INQ] renderPollCard → addr:',queAddr,'mainnet:',mainnet,'endBlock:',endBlock,'answers:',answers.length);
+  const optHtml=answers.map(a=>`<div class="poll-option" data-addr="${escapeHtml(a.addr)}"><div class="poll-option-text">${escapeHtml(a.text)}</div><div class="poll-bar-row"><div class="poll-bar-wrap"><div class="poll-bar"></div></div><span class="poll-count">—</span></div></div>`).join('');
+  const endHtml=endBlock?`<div class="poll-end">Ends at block ${escapeHtml(String(endBlock))}</div>`:'';
+  el.innerHTML=`<div class="poll-card"><div class="poll-header"><span class="poll-badge">📊 Poll</span><span class="poll-status"></span></div><div class="poll-question">${escapeHtml(queText)}</div>${endHtml}<div class="poll-gate" style="display:none"></div><div class="poll-options">${optHtml}</div><div class="poll-total" style="display:none"></div><button class="poll-vote-btn" style="display:none">Calculate</button><div class="poll-error" style="display:none"></div></div>`;
+  // Populate vote bars from AnswerData (works for both verbose and non-verbose once totals are present)
+  const applyVoteData=(r)=>{
+    if(!r||!Array.isArray(r.AnswerData)||!r.AnswerData.length) return false;
+    const totMap={};
+    r.AnswerData.forEach(a=>{totMap[a.Address]={votes:(a.TotalVotes||0)+(a.TotalGatedVotes||0),value:(a.TotalValue||0)+(a.TotalGatedValue||0)};});
+    const grandTotal=r.AnswerData.reduce((s,a)=>s+(a.TotalVotes||0)+(a.TotalGatedVotes||0),0);
+    const maxVotes=Math.max(...r.AnswerData.map(a=>(a.TotalVotes||0)+(a.TotalGatedVotes||0)),1);
+    el.querySelectorAll('.poll-option').forEach(opt=>{
+      const t=totMap[opt.dataset.addr];if(!t) return;
+      const pct=grandTotal>0?(t.votes/grandTotal*100).toFixed(1):'0.0';
+      const bar=opt.querySelector('.poll-bar');
+      bar.style.width=`${pct}%`;
+      if(t.votes===maxVotes&&t.votes>0) bar.classList.add('winner'); else bar.classList.remove('winner');
+      const cEl=opt.querySelector('.poll-count');
+      cEl.textContent=`${fmtVotes(t.votes)} (${pct}%)`;cEl.classList.add('has-votes');
+    });
+    const gTotal=(r.TotalVotes||0)+(r.TotalGatedVotes||0);
+    const gVal=(r.TotalValue||0)+(r.TotalGatedValue||0);
+    const totalEl=el.querySelector('.poll-total');
+    totalEl.textContent=`Total: ${fmtVotes(gTotal)} votes${gVal?' · '+fmtVotes(gVal)+' value':''}`;
+    totalEl.style.display='';
+    return gTotal>0;
+  };
+  const btn=el.querySelector('.poll-vote-btn');
+  const errEl=el.querySelector('.poll-error');
+  btn.textContent='Calculate';
+  // verbose=true fetch — triggered automatically for closed polls with no cached totals, or by the Calculate button
+  const runVerboseFetch=async()=>{
+    const vUrl=`${BASE_URL}/GetInquiryByAddress/${encodeURIComponent(queAddr)}?mainnet=${mainnet}&verbose=true`;
+    console.log('[INQ] verbose=true fetch →',vUrl);
+    btn.disabled=true;btn.textContent='⏳ Calculating…';errEl.style.display='none';
+    try{
+      const r=await fetchAPI(vUrl,'',null,180000);
+      console.log('[INQ] verbose=true response:',r);
+      if(!r||typeof r!=='object') throw new Error('No data returned');
+      applyVoteData(r);
+      const stillOpen=r.status==='open';
+      btn.textContent='Calculate';btn.disabled=false;
+      if(!stillOpen) btn.style.display='none';
+    }catch(e){
+      console.error('[INQ] verbose=true error:',e);
+      errEl.textContent='Failed: '+(e.message||'Unknown error');errEl.style.display='';
+      btn.textContent='Calculate';btn.disabled=false;
+    }
+  };
+  btn.addEventListener('click',()=>{console.log('[INQ] Calculate button clicked for',queAddr);runVerboseFetch();});
+  // Build gate banner with clickable object NME / profile names (async-resolved)
+  const buildGateBanner=(r)=>{
+    const gEl=el.querySelector('.poll-gate');
+    const frag=document.createDocumentFragment();
+    frag.appendChild(document.createTextNode('🔒 '));
+    let first=true;
+    const sep=()=>{if(!first) frag.appendChild(document.createTextNode(' · '));first=false;};
+    if(r.OwnsObjectGate){
+      const arr=Array.isArray(r.OwnsObjectGate)?r.OwnsObjectGate:[r.OwnsObjectGate];
+      if(arr.length){
+        sep();frag.appendChild(document.createTextNode('Must own object: '));
+        arr.forEach((rawAddr,i)=>{
+          if(i>0) frag.appendChild(document.createTextNode(', '));
+          const addr=String(rawAddr);
+          const sp=document.createElement('span');sp.className='urn-link';sp.textContent=abbreviateAddress(addr);
+          sp.addEventListener('click',(e)=>{e.stopPropagation();navigateTo('object',{object:addr,mainnet});});
+          frag.appendChild(sp);
+          fetchAPI(`${BASE_URL}/GetObjectByAddress/${encodeURIComponent(addr)}?mainnet=${mainnet}&verbose=false`,'',null)
+            .then(obj=>{const o=Array.isArray(obj)?obj[0]:obj;if(o&&o.Name) sp.textContent=o.Name;}).catch(()=>{});
+        });
+      }
+    }
+    if(r.OwnsCreatedByGate){
+      const arr=Array.isArray(r.OwnsCreatedByGate)?r.OwnsCreatedByGate:[r.OwnsCreatedByGate];
+      if(arr.length){
+        sep();frag.appendChild(document.createTextNode('Created by: '));
+        arr.forEach((rawAddr,i)=>{
+          if(i>0) frag.appendChild(document.createTextNode(', '));
+          const addr=String(rawAddr);
+          const sp=document.createElement('span');sp.className='urn-link';sp.textContent=abbreviateAddress(addr);
+          sp.addEventListener('click',(e)=>{e.stopPropagation();navigateTo('profile',{profile:addr,mainnet});});
+          frag.appendChild(sp);
+          fetchProfileByAddress(addr,mainnet,null)
+            .then(p=>{if(p&&(p.DisplayName||p.URN)) sp.textContent=p.DisplayName||p.URN;}).catch(()=>{});
+        });
+      }
+    }
+    if(Array.isArray(r.AuthorizedByGate)&&r.AuthorizedByGate.length) {sep();frag.appendChild(document.createTextNode(`Authorized: ${r.AuthorizedByGate.length} address${r.AuthorizedByGate.length>1?'es':''}`));}
+    if(r.RequireSignature){sep();frag.appendChild(document.createTextNode('Signature required'));}
+    if(!first){gEl.innerHTML='';gEl.appendChild(frag);gEl.style.display='';}
+  };
+  // Initial load: verbose=false (fast; returns cached totals if a verbose run has been done before)
+  const initUrl=`${BASE_URL}/GetInquiryByAddress/${encodeURIComponent(queAddr)}?mainnet=${mainnet}&verbose=false`;
+  console.log('[INQ] initial verbose=false fetch →',initUrl);
+  fetchAPI(initUrl,'',null,15000).then(r=>{
+    console.log('[INQ] verbose=false response:',r);
+    if(!r||typeof r!=='object'){console.warn('[INQ] no data from verbose=false, showing Calculate button');btn.style.display='';return;}
+    const statusEl=el.querySelector('.poll-status');
+    const isOpen=r.status==='open';
+    if(r.status){statusEl.textContent=isOpen?'OPEN':'CLOSED';statusEl.className=`poll-status-badge ${isOpen?'poll-status-open':'poll-status-closed'}`;}
+    if(r.MaxBlockHeight&&!endBlock){const d=el.querySelector('.poll-end');if(d)d.textContent=`Ends at block ${r.MaxBlockHeight.toLocaleString()}`;}
+    buildGateBanner(r);
+    let hasTotals=false;
+    try{hasTotals=applyVoteData(r);}catch(_){}
+    console.log('[INQ] hasTotals:',hasTotals,'isOpen:',isOpen);
+    // Show Calculate button whenever there are no totals yet (open or closed) so user can trigger the verbose=true scan on demand
+    if(isOpen||!hasTotals) btn.style.display='';
+    // else: closed + totals already present → keep button hidden (results are final)
+  }).catch((e)=>{console.error('[INQ] verbose=false error:',e);btn.style.display='';});
+};
+
 // ── Attachment renderer ────────────────────────────────────────────────
 const renderAttachments=(container,attachments,links,blockchain)=>{
   const audioMime={mp3:'audio/mpeg',wav:'audio/wav',ogg:'audio/ogg',flac:'audio/flac',webm:'audio/webm',aac:'audio/aac',m4a:'audio/mp4',opus:'audio/opus'};
@@ -898,6 +1039,33 @@ const renderAttachments=(container,attachments,links,blockchain)=>{
     const isTx=/^[0-9a-f]{64}$/i.test(hash);
     const url=isTx?`${BASE_URL}/root/${hash}/${encodeURIComponent(filename)}`:`https://ipfs.io/ipfs/${hash}`;
     if(isTx) state.txidMeta.set(hash,chainToMeta(blockchain));
+    // INQ poll card
+    if(filename.toUpperCase()==='INQ'&&isTx){
+      const el=document.createElement('div');
+      el.innerHTML='<div class="poll-loading">Loading poll…</div>';
+      container.appendChild(el);
+      const pollMainnet=chainToMeta(blockchain).mainnet;
+      console.log('[INQ] detected INQ file txid:',hash,'blockchain:',blockchain,'pollMainnet:',pollMainnet,'url:',url);
+      (async()=>{
+        try{
+          console.log('[INQ] fetching INQ file →',url);
+          const res=await fetch(url);if(!res.ok) throw new Error(res.status);
+          const d=await res.json();
+          console.log('[INQ] INQ file data:',d);
+          if(!d||typeof d!=='object'||!d.que||!d.ans) throw new Error('bad format');
+          const queAddr=Object.keys(d.que)[0]||'';
+          const queText=String(Object.values(d.que)[0]||'');
+          const endBlock=d.end||null;
+          const answers=Object.entries(d.ans).map(([addr,text])=>({addr,text:String(text)}));
+          renderPollCard(el,queAddr,queText,endBlock,answers,pollMainnet,url);
+        }catch(err){
+          console.error('[INQ] failed to load INQ file:',err,'url:',url);
+          el.innerHTML=`<div class="file-card"><div class="file-card-icon">🗳️</div><div class="file-card-info"><div class="file-card-name" title="INQ">INQ</div><div class="file-card-meta"><span>Poll File</span> · <span class="file-card-size">Fetching…</span></div></div><a class="file-card-download" href="${url}" target="_blank" rel="noopener">Download</a></div>`;
+          fetchFileSize(url,el.querySelector('.file-card-size'));
+        }
+      })();
+      continue;
+    }
     const ext=(filename.match(/\.([^.]+)$/)||[])[1]?.toLowerCase()||'';
     const isImg=/^(jpg|jpeg|png|gif|webp|bmp|svg|avif)$/.test(ext);
     const isAud=/^(mp3|wav|ogg|flac|webm|aac|m4a|opus)$/.test(ext);
@@ -1107,20 +1275,8 @@ const renderObjectCard=(obj,blockchain)=>{
 // ── Search pagination helpers ──────────────────────────────────────────
 const allExhausted=()=>Object.values(state.pagination).every(p=>p.exhausted)&&state.buffer.length===0;
 const anyMoreNeeded=()=>Object.values(state.pagination).some(p=>!p.exhausted)||state.buffer.length>0;
-// Returns true only if there is pending data (buffer or non-exhausted pagination slots) for
-// chains that are currently checked — prevents infinite auto-load when all loaded cards are hidden.
-const hasMoreForVisibleChains=()=>{
-  const allowed=new Set();
-  if(document.getElementById('chkBitcoin').checked)  allowed.add('BTC');
-  if(document.getElementById('chkTestnet3').checked) allowed.add('TBTC');
-  if(document.getElementById('chkLTC').checked)      allowed.add('LTC');
-  if(document.getElementById('chkDOG').checked)      allowed.add('DOG');
-  if(document.getElementById('chkMZC').checked)      allowed.add('MZC');
-  if(state.buffer.some(item=>allowed.has(normalizeChain(item.blockchain)))) return true;
-  return Object.entries(state.pagination).some(([key,p])=>!p.exhausted&&allowed.has(key.split(':')[1]));
-};
+const updateResultCount=()=>{const n=state.totalDisplayed;const rc=document.getElementById('resultCount');if(n){rc.textContent=`${n} result${n===1?'':'s'} found`;rc.style.display='block';}};
 const endpointForType=(type)=>type==='objects'?'GetKnownObjectsBySearchString':type==='profiles'?'GetKnownProfilesBySearchString':'GetKnownRootsBySearchString';
-const countVisible=()=>{let n=0;document.querySelectorAll('#feed [data-chain]').forEach(c=>{if(c.style.display!=='none')n++;});return n;};
 
 const fetchNextPage=async(signal)=>{
   const pending=Object.entries(state.pagination).filter(([,p])=>!p.exhausted);
@@ -1162,48 +1318,6 @@ const fetchNextPage=async(signal)=>{
   return{objectResults,profileResults,rootResults};
 };
 
-// ── Chain filter ───────────────────────────────────────────────────────
-const applyChainFilter=(userInteraction=false)=>{
-  const allowed=new Set();
-  if(document.getElementById('chkBitcoin').checked) allowed.add('BTC');
-  if(document.getElementById('chkTestnet3').checked) allowed.add('TBTC');
-  if(document.getElementById('chkLTC').checked) allowed.add('LTC');
-  if(document.getElementById('chkDOG').checked) allowed.add('DOG');
-  if(document.getElementById('chkMZC').checked) allowed.add('MZC');
-  const showSystem=document.getElementById('chkSystem')?.checked;
-  let vis=0;
-  document.querySelectorAll('#feed [data-chain]').forEach(c=>{
-    const ch=c.dataset.chain;
-    const chainPass=ch?(allowed.has(ch)):(allowed.has('BTC')||allowed.has('TBTC'));
-    const sysPass=showSystem||c.dataset.system!=='true';
-    const pass=chainPass&&sysPass;
-    c.style.display=pass?'':'none';
-    if(pass) vis++;
-  });
-  const total=state.totalDisplayed;
-  const rc=document.getElementById('resultCount');
-  if(total){rc.textContent=vis===total?`${vis} result${vis===1?'':'s'} found`:`${vis} of ${total} result${total===1?'':'s'} match filters`;rc.style.display='block';}
-  if(userInteraction){
-    if(vis===0){
-      // Page collapsed — stop sentinel from triggering loadMoreBatch for now-hidden chains
-      scrollObserver.unobserve(document.getElementById('loadSentinel'));
-      if(allowed.size>0&&!state.isSearching){
-        if(hasMoreForVisibleChains()){
-          // Pending pages exist for a visible chain — drain them
-          setTimeout(()=>loadMoreBatch(),0);
-        }else{
-          // No data for the checked chains — run a fresh search with the new selection
-          setTimeout(()=>performSearch(state.lastSearchText||'*'),0);
-        }
-      }
-    }
-    // vis > 0: leave the sentinel as-is so scroll-to-load-more continues normally
-  }else{
-    // Internal call from loadMoreBatch: only auto-load if there is data for visible chains
-    if(vis===0&&anyMoreNeeded()&&hasMoreForVisibleChains()&&!state.isLoadingMore&&!state.isSearching) setTimeout(()=>loadMoreBatch(),0);
-  }
-};
-
 // ── Append search results ──────────────────────────────────────────────
 const appendResultItems=async(objectResults,profileResults,rootResults,searchId,signal)=>{
   // Normalize newly fetched items and add them to the shared buffer
@@ -1228,7 +1342,7 @@ const appendResultItems=async(objectResults,profileResults,rootResults,searchId,
     // Discard saturated-chain items immediately (don't keep re-checking them)
     if((state.chainCounts[ch]||0)>=MAX_PER_CHAIN){idx++;continue;}
     // Skip system messages entirely when System checkbox is unchecked (no render → no flash)
-    if(item.type==='message'&&!showSystem&&isSystemMsg(item.data.files)){idx++;continue;}
+    if(item.type==='message'&&!showSystem&&(isSystemMsg(item.data.files)||isEmptyMsg(item.data.message,item.data.files))){idx++;continue;}
     state.chainCounts[ch]=(state.chainCounts[ch]||0)+1;
     rendered++;
     idx++;  // advance before async work so the splice below always covers this item
@@ -1237,7 +1351,7 @@ const appendResultItems=async(objectResults,profileResults,rootResults,searchId,
     else if(item.type==='profile') card=renderProfileCard(item.raw,item.blockchain);
     else{ card=await renderMessageCard(item.data,signal,item.blockchain); if(state.currentSearchId!==searchId) break; }
     card.dataset.chain=ch;
-    if(item.type==='message'&&isSystemMsg(item.data.files)) card.dataset.system='true';
+    if(item.type==='message'&&(isSystemMsg(item.data.files)||isEmptyMsg(item.data.message,item.data.files))) card.dataset.system='true';
     feed.appendChild(card);
   }
   // Remove all examined items from the buffer in a single O(n) operation
@@ -1257,7 +1371,7 @@ const loadMoreBatch=async()=>{
   const searchId=state.currentSearchId;
   const signal=state.abortController?.signal;
   const loadEl=document.getElementById('searchLoading');
-  loadEl.textContent=countVisible()===0?'Searching deeper…':'Loading more…';
+  loadEl.textContent=state.totalDisplayed===0?'Searching deeper…':'Loading more…';
   loadEl.style.display='block';
   try{
     // Drain the buffer first; only fetch from the API when it is empty
@@ -1270,12 +1384,12 @@ const loadMoreBatch=async()=>{
     const added=await appendResultItems(objectResults,profileResults,rootResults,searchId,signal);
     if(state.currentSearchId!==searchId) return;
     state.totalDisplayed+=added;
-    applyChainFilter();
+    updateResultCount();
   }catch(e){if(e.name!=='AbortError') showSearchError('Failed to load more: '+e.message);}
   finally{
     loadEl.style.display='none';loadEl.textContent='Loading…';state.isLoadingMore=false;
-    if(state.currentSearchId===searchId&&anyMoreNeeded()&&hasMoreForVisibleChains()){
-      if(countVisible()<DISPLAY_BATCH_SIZE&&(state.autoLoadDepth||0)<6){state.autoLoadDepth=(state.autoLoadDepth||0)+1;setTimeout(()=>loadMoreBatch(),0);}
+    if(state.currentSearchId===searchId&&anyMoreNeeded()){
+      if(state.totalDisplayed<DISPLAY_BATCH_SIZE&&(state.autoLoadDepth||0)<6){state.autoLoadDepth=(state.autoLoadDepth||0)+1;setTimeout(()=>loadMoreBatch(),0);}
       else{state.autoLoadDepth=0;scrollObserver.observe(sentinel);}
     }
   }
@@ -1331,13 +1445,13 @@ const performKeywordSearch=async(keyword)=>{
     if(state.currentSearchId!==searchId) return;
     state.totalDisplayed+=added;
     if(!added&&allExhausted()){feedEl.innerHTML='<div style="text-align:center;padding:30px;color:#666;">No results for #'+escapeHtml(keyword)+'</div>';document.getElementById('resultCount').style.display='none';}
-    else applyChainFilter();
+    else updateResultCount();
   }catch(e){
     if(e.name!=='AbortError'){showSearchError('Keyword search failed: '+e.message);loadEl.style.display='none';}
   }finally{
     if(state.currentSearchId===searchId){state.isSearching=false;btn.disabled=false;btn.textContent='Search';inp.disabled=false;loadEl.style.display='none';loadEl.textContent='Loading…';}
-    if(state.currentSearchId===searchId&&anyMoreNeeded()&&hasMoreForVisibleChains()){
-      if(countVisible()<DISPLAY_BATCH_SIZE&&(state.autoLoadDepth||0)<6){state.autoLoadDepth=(state.autoLoadDepth||0)+1;setTimeout(()=>loadMoreBatch(),0);}
+    if(state.currentSearchId===searchId&&anyMoreNeeded()){
+      if(state.totalDisplayed<DISPLAY_BATCH_SIZE&&(state.autoLoadDepth||0)<6){state.autoLoadDepth=(state.autoLoadDepth||0)+1;setTimeout(()=>loadMoreBatch(),0);}
       else{state.autoLoadDepth=0;scrollObserver.observe(document.getElementById('loadSentinel'));}
     }
   }
@@ -1393,13 +1507,13 @@ const performSearch=async(searchText)=>{
     if(state.currentSearchId!==searchId) return;
     state.totalDisplayed+=added;
     if(!added&&allExhausted()){document.getElementById('feed').innerHTML='<div style="text-align:center;padding:30px;color:#666;">No results found.</div>';document.getElementById('resultCount').style.display='none';}
-    else applyChainFilter();
+    else updateResultCount();
   }catch(e){
     if(e.name!=='AbortError'){showSearchError('Search failed: '+e.message);document.getElementById('searchLoading').style.display='none';}
   }finally{
     if(state.currentSearchId===searchId){state.isSearching=false;btn.disabled=false;btn.textContent='Search';inp.disabled=false;}
-    if(state.currentSearchId===searchId&&anyMoreNeeded()&&hasMoreForVisibleChains()){
-      if(countVisible()<DISPLAY_BATCH_SIZE&&(state.autoLoadDepth||0)<6){state.autoLoadDepth=(state.autoLoadDepth||0)+1;setTimeout(()=>loadMoreBatch(),0);}
+    if(state.currentSearchId===searchId&&anyMoreNeeded()){
+      if(state.totalDisplayed<DISPLAY_BATCH_SIZE&&(state.autoLoadDepth||0)<6){state.autoLoadDepth=(state.autoLoadDepth||0)+1;setTimeout(()=>loadMoreBatch(),0);}
       else{state.autoLoadDepth=0;scrollObserver.observe(document.getElementById('loadSentinel'));}
     }
   }
@@ -2471,14 +2585,30 @@ document.getElementById('navbar-search-btn').addEventListener('click',(e)=>{
   handleNavSearch();
 });
 
-document.getElementById('brandHome').addEventListener('click',()=>navigateTo('search',{}));
-
-// ── Chain / type checkbox events ───────────────────────────────────────
-['chkBitcoin','chkTestnet3','chkLTC','chkDOG','chkMZC','chkSystem'].forEach(id=>{
-  document.getElementById(id).addEventListener('change',()=>applyChainFilter(true));
+document.getElementById('brandHome').addEventListener('click',()=>{
+  const isSearchView=document.getElementById('filter-bar').style.display!=='none';
+  if(!isSearchView){
+    // Not on search view — navigate back to search, showing the filter bar
+    navigateTo('search',{});
+  }else{
+    // Already on search view — reset to defaults and run a fresh * search
+    document.getElementById('chkMessages').checked=true;
+    document.getElementById('chkProfiles').checked=false;
+    document.getElementById('chkObjects').checked=false;
+    document.getElementById('chkBitcoin').checked=false;
+    document.getElementById('chkTestnet3').checked=true;
+    document.getElementById('chkLTC').checked=false;
+    document.getElementById('chkDOG').checked=false;
+    document.getElementById('chkMZC').checked=false;
+    document.getElementById('chkSystem').checked=false;
+    document.getElementById('navbar-search-input').value='';
+    navigateTo('search',{});
+  }
 });
-// Type checkboxes (Objects/Profiles/Messages) no longer auto-search on change.
-// The updated selection is picked up when the user submits a new search.
+
+// ── Checkbox events — type and chain checkboxes are passive; search only
+// runs when the user presses Enter or clicks the Search button.
+// (no change listeners needed — performSearch reads all checkbox state on submit)
 
 // ── Profile load more ──────────────────────────────────────────────────
 document.getElementById('profileMsgLoadMore').addEventListener('click',()=>loadProfileMessages());

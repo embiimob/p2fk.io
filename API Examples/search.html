@@ -814,6 +814,7 @@
       attachmentMatches.forEach((match) => {
         const content = match.slice(2, -2).replace(/\s+/g, '').trim();
         if (content.match(/^-?\d+$/) || content.match(/#[\w\s#]+/) || content.match(/^#[\w\s]+$/)) return;
+        if (!/^IPFS:/i.test(content) && !/^[0-9a-f]{64}(?:[/\\]|$)/i.test(content) && !/^https?:\/\//i.test(content)) return;
         if (/^https?:\/\//i.test(content)) links.push(content);
         else attachments.push(content);
       });
