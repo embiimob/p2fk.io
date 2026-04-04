@@ -189,12 +189,29 @@ namespace P2FK.IO.Services
 
             var rows = await Task.Run(() => ExecuteSearchQuery(sql));
 
-            // If Windows Search returned nothing (index not ready or files not yet indexed),
-            // fall back to a direct filesystem scan so results are available immediately.
-            if (rows.Count == 0)
-                rows = await FallbackScanAsync(
+            // Always supplement with a direct filesystem scan so that newly-created (pending,
+            // not yet indexed) files appear immediately, regardless of Windows Search indexing state.
+            // If Windows Search returned nothing, the filesystem scan becomes the full result set;
+            // otherwise any paths not already in the Windows Search result are merged in.
+            {
+                var fsRows = await FallbackScanAsync(
                     isWildcard || hasSearch ? "*" : "ROOT.json",
                     isWildcard ? string.Empty : sanitized);
+
+                if (rows.Count == 0)
+                {
+                    rows = fsRows;
+                }
+                else
+                {
+                    var knownPaths = new HashSet<string>(rows.Select(r => r.Path), StringComparer.OrdinalIgnoreCase);
+                    foreach (var r in fsRows)
+                    {
+                        if (!knownPaths.Contains(r.Path))
+                            rows.Add(r);
+                    }
+                }
+            }
 
             // When filtering system files, do one fast pass over the rows Windows Search already
             // returned to identify system transaction IDs purely from the on-disk file names —

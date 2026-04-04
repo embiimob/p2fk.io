@@ -1111,11 +1111,11 @@
       // Date display — show Pending badge when unconfirmed, Refresh link when block date is the unset sentinel
       const nullDate = isNullDate(normalized.blockDate);
       const isPending = normalized.confirmations === 0;
-      const refreshAttr = normalized.txId && !isPending
+      const refreshAttr = normalized.txId
         ? ` <span class="refresh-date" data-txid="${escapeHtml(normalized.txId)}" data-apichain="${escapeHtml(apiChain)}" data-mainnet="${!apiIsTestnet}" title="Fetch confirmed block date from the chain">🔄 Refresh Date</span>`
         : '';
       const dateHtml = isPending
-        ? `<span class="badge-pending">⏳ Pending</span>`
+        ? `<span class="badge-pending">⏳ Pending</span>${refreshAttr}`
         : nullDate
         ? `<span class="msg-date">Unknown</span>${refreshAttr}`
         : `<span class="msg-date">${escapeHtml(normalized.blockDate)}</span>`;
@@ -1177,7 +1177,15 @@
             const newDate = (root && typeof root === 'object') ? (root['Block Date'] ?? root.BlockDate ?? '') : '';
             if (newDate && !isNullDate(newDate)) {
               const dateEl = metaDiv.querySelector('.msg-date');
-              if (dateEl) dateEl.textContent = newDate;
+              const pendingEl = metaDiv.querySelector('.badge-pending');
+              if (dateEl) {
+                dateEl.textContent = newDate;
+              } else if (pendingEl) {
+                const newDateEl = document.createElement('span');
+                newDateEl.className = 'msg-date';
+                newDateEl.textContent = newDate;
+                pendingEl.replaceWith(newDateEl);
+              }
               refreshEl.remove();
             } else {
               refreshEl.textContent = '❌ Not confirmed yet';

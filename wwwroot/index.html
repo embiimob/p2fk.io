@@ -1163,8 +1163,8 @@ const renderMessageCard=async(normalized,signal,blockchain,shareParams)=>{
   const apiChain=apiIsTestnet?'BTC':(validApiChains.includes(chainUpper)?chainUpper:'BTC');
   const nullDate=isNullDate(normalized.blockDate);
   const isPending=normalized.confirmations===0;
-  const refreshAttr=normalized.txId&&!isPending?` <span class="refresh-date" data-txid="${escapeHtml(normalized.txId)}" data-apichain="${escapeHtml(apiChain)}" data-mainnet="${!apiIsTestnet}" title="Refresh block date">🔄 Refresh</span>`:'';
-  const dateHtml=isPending?`<span class="badge-pending">⏳ Pending</span>`:nullDate?`<span class="msg-date">Unknown</span>${refreshAttr}`:`<span class="msg-date">${escapeHtml(normalized.blockDate)}</span>`;
+  const refreshAttr=normalized.txId?` <span class="refresh-date" data-txid="${escapeHtml(normalized.txId)}" data-apichain="${escapeHtml(apiChain)}" data-mainnet="${!apiIsTestnet}" title="Refresh block date">🔄 Refresh</span>`:'';
+  const dateHtml=isPending?`<span class="badge-pending">⏳ Pending</span>${refreshAttr}`:nullDate?`<span class="msg-date">Unknown</span>${refreshAttr}`:`<span class="msg-date">${escapeHtml(normalized.blockDate)}</span>`;
   const txidHtml=normalized.txId?` <span class="txid-copy" data-txid="${escapeHtml(normalized.txId)}" title="Copy TX ID">📋 ${escapeHtml(normalized.txId.slice(0,8))}…</span>`:'';
   meta.innerHTML=`From: ${createUrnLink(fromName,normalized.fromAddress)}${toLinks.length?` | To: ${toLinks.join(', ')}`:''}${normalized.txId?' |':''} ${dateHtml}${txidHtml}`;
   card.appendChild(meta);
@@ -1185,7 +1185,7 @@ const renderMessageCard=async(normalized,signal,blockchain,shareParams)=>{
       try{const r=await fetchAPI(`${BASE_URL}/GetRootByTransactionID/${encodeURIComponent(t)}?mainnet=${mn}&blockchain=${ac}`,'',null);
         const root=Array.isArray(r)?r[0]:r;
         const nd=(root&&typeof root==='object')?(root['Block Date']??root.BlockDate??''):'';
-        if(nd&&!isNullDate(nd)){cacheTransaction(t,mn,ac,root);const de=meta.querySelector('.msg-date');if(de)de.textContent=nd;refreshEl.remove();}
+        if(nd&&!isNullDate(nd)){cacheTransaction(t,mn,ac,root);const de=meta.querySelector('.msg-date');const pe=meta.querySelector('.badge-pending');if(de)de.textContent=nd;else if(pe){const nde=document.createElement('span');nde.className='msg-date';nde.textContent=nd;pe.replaceWith(nde);}refreshEl.remove();}
         else{refreshEl.textContent='❌';setTimeout(()=>{refreshEl.textContent='🔄 Refresh';refreshEl.style.pointerEvents='';},3000);}
       }catch{refreshEl.textContent='❌';setTimeout(()=>{refreshEl.textContent='🔄 Refresh';refreshEl.style.pointerEvents='';},3000);}
     }
