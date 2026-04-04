@@ -221,6 +221,7 @@
     .badge-object { background: #6200ea; color: white; }
     .badge-profile { background: #03dac6; color: #121212; }
     .badge-message { background: #ff9800; color: #121212; }
+    .badge-pending { display: inline-block; border-radius: 3px; padding: 1px 6px; font-size: 0.68em; font-weight: bold; background: #3a2800; color: #ffb300; border: 1px solid #ffb300; }
     /* ── Message sender header ───────────────────────────────────────── */
     .msg-sender {
       display: flex;
@@ -771,8 +772,8 @@
       } catch { return dateStr; }
     };
 
-    // Returns true when a block date is the default/unset sentinel (0001-01-01T00:00:00…)
-    const isNullDate = (dateStr) => !dateStr || String(dateStr).startsWith('0001-01-01');
+    // Returns true when a block date is the default/unset sentinel (0001-01-01T00:00:00… or 1970-01-01T00:00:00)
+    const isNullDate = (dateStr) => !dateStr || String(dateStr).startsWith('0001-01-01') || String(dateStr).startsWith('1970-01-01');
 
     const getFileCardIcon = (ext) => {
       if (/^(zip|tar|gz|bz2|xz|rar|7z|tgz)$/.test(ext)) return '📦';
@@ -874,7 +875,8 @@
       const files = (rawFile && typeof rawFile === 'object' && !Array.isArray(rawFile))
         ? Object.keys(rawFile).filter(f => f && f !== 'SIG')
         : [];
-      return { message: msg, fromAddress: signedBy, toAddresses, blockDate, txId, files };
+      const confirmations = root.Confirmations ?? root['Confirmations'] ?? null;
+      return { message: msg, fromAddress: signedBy, toAddresses, blockDate, txId, files, confirmations };
     };
 
     // ── Lazy-loading observer ────────────────────────────────────────────
@@ -1106,12 +1108,15 @@
       const validApiChains = ['BTC', 'LTC', 'DOG', 'MZC'];
       const apiChain = apiIsTestnet ? 'BTC' : (validApiChains.includes(chainUpper) ? chainUpper : 'BTC');
 
-      // Date display — show Refresh link when block date is the unset sentinel
+      // Date display — show Pending badge when unconfirmed, Refresh link when block date is the unset sentinel
       const nullDate = isNullDate(normalized.blockDate);
-      const refreshAttr = normalized.txId
+      const isPending = normalized.confirmations === 0;
+      const refreshAttr = normalized.txId && !isPending
         ? ` <span class="refresh-date" data-txid="${escapeHtml(normalized.txId)}" data-apichain="${escapeHtml(apiChain)}" data-mainnet="${!apiIsTestnet}" title="Fetch confirmed block date from the chain">🔄 Refresh Date</span>`
         : '';
-      const dateHtml = nullDate
+      const dateHtml = isPending
+        ? `<span class="badge-pending">⏳ Pending</span>`
+        : nullDate
         ? `<span class="msg-date">Unknown</span>${refreshAttr}`
         : `<span class="msg-date">${escapeHtml(normalized.blockDate)}</span>`;
 
