@@ -196,6 +196,30 @@ namespace P2FK.IO.Services
                     isWildcard || hasSearch ? "*" : "ROOT.json",
                     isWildcard ? string.Empty : sanitized);
 
+            // When filtering system files, do one fast pass over the rows Windows Search already
+            // returned to identify system transaction IDs purely from the on-disk file names —
+            // no ROOT.json I/O required.  System indicator files are stored without an extension
+            // (the filename IS the type code, e.g. "OBJ", "SEC") or with a system extension
+            // (e.g. "something.OBJ").  Either form is detected here from the path string alone.
+            var systemTxIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (!showSystemFiles)
+            {
+                foreach (var row in rows)
+                {
+                    string ext = Path.GetExtension(row.Path).TrimStart('.').ToUpperInvariant();
+                    string name = Path.GetFileNameWithoutExtension(row.Path).ToUpperInvariant();
+
+                    // Extensionless system file: filename is the type code (e.g. the file is just "OBJ")
+                    // Extension-based system file: extension is the type code (e.g. "something.OBJ")
+                    bool isSystemFile = SystemExtensions.Contains(ext) ||
+                                        (ext.Length == 0 && SystemExtensions.Contains(name));
+                    if (!isSystemFile) continue;
+
+                    string? sysId = ExtractTransactionId(row.Path);
+                    if (sysId != null) systemTxIds.Add(sysId);
+                }
+            }
+
             // Deduplicate by transaction ID, keeping the newest-modified row per txid
             var txMap = new Dictionary<string, SearchRow>(StringComparer.OrdinalIgnoreCase);
             foreach (var row in rows)
@@ -216,6 +240,12 @@ namespace P2FK.IO.Services
                 if (results.Count >= qty) break;
 
                 string txId = kvp.Key;
+
+                // Short-circuit: txId already identified as a system transaction from the Windows
+                // Search file listing — skip the ROOT.json read entirely, no file I/O needed.
+                if (!showSystemFiles && systemTxIds.Contains(txId))
+                    continue;
+
                 string rootJsonPath = Path.Combine(_rootPath, txId, "ROOT.json");
 
                 if (!File.Exists(rootJsonPath)) continue;
@@ -233,8 +263,9 @@ namespace P2FK.IO.Services
                 if (blockchain != null && !string.Equals(detectedBlockchain, blockchain, StringComparison.OrdinalIgnoreCase))
                     continue;
 
-                // When showSystemFiles=false, skip system/empty roots before counting skip or adding to results.
-                // This ensures the cached result and pagination are both based on user-visible items only.
+                // Fallback for transactions not caught by the file-listing scan: handles the
+                // edge case where the message is empty and there are no attached files on disk
+                // (ROOT.json is the only file in the folder, so no extension clue is available).
                 if (!showSystemFiles && IsSystemRoot(rootObj.Value))
                     continue;
 
