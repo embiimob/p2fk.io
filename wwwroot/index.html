@@ -919,6 +919,7 @@ const parseMessage=async(messageText,mainnet,signal)=>{
 // ── Poll card renderer ─────────────────────────────────────────────────
 const fmtVotes=(n)=>{if(n==null)return'—';const v=Number(n);return isFinite(v)?v.toLocaleString():'—';};
 const renderPollCard=(el,queAddr,queText,endBlock,answers,mainnet,downloadUrl)=>{
+  console.log('[INQ] renderPollCard → addr:',queAddr,'mainnet:',mainnet,'endBlock:',endBlock,'answers:',answers.length);
   const optHtml=answers.map(a=>`<div class="poll-option" data-addr="${escapeHtml(a.addr)}"><div class="poll-option-text">${escapeHtml(a.text)}</div><div class="poll-bar-row"><div class="poll-bar-wrap"><div class="poll-bar"></div></div><span class="poll-count">—</span></div></div>`).join('');
   const endHtml=endBlock?`<div class="poll-end">Ends at block ${escapeHtml(String(endBlock))}</div>`:'';
   el.innerHTML=`<div class="poll-card"><div class="poll-header"><span class="poll-badge">📊 Poll</span><span class="poll-status"></span></div><div class="poll-question">${escapeHtml(queText)}</div>${endHtml}<div class="poll-gate" style="display:none"></div><div class="poll-options">${optHtml}</div><div class="poll-total" style="display:none"></div><button class="poll-vote-btn" style="display:none">Calculate</button><div class="poll-error" style="display:none"></div></div>`;
@@ -948,44 +949,91 @@ const renderPollCard=(el,queAddr,queText,endBlock,answers,mainnet,downloadUrl)=>
   const btn=el.querySelector('.poll-vote-btn');
   const errEl=el.querySelector('.poll-error');
   btn.textContent='Calculate';
-  // verbose=true fetch — triggered by the Calculate button for both open and closed polls
+  // verbose=true fetch — triggered automatically for closed polls with no cached totals, or by the Calculate button
   const runVerboseFetch=async()=>{
+    const vUrl=`${BASE_URL}/GetInquiryByAddress/${encodeURIComponent(queAddr)}?mainnet=${mainnet}&verbose=true`;
+    console.log('[INQ] verbose=true fetch →',vUrl);
     btn.disabled=true;btn.textContent='⏳ Calculating…';errEl.style.display='none';
     try{
-      const r=await fetchAPI(`${BASE_URL}/GetInquiryByAddress/${encodeURIComponent(queAddr)}?mainnet=${mainnet}&verbose=true`,'',null,180000);
+      const r=await fetchAPI(vUrl,'',null,180000);
+      console.log('[INQ] verbose=true response:',r);
       if(!r||typeof r!=='object') throw new Error('No data returned');
       applyVoteData(r);
-      // Keep button visible for open polls (votes can still change); hide for closed polls (totals are final)
       const stillOpen=r.status==='open';
       btn.textContent='Calculate';btn.disabled=false;
       if(!stillOpen) btn.style.display='none';
     }catch(e){
+      console.error('[INQ] verbose=true error:',e);
       errEl.textContent='Failed: '+(e.message||'Unknown error');errEl.style.display='';
       btn.textContent='Calculate';btn.disabled=false;
     }
   };
-  btn.addEventListener('click',runVerboseFetch);
+  btn.addEventListener('click',()=>{console.log('[INQ] Calculate button clicked for',queAddr);runVerboseFetch();});
+  // Build gate banner with clickable object NME / profile names (async-resolved)
+  const buildGateBanner=(r)=>{
+    const gEl=el.querySelector('.poll-gate');
+    const frag=document.createDocumentFragment();
+    frag.appendChild(document.createTextNode('🔒 '));
+    let first=true;
+    const sep=()=>{if(!first) frag.appendChild(document.createTextNode(' · '));first=false;};
+    if(r.OwnsObjectGate){
+      const arr=Array.isArray(r.OwnsObjectGate)?r.OwnsObjectGate:[r.OwnsObjectGate];
+      if(arr.length){
+        sep();frag.appendChild(document.createTextNode('Must own object: '));
+        arr.forEach((rawAddr,i)=>{
+          if(i>0) frag.appendChild(document.createTextNode(', '));
+          const addr=String(rawAddr);
+          const sp=document.createElement('span');sp.className='urn-link';sp.textContent=abbreviateAddress(addr);
+          sp.addEventListener('click',(e)=>{e.stopPropagation();navigateTo('object',{object:addr,mainnet});});
+          frag.appendChild(sp);
+          fetchAPI(`${BASE_URL}/GetObjectByAddress/${encodeURIComponent(addr)}?mainnet=${mainnet}&verbose=false`,'',null)
+            .then(obj=>{if(obj&&obj.NME) sp.textContent=obj.NME;}).catch(()=>{});
+        });
+      }
+    }
+    if(r.OwnsCreatedByGate){
+      const arr=Array.isArray(r.OwnsCreatedByGate)?r.OwnsCreatedByGate:[r.OwnsCreatedByGate];
+      if(arr.length){
+        sep();frag.appendChild(document.createTextNode('Created by: '));
+        arr.forEach((rawAddr,i)=>{
+          if(i>0) frag.appendChild(document.createTextNode(', '));
+          const addr=String(rawAddr);
+          const sp=document.createElement('span');sp.className='urn-link';sp.textContent=abbreviateAddress(addr);
+          sp.addEventListener('click',(e)=>{e.stopPropagation();navigateTo('profile',{profile:addr,mainnet});});
+          frag.appendChild(sp);
+          fetchProfileByAddress(addr,mainnet,null)
+            .then(p=>{if(p&&(p.DisplayName||p.URN)) sp.textContent=p.DisplayName||p.URN;}).catch(()=>{});
+        });
+      }
+    }
+    if(Array.isArray(r.AuthorizedByGate)&&r.AuthorizedByGate.length) {sep();frag.appendChild(document.createTextNode(`Authorized: ${r.AuthorizedByGate.length} address${r.AuthorizedByGate.length>1?'es':''}`));}
+    if(r.RequireSignature){sep();frag.appendChild(document.createTextNode('Signature required'));}
+    if(!first){gEl.innerHTML='';gEl.appendChild(frag);gEl.style.display='';}
+  };
   // Initial load: verbose=false (fast; returns cached totals if a verbose run has been done before)
-  fetchAPI(`${BASE_URL}/GetInquiryByAddress/${encodeURIComponent(queAddr)}?mainnet=${mainnet}&verbose=false`,'',null,15000).then(r=>{
-    if(!r||typeof r!=='object') return;
+  const initUrl=`${BASE_URL}/GetInquiryByAddress/${encodeURIComponent(queAddr)}?mainnet=${mainnet}&verbose=false`;
+  console.log('[INQ] initial verbose=false fetch →',initUrl);
+  fetchAPI(initUrl,'',null,15000).then(r=>{
+    console.log('[INQ] verbose=false response:',r);
+    if(!r||typeof r!=='object'){console.warn('[INQ] no data from verbose=false, showing Calculate button');btn.style.display='';return;}
     const statusEl=el.querySelector('.poll-status');
     const isOpen=r.status==='open';
     if(r.status){statusEl.textContent=isOpen?'OPEN':'CLOSED';statusEl.className=`poll-status-badge ${isOpen?'poll-status-open':'poll-status-closed'}`;}
     if(r.MaxBlockHeight&&!endBlock){const d=el.querySelector('.poll-end');if(d)d.textContent=`Ends at block ${r.MaxBlockHeight.toLocaleString()}`;}
-    const gates=[];
-    if(r.OwnsObjectGate){const arr=Array.isArray(r.OwnsObjectGate)?r.OwnsObjectGate:[r.OwnsObjectGate];if(arr.length) gates.push(`Must own object: ${arr.map(a=>abbreviateAddress(String(a))).join(', ')}`);}
-    if(r.OwnsCreatedByGate){const arr=Array.isArray(r.OwnsCreatedByGate)?r.OwnsCreatedByGate:[r.OwnsCreatedByGate];if(arr.length) gates.push(`Created by: ${arr.map(a=>abbreviateAddress(String(a))).join(', ')}`);}
-    if(Array.isArray(r.AuthorizedByGate)&&r.AuthorizedByGate.length) gates.push(`Authorized: ${r.AuthorizedByGate.length} address${r.AuthorizedByGate.length>1?'es':''}`);
-    if(r.RequireSignature) gates.push('Signature required');
-    if(gates.length){const g=el.querySelector('.poll-gate');g.textContent='🔒 '+gates.join(' · ');g.style.display='';}
+    buildGateBanner(r);
     let hasTotals=false;
     try{hasTotals=applyVoteData(r);}catch(_){}
-    // Button visibility:
-    //   OPEN poll → always show Calculate (votes can still arrive)
-    //   CLOSED, no totals yet → show Calculate (verbose=true needed to compute final results)
-    //   CLOSED, totals already present → hide button (results are final)
-    if(isOpen||!hasTotals) btn.style.display='';
-  }).catch(()=>{});
+    console.log('[INQ] hasTotals:',hasTotals,'isOpen:',isOpen);
+    if(isOpen){
+      // Open poll: show Calculate so user can refresh counts
+      btn.style.display='';
+    }else if(!hasTotals){
+      // Closed poll with no cached totals: auto-run verbose=true to compute results
+      console.log('[INQ] closed poll, no cached totals → auto-running verbose=true');
+      runVerboseFetch();
+    }
+    // else: closed + totals present → keep button hidden (results are final)
+  }).catch((e)=>{console.error('[INQ] verbose=false error:',e);btn.style.display='';});
 };
 
 // ── Attachment renderer ────────────────────────────────────────────────
@@ -1004,17 +1052,21 @@ const renderAttachments=(container,attachments,links,blockchain)=>{
       container.appendChild(el);
       const chainUpper=(blockchain||'').toUpperCase();
       const pollMainnet=chainUpper!=='TBTC';
+      console.log('[INQ] detected INQ file txid:',hash,'blockchain:',blockchain,'pollMainnet:',pollMainnet,'url:',url);
       (async()=>{
         try{
+          console.log('[INQ] fetching INQ file →',url);
           const res=await fetch(url);if(!res.ok) throw new Error(res.status);
           const d=await res.json();
+          console.log('[INQ] INQ file data:',d);
           if(!d||typeof d!=='object'||!d.que||!d.ans) throw new Error('bad format');
           const queAddr=Object.keys(d.que)[0]||'';
           const queText=String(Object.values(d.que)[0]||'');
           const endBlock=d.end||null;
           const answers=Object.entries(d.ans).map(([addr,text])=>({addr,text:String(text)}));
           renderPollCard(el,queAddr,queText,endBlock,answers,pollMainnet,url);
-        }catch{
+        }catch(err){
+          console.error('[INQ] failed to load INQ file:',err,'url:',url);
           el.innerHTML=`<div class="file-card"><div class="file-card-icon">🗳️</div><div class="file-card-info"><div class="file-card-name" title="INQ">INQ</div><div class="file-card-meta"><span>Poll File</span> · <span class="file-card-size">Fetching…</span></div></div><a class="file-card-download" href="${url}" target="_blank" rel="noopener">Download</a></div>`;
           fetchFileSize(url,el.querySelector('.file-card-size'));
         }
