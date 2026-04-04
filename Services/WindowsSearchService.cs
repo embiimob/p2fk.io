@@ -12,7 +12,7 @@ namespace P2FK.IO.Services
     {
         private readonly string _rootPath;
         private readonly IMemoryCache _cache;
-        private static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(60);
+        internal static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(60);
         private static readonly Regex TxIdRegex = new Regex(@"[0-9a-fA-F]{64}", RegexOptions.Compiled);
         private const int MaxSearchLength = 2048;
 
