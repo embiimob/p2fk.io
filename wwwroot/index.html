@@ -708,7 +708,7 @@ const formatDate = (d) => {
   if (!d || String(d).startsWith('0001-01-01')) return null;
   try { const x=new Date(d); return isNaN(x)?null:x.toLocaleDateString('en-US',{year:'numeric',month:'short',day:'numeric'}); } catch { return null; }
 };
-const isNullDate = (d) => !d || String(d).startsWith('0001-01-01') || String(d).startsWith('1970-01-01');
+const isNullDate = (d) => !d || String(d).startsWith('0001-01-01') || String(d).startsWith('1970-01-01'); // 0001-01-01 = .NET default; 1970-01-01 = pending (unconfirmed) sentinel
 
 const chainToMeta = (blockchain) => {
   const c=(blockchain||'BTC').toUpperCase();
