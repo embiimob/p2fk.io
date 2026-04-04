@@ -987,7 +987,7 @@ const renderPollCard=(el,queAddr,queText,endBlock,answers,mainnet,downloadUrl)=>
           sp.addEventListener('click',(e)=>{e.stopPropagation();navigateTo('object',{object:addr,mainnet});});
           frag.appendChild(sp);
           fetchAPI(`${BASE_URL}/GetObjectByAddress/${encodeURIComponent(addr)}?mainnet=${mainnet}&verbose=false`,'',null)
-            .then(obj=>{if(obj&&obj.NME) sp.textContent=obj.NME;}).catch(()=>{});
+            .then(obj=>{const o=Array.isArray(obj)?obj[0]:obj;if(o&&o.Name) sp.textContent=o.Name;}).catch(()=>{});
         });
       }
     }
