@@ -1289,7 +1289,7 @@ const fetchNextPage=async(signal)=>{
       if(type==='profiles') return fetchAPI(`${BASE_URL}/GetProfileByAddress/${encodeURIComponent(addr)}?mainnet=${mn}`,'',signal).catch(()=>null);
       return fetchAPI(`${BASE_URL}/GetPublicMessagesByAddress/${encodeURIComponent(addr)}?mainnet=${mn}&skip=${p.skip}&qty=${API_FETCH_BATCH_SIZE}`,'',signal).catch(()=>[]);
     }
-    return fetchAPI(`${BASE_URL}/${endpointForType(type)}?searchString=${encodeURIComponent(state.lastSearchText)}&qty=${API_FETCH_BATCH_SIZE}&skip=${p.skip}&${p.params}`,'',signal).catch(()=>[]);
+    return fetchAPI(`${BASE_URL}/${endpointForType(type)}?searchString=${encodeURIComponent(state.lastSearchText)}&qty=${API_FETCH_BATCH_SIZE}&skip=${p.skip}&${p.params}&showSystemFiles=${document.getElementById('chkSystem').checked}`,'',signal).catch(()=>[]);
   }));
   pending.forEach(([key],i)=>{
     const[type]=key.split(':',2);
@@ -1332,7 +1332,6 @@ const appendResultItems=async(objectResults,profileResults,rootResults,searchId,
   });
   // Render up to DISPLAY_BATCH_SIZE items from the front of the buffer
   const feed=document.getElementById('feed');
-  const showSystem=document.getElementById('chkSystem')?.checked;
   let rendered=0;
   let idx=0;
   while(idx<state.buffer.length&&rendered<DISPLAY_BATCH_SIZE){
@@ -1341,8 +1340,6 @@ const appendResultItems=async(objectResults,profileResults,rootResults,searchId,
     const ch=normalizeChain(item.blockchain);
     // Discard saturated-chain items immediately (don't keep re-checking them)
     if((state.chainCounts[ch]||0)>=MAX_PER_CHAIN){idx++;continue;}
-    // Skip system messages entirely when System checkbox is unchecked (no render → no flash)
-    if(item.type==='message'&&!showSystem&&(isSystemMsg(item.data.files)||isEmptyMsg(item.data.message,item.data.files))){idx++;continue;}
     state.chainCounts[ch]=(state.chainCounts[ch]||0)+1;
     rendered++;
     idx++;  // advance before async work so the splice below always covers this item

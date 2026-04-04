@@ -28,8 +28,9 @@ namespace P2FK.IO.Controllers
         /// <param name="skip">Number of results to skip for pagination (default 0).</param>
         /// <param name="mainnet">true = Bitcoin mainnet; false = Bitcoin testnet. Ignored when blockchain ≠ BTC.</param>
         /// <param name="blockchain">Target blockchain: BTC (default), LTC, DOG, or MZC.</param>
+        /// <param name="showSystemFiles">When false, system-type messages (SEC/OBJ/LST/BRN/PRO/BUY/GIV) and empty messages are excluded before caching and returning results (default true).</param>
         [HttpGet]
-        public async Task<ActionResult> Get(string searchString = "", int qty = 10, int skip = 0, bool mainnet = true, string blockchain = "BTC")
+        public async Task<ActionResult> Get(string searchString = "", int qty = 10, int skip = 0, bool mainnet = true, string blockchain = "BTC", bool showSystemFiles = true)
         {
             if (searchString.Length > 2048)
                 return BadRequest("[\"invalid search string\"]");
@@ -46,7 +47,7 @@ namespace P2FK.IO.Controllers
             // map directly to the blockchain value.
             string effectiveChain = (blockchain == "BTC" && !mainnet) ? "BTC-testnet" : blockchain;
 
-            var results = await _searchService.SearchRootsAsync(searchString, qty, skip, effectiveChain);
+            var results = await _searchService.SearchRootsAsync(searchString, qty, skip, effectiveChain, showSystemFiles);
             return new JsonResult(results);
         }
     }

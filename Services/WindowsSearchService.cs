@@ -91,16 +91,61 @@ namespace P2FK.IO.Services
             return rows;
         }
 
+        // ── System-file filter helpers ─────────────────────────────────────────
+
+        private static readonly HashSet<string> SystemExtensions =
+            new(StringComparer.OrdinalIgnoreCase) { "SEC", "OBJ", "LST", "BRN", "PRO", "BUY", "GIV" };
+
+        /// <summary>
+        /// Returns true when the root should be hidden under the system-file filter.
+        /// Matches the same logic used on the client: a root is "system" when its
+        /// <c>File</c> object contains any key whose name or extension is one of the
+        /// known system types (SEC/OBJ/LST/BRN/PRO/BUY/GIV), or when the message
+        /// is blank and there are no attached files.
+        /// </summary>
+        private static bool IsSystemRoot(JsonElement root)
+        {
+            var files = new List<string>();
+            if (root.TryGetProperty("File", out var fileEl) && fileEl.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var prop in fileEl.EnumerateObject())
+                {
+                    if (!string.IsNullOrEmpty(prop.Name) && prop.Name != "SIG")
+                        files.Add(prop.Name);
+                }
+            }
+
+            // Check if any file name or extension matches a system type
+            foreach (string f in files)
+            {
+                string upper = f.ToUpperInvariant();
+                if (SystemExtensions.Contains(upper)) return true;
+                int dot = upper.LastIndexOf('.');
+                if (dot >= 0 && SystemExtensions.Contains(upper[(dot + 1)..])) return true;
+            }
+
+            // Empty message with no files is also treated as system
+            string message = string.Empty;
+            if (root.TryGetProperty("Message", out var msgEl))
+            {
+                message = msgEl.ValueKind == JsonValueKind.Array
+                    ? string.Join("\n", msgEl.EnumerateArray().Select(e => e.GetString() ?? ""))
+                    : msgEl.GetString() ?? string.Empty;
+            }
+
+            return string.IsNullOrWhiteSpace(message) && files.Count == 0;
+        }
+
         // ── Public search methods ──────────────────────────────────────────────
 
         public async Task<List<SearchResultRoot>> SearchRootsAsync(
-            string searchString, int qty, int skip, string? blockchain = null)
+            string searchString, int qty, int skip, string? blockchain = null, bool showSystemFiles = true)
         {
             qty = Math.Clamp(qty, 1, 1000);
             skip = Math.Clamp(skip, 0, 999);
             qty = Math.Min(qty, 1000 - skip);
 
-            string cacheKey = $"roots:{searchString?.ToLowerInvariant() ?? ""}:{qty}:{skip}:{blockchain ?? ""}";
+            string cacheKey = $"roots:{searchString?.ToLowerInvariant() ?? ""}:{qty}:{skip}:{blockchain ?? ""}:{showSystemFiles}";
             if (_cache.TryGetValue(cacheKey, out List<SearchResultRoot>? cached) && cached != null)
                 return cached;
 
@@ -186,6 +231,11 @@ namespace P2FK.IO.Services
 
                 // Filter by blockchain if requested
                 if (blockchain != null && !string.Equals(detectedBlockchain, blockchain, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                // When showSystemFiles=false, skip system/empty roots before counting skip or adding to results.
+                // This ensures the cached result and pagination are both based on user-visible items only.
+                if (!showSystemFiles && IsSystemRoot(rootObj.Value))
                     continue;
 
                 if (skipped < skip) { skipped++; continue; }
