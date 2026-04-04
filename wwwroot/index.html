@@ -1321,9 +1321,11 @@ const appendResultItems=async(objectResults,profileResults,rootResults,searchId,
   for(const r of(rootResults||[])){const root=r.Root||r.root;if(!root) continue;const n=normalizeRoot(root);if(!n) continue;state.buffer.push({type:'message',data:n,blockchain:r.Blockchain||r.blockchain||''});}
   // Keep buffer sorted by date descending so we always display the newest first
   state.buffer.sort((a,b)=>{
-    const getD=item=>{if(item.type==='message') return new Date(item.data.blockDate||0);return new Date(item.raw?.CreatedDate||0);};
-    const da=getD(a).getTime(),db=getD(b).getTime();
-    if(!da&&!db) return 0;if(!da) return 1;if(!db) return -1;return db-da;
+    const getD=item=>{
+      if(item.type==='message'){const bd=item.data.blockDate;return(bd&&!isNullDate(bd))?new Date(bd):new Date(Date.now());}
+      return new Date(item.raw?.CreatedDate||0);
+    };
+    return getD(b).getTime()-getD(a).getTime();
   });
   // Render up to DISPLAY_BATCH_SIZE items from the front of the buffer
   const feed=document.getElementById('feed');
