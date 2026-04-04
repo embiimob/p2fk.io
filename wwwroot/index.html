@@ -1024,15 +1024,9 @@ const renderPollCard=(el,queAddr,queText,endBlock,answers,mainnet,downloadUrl)=>
     let hasTotals=false;
     try{hasTotals=applyVoteData(r);}catch(_){}
     console.log('[INQ] hasTotals:',hasTotals,'isOpen:',isOpen);
-    if(isOpen){
-      // Open poll: show Calculate so user can refresh counts
-      btn.style.display='';
-    }else if(!hasTotals){
-      // Closed poll with no cached totals: auto-run verbose=true to compute results
-      console.log('[INQ] closed poll, no cached totals → auto-running verbose=true');
-      runVerboseFetch();
-    }
-    // else: closed + totals present → keep button hidden (results are final)
+    // Show Calculate button whenever there are no totals yet (open or closed) so user can trigger the verbose=true scan on demand
+    if(isOpen||!hasTotals) btn.style.display='';
+    // else: closed + totals already present → keep button hidden (results are final)
   }).catch((e)=>{console.error('[INQ] verbose=false error:',e);btn.style.display='';});
 };
 
