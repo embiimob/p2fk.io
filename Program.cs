@@ -53,7 +53,10 @@ builder.Services.AddSwaggerGen(c =>
 builder.Services.AddSingleton<P2FK.IO.Wrapper>();
 builder.Services.AddMemoryCache();
 if (OperatingSystem.IsWindows())
+{
     builder.Services.AddSingleton<P2FK.IO.Services.WindowsSearchService>();
+    builder.Services.AddHostedService<P2FK.IO.Services.CacheWarmingService>();
+}
 
 // Allow requests to take up to MaxTimeoutSeconds before the server cancels them
 builder.Services.AddRequestTimeouts(options =>

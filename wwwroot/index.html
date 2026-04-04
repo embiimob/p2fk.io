@@ -269,6 +269,7 @@
     .badge-profile { background: #1a3a2a; color: #03dac6; border: 1px solid #03dac6; }
     .badge-object  { background: #2a1a3a; color: #bb86fc; border: 1px solid #bb86fc; }
     .badge-chain   { background: #222; color: #888; font-size: 0.65em; border: 1px solid #333; }
+    .badge-pending { display: inline-block; border-radius: 3px; padding: 1px 6px; font-size: 0.68em; font-weight: bold; margin-right: 4px; vertical-align: middle; background: #3a2800; color: #ffb300; border: 1px solid #ffb300; }
 
     /* ── Share / copy link button ──────────────────────────────────── */
     .share-btn {
@@ -707,7 +708,7 @@ const formatDate = (d) => {
   if (!d || String(d).startsWith('0001-01-01')) return null;
   try { const x=new Date(d); return isNaN(x)?null:x.toLocaleDateString('en-US',{year:'numeric',month:'short',day:'numeric'}); } catch { return null; }
 };
-const isNullDate = (d) => !d || String(d).startsWith('0001-01-01');
+const isNullDate = (d) => !d || String(d).startsWith('0001-01-01') || String(d).startsWith('1970-01-01'); // 0001-01-01 = .NET default; 1970-01-01 = pending (unconfirmed) sentinel
 
 const chainToMeta = (blockchain) => {
   const c=(blockchain||'BTC').toUpperCase();
@@ -1106,7 +1107,8 @@ const normalizeRoot=(root)=>{
   const toAddresses=numOut>1?outputAddresses.slice(Math.max(0,numOut-3),numOut-1):[];
   const rawFile=root['File']??root.File??null;
   const files=(rawFile&&typeof rawFile==='object'&&!Array.isArray(rawFile))?Object.keys(rawFile).filter(f=>f&&f!=='SIG'):[];
-  return{message:msg,fromAddress:signedBy,toAddresses,blockDate,txId,files};
+  const confirmations=root.Confirmations??root['Confirmations']??null;
+  return{message:msg,fromAddress:signedBy,toAddresses,blockDate,txId,files,confirmations};
 };
 
 // ── Message card renderer ──────────────────────────────────────────────
@@ -1160,8 +1162,9 @@ const renderMessageCard=async(normalized,signal,blockchain,shareParams)=>{
   const apiIsTestnet=!mainnet;
   const apiChain=apiIsTestnet?'BTC':(validApiChains.includes(chainUpper)?chainUpper:'BTC');
   const nullDate=isNullDate(normalized.blockDate);
+  const isPending=normalized.confirmations===0;
   const refreshAttr=normalized.txId?` <span class="refresh-date" data-txid="${escapeHtml(normalized.txId)}" data-apichain="${escapeHtml(apiChain)}" data-mainnet="${!apiIsTestnet}" title="Refresh block date">🔄 Refresh</span>`:'';
-  const dateHtml=nullDate?`<span class="msg-date">Unknown</span>${refreshAttr}`:`<span class="msg-date">${escapeHtml(normalized.blockDate)}</span>`;
+  const dateHtml=isPending?`<span class="badge-pending">⏳ Pending</span>${refreshAttr}`:nullDate?`<span class="msg-date">Unknown</span>${refreshAttr}`:`<span class="msg-date">${escapeHtml(normalized.blockDate)}</span>`;
   const txidHtml=normalized.txId?` <span class="txid-copy" data-txid="${escapeHtml(normalized.txId)}" title="Copy TX ID">📋 ${escapeHtml(normalized.txId.slice(0,8))}…</span>`:'';
   meta.innerHTML=`From: ${createUrnLink(fromName,normalized.fromAddress)}${toLinks.length?` | To: ${toLinks.join(', ')}`:''}${normalized.txId?' |':''} ${dateHtml}${txidHtml}`;
   card.appendChild(meta);
@@ -1182,7 +1185,7 @@ const renderMessageCard=async(normalized,signal,blockchain,shareParams)=>{
       try{const r=await fetchAPI(`${BASE_URL}/GetRootByTransactionID/${encodeURIComponent(t)}?mainnet=${mn}&blockchain=${ac}`,'',null);
         const root=Array.isArray(r)?r[0]:r;
         const nd=(root&&typeof root==='object')?(root['Block Date']??root.BlockDate??''):'';
-        if(nd&&!isNullDate(nd)){cacheTransaction(t,mn,ac,root);const de=meta.querySelector('.msg-date');if(de)de.textContent=nd;refreshEl.remove();}
+        if(nd&&!isNullDate(nd)){cacheTransaction(t,mn,ac,root);const de=meta.querySelector('.msg-date');const pe=meta.querySelector('.badge-pending');if(de)de.textContent=nd;else if(pe){const nde=document.createElement('span');nde.className='msg-date';nde.textContent=nd;pe.replaceWith(nde);}refreshEl.remove();}
         else{refreshEl.textContent='❌';setTimeout(()=>{refreshEl.textContent='🔄 Refresh';refreshEl.style.pointerEvents='';},3000);}
       }catch{refreshEl.textContent='❌';setTimeout(()=>{refreshEl.textContent='🔄 Refresh';refreshEl.style.pointerEvents='';},3000);}
     }
@@ -1318,9 +1321,11 @@ const appendResultItems=async(objectResults,profileResults,rootResults,searchId,
   for(const r of(rootResults||[])){const root=r.Root||r.root;if(!root) continue;const n=normalizeRoot(root);if(!n) continue;state.buffer.push({type:'message',data:n,blockchain:r.Blockchain||r.blockchain||''});}
   // Keep buffer sorted by date descending so we always display the newest first
   state.buffer.sort((a,b)=>{
-    const getD=item=>{if(item.type==='message') return new Date(item.data.blockDate||0);return new Date(item.raw?.CreatedDate||0);};
-    const da=getD(a).getTime(),db=getD(b).getTime();
-    if(!da&&!db) return 0;if(!da) return 1;if(!db) return -1;return db-da;
+    const getD=item=>{
+      if(item.type==='message'){const bd=item.data.blockDate;return(bd&&!isNullDate(bd))?new Date(bd):new Date(Date.now());}
+      return new Date(item.raw?.CreatedDate||0);
+    };
+    return getD(b).getTime()-getD(a).getTime();
   });
   // Render up to DISPLAY_BATCH_SIZE items from the front of the buffer
   const feed=document.getElementById('feed');
