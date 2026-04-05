@@ -139,14 +139,15 @@ namespace P2FK.IO.Services
         // ── Public search methods ──────────────────────────────────────────────
 
         public async Task<List<SearchResultRoot>> SearchRootsAsync(
-            string searchString, int qty, int skip, string? blockchain = null, bool showSystemFiles = true)
+            string searchString, int qty, int skip, string? blockchain = null, bool showSystemFiles = true,
+            bool forceRefresh = false)
         {
             qty = Math.Clamp(qty, 1, 1000);
             skip = Math.Clamp(skip, 0, 999);
             qty = Math.Min(qty, 1000 - skip);
 
             string cacheKey = $"roots:{searchString?.ToLowerInvariant() ?? ""}:{qty}:{skip}:{blockchain ?? ""}:{showSystemFiles}";
-            if (_cache.TryGetValue(cacheKey, out List<SearchResultRoot>? cached) && cached != null)
+            if (!forceRefresh && _cache.TryGetValue(cacheKey, out List<SearchResultRoot>? cached) && cached != null)
                 return cached;
 
             // Detect wildcard "*" before sanitisation strips the asterisk
