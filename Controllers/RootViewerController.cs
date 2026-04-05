@@ -113,6 +113,10 @@ namespace P2FK.IO.Controllers
                 foreach (var o in outProp.EnumerateObject())
                     outputs.Add((o.Name, o.Value.GetString() ?? ""));
 
+            // Detect blockchain from the first output address version byte prefix
+            string chainAbbrev      = DetectChain(outputs.Count > 0 ? outputs[0].address : "");
+            string chainDisplayName = ChainDisplayName(chainAbbrev);
+
             // ── Keywords ────────────────────────────────────────────────────
             var keywords = new List<string>();
             if (root.TryGetProperty("Keyword", out var kwProp) && kwProp.ValueKind == JsonValueKind.Object)
@@ -286,6 +290,7 @@ namespace P2FK.IO.Controllers
     <div class=""meta-grid"">
 ");
             AddMeta(sb, "Transaction ID", $@"<a href=""https://mempool.space/testnet/tx/{H(txid)}"" target=""_blank"" rel=""noopener"">{H(txid)}</a>");
+            AddMeta(sb, "Blockchain", H(chainDisplayName));
             AddMeta(sb, "Block Date", H(blockDateDisplay));
             if (!string.IsNullOrEmpty(blockHeight) && blockHeight != "0")
                 AddMeta(sb, "Block Height", H(blockHeight));
@@ -374,7 +379,8 @@ namespace P2FK.IO.Controllers
                 sb.Append(@"  <div class=""section"">
     <div class=""section-title"">Outputs</div>
     <table class=""output-table"">
-      <thead><tr><th>Address</th><th>Amount (BTC)</th></tr></thead>
+");
+                sb.Append($@"      <thead><tr><th>Address</th><th>Amount ({H(chainAbbrev)})</th></tr></thead>
       <tbody>
 ");
                 foreach (var (addr, amount) in outputs)
@@ -456,5 +462,26 @@ namespace P2FK.IO.Controllers
             if (TextExtensions.Contains(ext))   return "📝";
             return "📎";
         }
+
+        // Infer the chain abbreviation from the leading characters of a P2PKH address.
+        private static string DetectChain(string address)
+        {
+            if (string.IsNullOrEmpty(address)) return "BTC";
+            if (address.StartsWith("D"))                   return "DOG";
+            if (address.StartsWith("L"))                   return "LTC";
+            if (address.StartsWith("M"))                   return "MZC";
+            if (address.StartsWith("m") || address.StartsWith("n") ||
+                address.StartsWith("2") || address.StartsWith("tb1")) return "TBTC";
+            return "BTC";
+        }
+
+        private static string ChainDisplayName(string abbrev) => abbrev switch
+        {
+            "DOG"  => "Dogecoin (DOG)",
+            "LTC"  => "Litecoin (LTC)",
+            "MZC"  => "Mazacoin (MZC)",
+            "TBTC" => "Bitcoin Testnet (TBTC)",
+            _      => "Bitcoin (BTC)",
+        };
     }
 }
