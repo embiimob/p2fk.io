@@ -20,11 +20,10 @@ namespace P2FK.IO.Services
         // Brief pause after host startup so routes and services are fully initialised
         // before the first warm query hits the search index.
         private const int StartupDelaySeconds = 5;
-        // default front-end pages (index.html = 200, search.html = 100).
+        // index.html uses API_FETCH_BATCH_SIZE=200 with system files hidden by default.
         private static readonly (int qty, bool showSystemFiles)[] DefaultBatches =
         [
             (200, false),   // index.html  — API_FETCH_BATCH_SIZE=200, chkSystem unchecked by default
-            (100, true),    // search.html — API_FETCH_BATCH_SIZE=100, showSystemFiles not sent (defaults to true)
         ];
 
         private readonly WindowsSearchService _searchService;
@@ -64,7 +63,7 @@ namespace P2FK.IO.Services
                 if (ct.IsCancellationRequested) return;
                 try
                 {
-                    await _searchService.SearchRootsAsync("*", qty, 0, "BTC-testnet", showSystemFiles);
+                    await _searchService.SearchRootsAsync("*", qty, 0, "BTC-testnet", showSystemFiles, forceRefresh: true);
                     _logger.LogDebug(
                         "Cache warmed: BTC-testnet * qty={Qty} showSystemFiles={Show}", qty, showSystemFiles);
                 }
