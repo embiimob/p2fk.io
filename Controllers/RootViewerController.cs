@@ -28,8 +28,8 @@ namespace P2FK.IO.Controllers
             _wrapper = wrapper;
         }
 
-        [HttpGet("{txid}")]
-        [HttpGet("{txid}/index.htm")]
+        [HttpGet("{txid:length(64)}")]
+        [HttpGet("{txid:length(64)}/index.htm")]
         public IActionResult Get(string txid)
         {
             if (!Regex.IsMatch(txid, @"^[0-9a-fA-F]{64}$"))
@@ -61,6 +61,585 @@ namespace P2FK.IO.Controllers
 
             var html = BuildHtml(txid, root);
             return Content(html, "text/html; charset=utf-8");
+        }
+
+        [HttpGet("{address:minlength(26):maxlength(34)}")]
+        public IActionResult GetByAddress(string address)
+        {
+            string pattern = @"^[a-zA-Z0-9][a-km-zA-HJ-NP-Z1-9]{25,33}$";
+            if (!Regex.IsMatch(address, pattern))
+                return NotFound();
+
+            var objJsonPath = Path.Combine(_wrapper.RootPath, address, "OBJ.json");
+            if (!System.IO.File.Exists(objJsonPath))
+                return NotFound();
+
+            string json;
+            try
+            {
+                json = System.IO.File.ReadAllText(objJsonPath, Encoding.UTF8);
+            }
+            catch
+            {
+                return NotFound();
+            }
+
+            JsonElement objArray;
+            try
+            {
+                objArray = JsonSerializer.Deserialize<JsonElement>(json);
+            }
+            catch
+            {
+                return Content("<html><body>Error parsing OBJ.json</body></html>", "text/html");
+            }
+
+            if (objArray.ValueKind != JsonValueKind.Array || objArray.GetArrayLength() == 0)
+                return NotFound();
+
+            var obj = objArray[0];
+            var html = BuildObjectHtml(address, obj);
+            return Content(html, "text/html; charset=utf-8");
+        }
+
+        // Convert IPFS:CID\filename or IPFS:CID/filename to https://ipfs.io/ipfs/CID
+        private static string IpfsToGatewayUrl(string urn)
+        {
+            if (string.IsNullOrWhiteSpace(urn)) return "";
+            var normalized = urn.Replace('\\', '/');
+            var idx = normalized.IndexOf("IPFS:", StringComparison.OrdinalIgnoreCase);
+            if (idx < 0) return urn;
+            var raw = normalized.Substring(idx + 5);
+            var cid = raw.Split('/')[0].Trim();
+            return string.IsNullOrEmpty(cid) ? "" : $"https://ipfs.io/ipfs/{cid}";
+        }
+
+        // Return the display filename from an IPFS URN (e.g. ATLAS.mp4)
+        private static string IpfsFilename(string urn)
+        {
+            if (string.IsNullOrWhiteSpace(urn)) return "";
+            var normalized = urn.Replace('\\', '/');
+            var idx = normalized.IndexOf("IPFS:", StringComparison.OrdinalIgnoreCase);
+            if (idx < 0) return "";
+            var raw = normalized.Substring(idx + 5);
+            var parts = raw.Split('/');
+            return parts.Length > 1 ? parts[1].Trim() : "";
+        }
+
+        private string BuildObjectHtml(string address, JsonElement obj)
+        {
+            // ── Extract fields ────────────────────────────────────────────────
+            string name        = GetString(obj, "Name");
+            string description = GetString(obj, "Description");
+            string urn         = GetString(obj, "URN");
+            string image       = GetString(obj, "Image");
+            string uri         = GetString(obj, "URI");
+            string license     = GetString(obj, "License");
+            string maximum     = GetString(obj, "Maximum");
+            string txid        = GetString(obj, "TransactionId");
+            string createdDate = GetString(obj, "CreatedDate");
+            string changeDate  = GetString(obj, "ChangeDate");
+
+            if (string.IsNullOrEmpty(name)) name = address;
+
+            // ── Detect chain from address prefix ──────────────────────────────
+            string chainAbbrev      = DetectChain(address);
+            string chainDisplayName = ChainDisplayName(chainAbbrev);
+
+            // ── IPFS media URLs ───────────────────────────────────────────────
+            string imageGatewayUrl = IpfsToGatewayUrl(image);
+            string urnGatewayUrl   = IpfsToGatewayUrl(urn);
+            string urnFilename     = IpfsFilename(urn);
+            string imageFilename   = IpfsFilename(image);
+
+            // Determine file extension for the URN artifact
+            string urnExt = string.IsNullOrEmpty(urnFilename)
+                ? Path.GetExtension(urnGatewayUrl)
+                : Path.GetExtension(urnFilename);
+
+            // ── OG preview image: prefer object image, else bitfossil logo ────
+            string ogImage = string.IsNullOrEmpty(imageGatewayUrl)
+                ? "https://p2fk.io/bitfossil.png"
+                : imageGatewayUrl;
+
+            // ── Creators ──────────────────────────────────────────────────────
+            var creators = new List<string>();
+            if (obj.TryGetProperty("Creators", out var creatorsProp))
+            {
+                if (creatorsProp.ValueKind == JsonValueKind.Object)
+                    foreach (var c in creatorsProp.EnumerateObject())
+                        creators.Add(c.Name);
+                else if (creatorsProp.ValueKind == JsonValueKind.Array)
+                    foreach (var c in creatorsProp.EnumerateArray())
+                        if (c.GetString() is string s) creators.Add(s);
+            }
+
+            // ── Owners ────────────────────────────────────────────────────────
+            var owners = new List<(string addr, int qty, string lastTx)>();
+            if (obj.TryGetProperty("Owners", out var ownersProp) && ownersProp.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var o in ownersProp.EnumerateObject())
+                {
+                    int qty = 0;
+                    string lastTx = "";
+                    if (o.Value.ValueKind == JsonValueKind.Object)
+                    {
+                        if (o.Value.TryGetProperty("Item1", out var item1) && item1.ValueKind == JsonValueKind.Number)
+                            item1.TryGetInt32(out qty);
+                        if (o.Value.TryGetProperty("Item2", out var item2) && item2.ValueKind == JsonValueKind.String)
+                            lastTx = item2.GetString() ?? "";
+                    }
+                    owners.Add((o.Name, qty, lastTx));
+                }
+            }
+
+            // ── Listings ──────────────────────────────────────────────────────
+            var listings = new List<(string seller, int qty, double value, string requestor, string blockDate)>();
+            if (obj.TryGetProperty("Listings", out var listingsProp) && listingsProp.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var l in listingsProp.EnumerateObject())
+                {
+                    int qty = 0;
+                    double value = 0;
+                    string requestor = "";
+                    string blockDate2 = "";
+                    if (l.Value.ValueKind == JsonValueKind.Object)
+                    {
+                        if (l.Value.TryGetProperty("Qty", out var qtyProp) && qtyProp.ValueKind == JsonValueKind.Number)
+                            qtyProp.TryGetInt32(out qty);
+                        if (l.Value.TryGetProperty("Value", out var valProp) && valProp.ValueKind == JsonValueKind.Number)
+                            valProp.TryGetDouble(out value);
+                        if (l.Value.TryGetProperty("Requestor", out var rProp) && rProp.ValueKind == JsonValueKind.String)
+                            requestor = rProp.GetString() ?? "";
+                        if (l.Value.TryGetProperty("BlockDate", out var bdProp) && bdProp.ValueKind == JsonValueKind.String)
+                            blockDate2 = bdProp.GetString() ?? "";
+                    }
+                    listings.Add((l.Name, qty, value, requestor, blockDate2));
+                }
+            }
+
+            // ── Attributes ────────────────────────────────────────────────────
+            var attributes = new List<(string traitType, string value)>();
+            if (obj.TryGetProperty("Attributes", out var attrProp) && attrProp.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var a in attrProp.EnumerateArray())
+                {
+                    string traitType = "";
+                    string attrVal = "";
+                    if (a.TryGetProperty("trait_type", out var tt)) traitType = tt.GetString() ?? "";
+                    if (a.TryGetProperty("value", out var av)) attrVal = av.GetString() ?? av.GetRawText();
+                    attributes.Add((traitType, attrVal));
+                }
+            }
+
+            var sb = new StringBuilder();
+
+            // ─────────────────────────────────────────────────────────────────
+            // HTML head
+            // ─────────────────────────────────────────────────────────────────
+            string shortAddr = address.Length > 12 ? address[..6] + "…" + address[^6..] : address;
+            string pageTitle = $"{H(name)} – bitFossil";
+            string ogDesc = string.IsNullOrEmpty(description)
+                ? $"P2FK digital object on {H(chainDisplayName)}"
+                : H(description.Length > 200 ? description[..200] + "…" : description);
+
+            sb.Append($@"<!DOCTYPE html>
+<html lang=""en"">
+<head>
+  <meta charset=""UTF-8"">
+  <meta name=""viewport"" content=""width=device-width, initial-scale=1.0"">
+  <title>{pageTitle}</title>
+  <link rel=""apple-touch-icon"" sizes=""180x180"" href=""/apple-touch-icon.png"">
+  <link rel=""icon"" type=""image/png"" sizes=""32x32"" href=""/favicon-32x32.png"">
+  <link rel=""icon"" type=""image/png"" sizes=""16x16"" href=""/favicon-16x16.png"">
+  <meta property=""og:title"" content=""{pageTitle}"">
+  <meta property=""og:description"" content=""{ogDesc}"">
+  <meta property=""og:image"" content=""{H(ogImage)}"">
+  <meta property=""og:url"" content=""https://p2fk.io/root/{H(address)}"">
+  <meta property=""og:type"" content=""article"">
+  <meta property=""og:site_name"" content=""bitFossil"">
+  <meta name=""twitter:card"" content=""summary_large_image"">
+  <meta name=""twitter:title"" content=""{pageTitle}"">
+  <meta name=""twitter:description"" content=""{ogDesc}"">
+  <meta name=""twitter:image"" content=""{H(ogImage)}"">
+  <meta name=""twitter:site"" content=""@bitFossil"">
+  <style>
+    *, *::before, *::after {{ box-sizing: border-box; }}
+    html {{ scroll-behavior: smooth; }}
+    body {{
+      background: #121212;
+      color: #e0e0e0;
+      font-family: Arial, sans-serif;
+      margin: 0; padding: 0;
+      min-height: 100vh;
+    }}
+    a {{ color: #03dac6; text-decoration: none; }}
+    a:hover {{ color: #bb86fc; }}
+    /* ── Navbar ── */
+    #navbar {{
+      position: fixed; top: 0; left: 0; right: 0; z-index: 2000;
+      background: #1e1e1e;
+      border-bottom: 2px solid #bb86fc;
+      display: flex; align-items: center; gap: 10px;
+      padding: 7px 14px; height: 54px;
+    }}
+    #navbar .brand {{
+      display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+      text-decoration: none; color: #bb86fc;
+      font-size: 1.15em; font-weight: bold;
+    }}
+    #navbar .brand img {{ width: 36px; height: 36px; border-radius: 4px; object-fit: cover; }}
+    .nav-links {{
+      display: flex; align-items: center; gap: 12px;
+      flex-shrink: 0; margin-left: auto;
+    }}
+    .nav-links a {{
+      color: #b0b0b0; font-size: 0.82em; white-space: nowrap;
+      padding: 4px 8px; border-radius: 4px; border: 1px solid #333;
+      transition: all 0.2s;
+    }}
+    .nav-links a:hover {{ background: #2a2a2a; color: #bb86fc; border-color: #bb86fc; }}
+    /* ── Content ── */
+    .page {{ max-width: 960px; margin: 0 auto; padding: 74px 16px 40px; }}
+    .obj-header {{ word-break: break-all; color: #bb86fc; font-size: 1.4em; font-weight: bold; margin-bottom: 4px; }}
+    .obj-address {{ font-size: 0.8em; color: #888; word-break: break-all; margin-bottom: 16px; }}
+    .section {{ background: #1e1e1e; border-radius: 8px; padding: 16px 20px; margin-bottom: 18px; }}
+    .section-title {{
+      font-size: 0.78em; font-weight: bold; text-transform: uppercase;
+      letter-spacing: 0.08em; color: #bb86fc; margin-bottom: 12px;
+    }}
+    .description {{
+      white-space: pre-wrap; word-break: break-word;
+      font-size: 0.92em; line-height: 1.6;
+    }}
+    .meta-grid {{ display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; font-size: 0.88em; }}
+    .meta-label {{ color: #888; white-space: nowrap; }}
+    .meta-value {{ word-break: break-all; }}
+    /* ── Media ── */
+    .media-hero {{
+      display: flex; justify-content: center; align-items: center;
+      background: #000; border-radius: 8px; overflow: hidden;
+      margin-bottom: 18px; min-height: 120px; position: relative;
+    }}
+    .media-hero img {{
+      max-width: 100%; max-height: 480px;
+      object-fit: contain; display: block;
+    }}
+    .media-hero video, .media-hero audio {{ max-width: 100%; }}
+    .media-spinner {{
+      position: absolute; font-size: 2em; color: #555; animation: spin 1.2s linear infinite;
+    }}
+    @keyframes spin {{ to {{ transform: rotate(360deg); }} }}
+    /* ── Thumbnail + artifact ── */
+    .media-pair {{
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 14px; margin-bottom: 4px;
+    }}
+    .media-card {{
+      background: #121212; border-radius: 6px; overflow: hidden;
+      border: 1px solid #2a2a2a;
+    }}
+    .media-card img {{ width: 100%; display: block; max-height: 300px; object-fit: contain; background: #000; }}
+    .media-card video, .media-card audio {{ width: 100%; display: block; }}
+    .media-caption {{ padding: 6px 8px; font-size: 0.78em; color: #888; word-break: break-all; }}
+    /* ── Tables ── */
+    .data-table {{ width: 100%; border-collapse: collapse; font-size: 0.84em; }}
+    .data-table th {{
+      text-align: left; color: #888; font-weight: normal;
+      padding: 4px 8px 8px; border-bottom: 1px solid #2a2a2a;
+    }}
+    .data-table td {{ padding: 5px 8px; border-bottom: 1px solid #1a1a1a; word-break: break-all; }}
+    .data-table tr:last-child td {{ border-bottom: none; }}
+    .amount {{ color: #03dac6; font-family: monospace; white-space: nowrap; }}
+    .tx-mono {{ font-family: monospace; font-size: 0.78em; color: #aaa; }}
+    /* ── Attribute chips ── */
+    .attr-grid {{ display: flex; flex-wrap: wrap; gap: 8px; }}
+    .attr-chip {{
+      background: #2a2a2a; border-radius: 6px; padding: 6px 12px;
+      font-size: 0.82em;
+    }}
+    .attr-chip .trait {{ color: #888; font-size: 0.85em; display: block; margin-bottom: 2px; }}
+    .attr-chip .val {{ color: #e0e0e0; }}
+    /* ── Loading state ── */
+    .ipfs-loading {{ text-align:center; padding: 32px; color: #555; font-size: 0.9em; }}
+  </style>
+</head>
+<body>
+<nav id=""navbar"">
+  <a class=""brand"" href=""/"">
+    <img src=""/bitfossil.png"" alt=""bitFossil"">
+    bitFossil
+  </a>
+  <div class=""nav-links"">
+    <a href=""/"">Search</a>
+    <a href=""/API"">API</a>
+  </div>
+</nav>
+<div class=""page"">
+");
+
+            // ── Object header ─────────────────────────────────────────────────
+            sb.Append($@"  <div class=""obj-header"">🎨 {H(name)}</div>
+  <div class=""obj-address"">Address: {H(address)} &nbsp;·&nbsp; {H(chainDisplayName)}</div>
+");
+
+            // ── Media section ─────────────────────────────────────────────────
+            bool hasArtifact = !string.IsNullOrEmpty(urnGatewayUrl);
+            bool hasThumbnail = !string.IsNullOrEmpty(imageGatewayUrl) && imageGatewayUrl != urnGatewayUrl;
+
+            if (hasArtifact || hasThumbnail)
+            {
+                sb.Append(@"  <div class=""section"">
+    <div class=""section-title"">Media</div>
+    <div class=""media-pair"">
+");
+                // Thumbnail / cover image
+                if (hasThumbnail)
+                {
+                    sb.Append($@"      <div class=""media-card"">
+        <img id=""obj-thumb"" src="""" alt=""{H(imageFilename.Length > 0 ? imageFilename : "thumbnail")}"" loading=""lazy"">
+        <div class=""media-caption"">{H(imageFilename.Length > 0 ? imageFilename : "Cover Image")}</div>
+      </div>
+");
+                }
+
+                // Primary artifact
+                if (hasArtifact)
+                {
+                    sb.Append(@"      <div class=""media-card"" id=""artifact-card"">
+        <div class=""ipfs-loading"">⏳ Loading artifact…</div>
+      </div>
+");
+                }
+
+                sb.Append(@"    </div>
+  </div>
+");
+            }
+            else if (!string.IsNullOrEmpty(imageGatewayUrl))
+            {
+                // Only one image (same as URN), display as hero
+                sb.Append($@"  <div class=""media-hero"">
+    <img id=""obj-thumb"" src="""" alt=""{H(name)}"" loading=""lazy"">
+  </div>
+");
+            }
+
+            // ── Description ───────────────────────────────────────────────────
+            if (!string.IsNullOrEmpty(description))
+            {
+                sb.Append(@"  <div class=""section"">
+    <div class=""section-title"">Description</div>
+");
+                sb.Append($@"    <div class=""description"">{H(description)}</div>
+  </div>
+");
+            }
+
+            // ── Object metadata ───────────────────────────────────────────────
+            sb.Append(@"  <div class=""section"">
+    <div class=""section-title"">Object Info</div>
+    <div class=""meta-grid"">
+");
+            AddMeta(sb, "Object Address", H(address));
+            AddMeta(sb, "Blockchain", H(chainDisplayName));
+            if (!string.IsNullOrEmpty(maximum))
+                AddMeta(sb, "Edition Size", H(maximum));
+            if (!string.IsNullOrEmpty(license))
+                AddMeta(sb, "License", H(license));
+            if (!string.IsNullOrEmpty(createdDate) && DateTime.TryParse(createdDate, out var cd))
+                AddMeta(sb, "Created", H(cd.ToString("yyyy-MM-dd HH:mm:ss") + " UTC"));
+            if (!string.IsNullOrEmpty(changeDate) && DateTime.TryParse(changeDate, out var chd))
+                AddMeta(sb, "Last Updated", H(chd.ToString("yyyy-MM-dd HH:mm:ss") + " UTC"));
+            if (!string.IsNullOrEmpty(txid))
+                AddMeta(sb, "Mint Transaction", $@"<a href=""{H(ExplorerTxUrl(chainAbbrev, txid))}"" target=""_blank"" rel=""noopener"" class=""tx-mono"">{H(txid)}</a>");
+            if (!string.IsNullOrEmpty(uri))
+                AddMeta(sb, "External URI", $@"<a href=""{H(uri)}"" target=""_blank"" rel=""noopener"">{H(uri)}</a>");
+            if (!string.IsNullOrEmpty(urn))
+                AddMeta(sb, "Artifact URN", H(urn));
+            if (!string.IsNullOrEmpty(image))
+                AddMeta(sb, "Image URN", H(image));
+            sb.Append(@"    </div>
+  </div>
+");
+
+            // ── Attributes ────────────────────────────────────────────────────
+            if (attributes.Count > 0)
+            {
+                sb.Append(@"  <div class=""section"">
+    <div class=""section-title"">Attributes</div>
+    <div class=""attr-grid"">
+");
+                foreach (var (traitType, attrVal) in attributes)
+                    sb.Append($@"      <div class=""attr-chip""><span class=""trait"">{H(traitType)}</span><span class=""val"">{H(attrVal)}</span></div>
+");
+                sb.Append(@"    </div>
+  </div>
+");
+            }
+
+            // ── Creators ─────────────────────────────────────────────────────
+            if (creators.Count > 0)
+            {
+                sb.Append(@"  <div class=""section"">
+    <div class=""section-title"">Creators</div>
+    <table class=""data-table"">
+      <thead><tr><th>Address</th></tr></thead>
+      <tbody>
+");
+                foreach (var c in creators)
+                    sb.Append($@"        <tr><td><a href=""{H(ExplorerAddressUrl(chainAbbrev, c))}"" target=""_blank"" rel=""noopener"">{H(c)}</a></td></tr>
+");
+                sb.Append(@"      </tbody>
+    </table>
+  </div>
+");
+            }
+
+            // ── Owners ────────────────────────────────────────────────────────
+            if (owners.Count > 0)
+            {
+                sb.Append(@"  <div class=""section"">
+    <div class=""section-title"">Owners</div>
+    <table class=""data-table"">
+      <thead><tr><th>Address</th><th>Qty</th><th>Last Transaction</th></tr></thead>
+      <tbody>
+");
+                foreach (var (ownerAddr, qty, lastTx) in owners)
+                {
+                    string txHtml = string.IsNullOrEmpty(lastTx) ? "" :
+                        $@"<a href=""{H(ExplorerTxUrl(chainAbbrev, lastTx))}"" target=""_blank"" rel=""noopener"" class=""tx-mono"">{H(lastTx[..8])}…{H(lastTx[^8..])}</a>";
+                    sb.Append($@"        <tr>
+          <td><a href=""{H(ExplorerAddressUrl(chainAbbrev, ownerAddr))}"" target=""_blank"" rel=""noopener"">{H(ownerAddr)}</a></td>
+          <td class=""amount"">{qty}</td>
+          <td>{txHtml}</td>
+        </tr>
+");
+                }
+                sb.Append(@"      </tbody>
+    </table>
+  </div>
+");
+            }
+
+            // ── Listings ─────────────────────────────────────────────────────
+            if (listings.Count > 0)
+            {
+                sb.Append(@"  <div class=""section"">
+    <div class=""section-title"">Listings</div>
+    <table class=""data-table"">
+      <thead><tr><th>Seller</th><th>Qty</th><th>Price</th><th>Listed</th></tr></thead>
+      <tbody>
+");
+                foreach (var (seller, qty, value, _, blockDate2) in listings)
+                {
+                    string listedHtml = "";
+                    if (!string.IsNullOrEmpty(blockDate2) && DateTime.TryParse(blockDate2, out var ld))
+                        listedHtml = H(ld.ToString("yyyy-MM-dd HH:mm") + " UTC");
+                    sb.Append($@"        <tr>
+          <td><a href=""{H(ExplorerAddressUrl(chainAbbrev, seller))}"" target=""_blank"" rel=""noopener"">{H(seller)}</a></td>
+          <td class=""amount"">{qty}</td>
+          <td class=""amount"">{value:F2}</td>
+          <td>{listedHtml}</td>
+        </tr>
+");
+                }
+                sb.Append(@"      </tbody>
+    </table>
+  </div>
+");
+            }
+
+            // ── Raw JSON link ─────────────────────────────────────────────────
+            sb.Append($@"  <div style=""text-align:center; padding: 10px 0 20px; font-size:0.82em; color:#555;"">
+    <a href=""/root/{H(address)}/OBJ.json"">View raw OBJ.json</a>
+  </div>
+");
+
+            // ── JavaScript for lazy IPFS media loading ────────────────────────
+            if (hasArtifact || hasThumbnail || !string.IsNullOrEmpty(imageGatewayUrl))
+            {
+                string thumbUrl   = H(hasThumbnail ? imageGatewayUrl : (!string.IsNullOrEmpty(imageGatewayUrl) ? imageGatewayUrl : ""));
+                string artifactUrl = H(urnGatewayUrl);
+                string artifactFn  = H(urnFilename);
+                bool isImage = ImageExtensions.Contains(urnExt);
+                bool isVideo = VideoExtensions.Contains(urnExt);
+                bool isAudio = AudioExtensions.Contains(urnExt);
+
+                sb.Append($@"<script>
+(function() {{
+  // Load thumbnail
+  var thumbUrl = '{thumbUrl}';
+  if (thumbUrl) {{
+    var thumbEl = document.getElementById('obj-thumb');
+    if (thumbEl) thumbEl.src = thumbUrl;
+  }}
+
+  // Load artifact on a side thread
+  var artifactUrl = '{artifactUrl}';
+  var artifactFn  = '{artifactFn}';
+  var card = document.getElementById('artifact-card');
+  if (!card || !artifactUrl) return;
+
+  setTimeout(function() {{
+    var ext = artifactFn ? artifactFn.split('.').pop().toLowerCase() : '';
+    var el = '';
+    var imgExts = ['jpg','jpeg','png','gif','webp','bmp','svg'];
+    var vidExts = ['mp4','webm','ogv','mov'];
+    var audExts = ['mp3','wav','ogg','flac','aac','m4a'];
+    if (imgExts.indexOf(ext) >= 0) {{
+      var img = document.createElement('img');
+      img.src = artifactUrl;
+      img.alt = artifactFn;
+      img.style.cssText = 'width:100%;display:block;max-height:400px;object-fit:contain;background:#000;';
+      img.onerror = function() {{ this.parentElement.innerHTML = '<div class=""media-caption"">Failed to load image.</div>'; }};
+      var link = document.createElement('a');
+      link.href = artifactUrl; link.target = '_blank'; link.rel = 'noopener';
+      link.appendChild(img);
+      card.innerHTML = '';
+      card.appendChild(link);
+    }} else if (vidExts.indexOf(ext) >= 0) {{
+      var vid = document.createElement('video');
+      vid.controls = true; vid.src = artifactUrl;
+      vid.style.cssText = 'width:100%;display:block;';
+      vid.onerror = function() {{ this.parentElement.innerHTML = '<div class=""media-caption"">Failed to load video.</div>'; }};
+      card.innerHTML = '';
+      card.appendChild(vid);
+    }} else if (audExts.indexOf(ext) >= 0) {{
+      var aud = document.createElement('audio');
+      aud.controls = true; aud.src = artifactUrl;
+      aud.style.cssText = 'width:100%;display:block;';
+      aud.onerror = function() {{ this.parentElement.innerHTML = '<div class=""media-caption"">Failed to load audio.</div>'; }};
+      card.innerHTML = '';
+      card.appendChild(aud);
+    }} else {{
+      var img2 = document.createElement('img');
+      img2.src = artifactUrl;
+      img2.alt = artifactFn;
+      img2.style.cssText = 'width:100%;display:block;max-height:400px;object-fit:contain;background:#000;';
+      img2.onerror = function() {{ this.style.display = 'none'; }};
+      var link2 = document.createElement('a');
+      link2.href = artifactUrl; link2.target = '_blank'; link2.rel = 'noopener';
+      link2.appendChild(img2);
+      card.innerHTML = '';
+      card.appendChild(link2);
+    }}
+    var cap = document.createElement('div');
+    cap.className = 'media-caption';
+    var capLink = document.createElement('a');
+    capLink.href = artifactUrl; capLink.target = '_blank'; capLink.rel = 'noopener';
+    capLink.textContent = artifactFn || 'Open artifact';
+    cap.appendChild(capLink);
+    card.appendChild(cap);
+  }}, 0);
+}})();
+</script>
+");
+            }
+
+            sb.Append("</div>\n</body>\n</html>");
+            return sb.ToString();
         }
 
         private string BuildHtml(string txid, JsonElement root)
