@@ -51,31 +51,47 @@ namespace P2FK.IO.Controllers
                 return Content(BuildHtml(value, root), "text/html; charset=utf-8");
             }
 
-            // base58 address → object index page
+            // base58 address → object and/or profile page
             if (Regex.IsMatch(value, @"^[a-zA-Z0-9][a-km-zA-HJ-NP-Z1-9]{25,33}$"))
             {
+                // Try loading OBJ.json
+                JsonElement? obj = null;
                 var objJsonPath = Path.Combine(_wrapper.RootPath, value, "OBJ.json");
-                if (!System.IO.File.Exists(objJsonPath))
+                if (System.IO.File.Exists(objJsonPath))
+                {
+                    try
+                    {
+                        var objJson = System.IO.File.ReadAllText(objJsonPath, Encoding.UTF8);
+                        var objElement = JsonSerializer.Deserialize<JsonElement>(objJson);
+                        if (objElement.ValueKind == JsonValueKind.Object)
+                            obj = objElement;
+                        else if (objElement.ValueKind == JsonValueKind.Array && objElement.GetArrayLength() > 0)
+                            obj = objElement[0];
+                    }
+                    catch { /* ignore parse errors; obj stays null */ }
+                }
+
+                // Try loading GetProfileByAddress.json
+                JsonElement? profile = null;
+                var profileJsonPath = Path.Combine(_wrapper.RootPath, value, "GetProfileByAddress.json");
+                if (System.IO.File.Exists(profileJsonPath))
+                {
+                    try
+                    {
+                        var profileJson = System.IO.File.ReadAllText(profileJsonPath, Encoding.UTF8);
+                        var profileElement = JsonSerializer.Deserialize<JsonElement>(profileJson);
+                        if (profileElement.ValueKind == JsonValueKind.Object)
+                            profile = profileElement;
+                        else if (profileElement.ValueKind == JsonValueKind.Array && profileElement.GetArrayLength() > 0)
+                            profile = profileElement[0];
+                    }
+                    catch { /* ignore parse errors; profile stays null */ }
+                }
+
+                if (obj == null && profile == null)
                     return NotFound();
 
-                string json;
-                try { json = System.IO.File.ReadAllText(objJsonPath, Encoding.UTF8); }
-                catch { return NotFound(); }
-
-                JsonElement objElement;
-                try { objElement = JsonSerializer.Deserialize<JsonElement>(json); }
-                catch { return Content("<html><body>Error parsing OBJ.json</body></html>", "text/html"); }
-
-                // OBJ.json on disk is a single JSON object; handle arrays defensively for compatibility
-                JsonElement obj;
-                if (objElement.ValueKind == JsonValueKind.Object)
-                    obj = objElement;
-                else if (objElement.ValueKind == JsonValueKind.Array && objElement.GetArrayLength() > 0)
-                    obj = objElement[0];
-                else
-                    return NotFound();
-
-                return Content(BuildObjectHtml(value, obj), "text/html; charset=utf-8");
+                return Content(BuildAddressHtml(value, obj, profile), "text/html; charset=utf-8");
             }
 
             return NotFound();
@@ -93,6 +109,42 @@ namespace P2FK.IO.Controllers
             return string.IsNullOrEmpty(cid) ? "" : $"https://ipfs.io/ipfs/{cid}";
         }
 
+        // Resolve a profile/object Image field to a displayable URL.
+        // Handles: IPFS:CID/file → ipfs.io, on-chain txid/file or CHAIN:txid/file → /root/txid/file,
+        // and direct https:// URLs. Returns "" if unresolvable.
+        private static string ProfileImageUrl(string image)
+        {
+            if (string.IsNullOrWhiteSpace(image)) return "";
+            var v = image.Replace('\\', '/').Trim();
+
+            // Direct https / data URL
+            if (v.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ||
+                v.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+                return v;
+
+            // IPFS: IPFS:CID/filename
+            if (v.StartsWith("IPFS:", StringComparison.OrdinalIgnoreCase))
+            {
+                var raw = v.Substring(5);
+                var cid = raw.Split('/')[0].Trim();
+                return string.IsNullOrEmpty(cid) ? "" : $"https://ipfs.io/ipfs/{cid}";
+            }
+
+            // On-chain: CHAIN:txid/filename  or  txid/filename  (64-char hex prefix)
+            // Strip optional chain prefix (BTC:, LTC:, DOG:, MZC:)
+            var stripped = Regex.Replace(v, @"^(BTC|LTC|DOG|MZC):", "", RegexOptions.IgnoreCase);
+            var slashIdx = stripped.IndexOf('/');
+            if (slashIdx > 0)
+            {
+                var txPart = stripped[..slashIdx];
+                var filePart = stripped[(slashIdx + 1)..];
+                if (Regex.IsMatch(txPart, @"^[0-9a-fA-F]{64}$") && !string.IsNullOrEmpty(filePart))
+                    return $"/root/{txPart}/{Uri.EscapeDataString(filePart)}";
+            }
+
+            return "";
+        }
+
         // Return the display filename from an IPFS URN (e.g. ATLAS.mp4)
         private static string IpfsFilename(string urn)
         {
@@ -103,6 +155,269 @@ namespace P2FK.IO.Controllers
             var raw = normalized.Substring(idx + 5);
             var parts = raw.Split('/');
             return parts.Length > 1 ? parts[1].Trim() : "";
+        }
+
+        // ── BuildAddressHtml: top-level wrapper for address pages ──────────────
+        // Renders a profile card (if profile JSON exists) followed by object
+        // details (if OBJ.json exists). Either or both may be present.
+        private string BuildAddressHtml(string address, JsonElement? obj, JsonElement? profile)
+        {
+            if (obj == null && profile != null)
+            {
+                // Profile-only page: full page built inside BuildProfileOnlyHtml
+                return BuildProfileOnlyHtml(address, profile.Value);
+            }
+
+            if (obj != null && profile == null)
+            {
+                // Object-only (no profile): existing behaviour
+                return BuildObjectHtml(address, obj.Value);
+            }
+
+            // Both exist: inject profile card into object page HTML (before <div class="page"> content)
+            string objectHtml = BuildObjectHtml(address, obj!.Value);
+            string profileCard = BuildProfileCardHtml(address, profile!.Value);
+
+            // Insert the profile card right after <div class="page"> (and the obj-header that follows)
+            // Strategy: splice in after the opening <div class="page"> tag
+            const string pageDiv = "<div class=\"page\">";
+            int pageIdx = objectHtml.IndexOf(pageDiv, StringComparison.Ordinal);
+            if (pageIdx >= 0)
+            {
+                int insertAt = pageIdx + pageDiv.Length + 1; // +1 for the newline
+                return objectHtml[..insertAt] + profileCard + objectHtml[insertAt..];
+            }
+
+            // Fallback: prepend card before object HTML
+            return profileCard + objectHtml;
+        }
+
+        // Full standalone page for addresses that have a profile but no OBJ.json
+        private string BuildProfileOnlyHtml(string address, JsonElement profile)
+        {
+            string displayName = GetString(profile, "DisplayName");
+            string urn         = GetString(profile, "URN");
+            string image       = GetString(profile, "Image");
+            string pageTitle   = !string.IsNullOrEmpty(displayName) ? $"{H(displayName)} – bitFossil"
+                               : !string.IsNullOrEmpty(urn)         ? $"@{H(urn)} – bitFossil"
+                               : $"{H(address[..6])}… – bitFossil";
+            string chainAbbrev = DetectChain(address);
+            string chainDisplay = ChainDisplayName(chainAbbrev);
+            string avatarUrl   = ProfileImageUrl(image);
+            string ogImage     = string.IsNullOrEmpty(avatarUrl) ? "https://p2fk.io/bitfossil.png" : avatarUrl;
+            string profileCard = BuildProfileCardHtml(address, profile);
+
+            var sb = new StringBuilder();
+            sb.Append($@"<!DOCTYPE html>
+<html lang=""en"">
+<head>
+  <meta charset=""UTF-8"">
+  <meta name=""viewport"" content=""width=device-width, initial-scale=1.0"">
+  <title>{pageTitle}</title>
+  <link rel=""apple-touch-icon"" sizes=""180x180"" href=""/apple-touch-icon.png"">
+  <link rel=""icon"" type=""image/png"" sizes=""32x32"" href=""/favicon-32x32.png"">
+  <link rel=""icon"" type=""image/png"" sizes=""16x16"" href=""/favicon-16x16.png"">
+  <meta property=""og:title"" content=""{pageTitle}"">
+  <meta property=""og:image"" content=""{H(ogImage)}"">
+  <meta property=""og:url"" content=""https://p2fk.io/root/{H(address)}"">
+  <meta property=""og:type"" content=""profile"">
+  <meta property=""og:site_name"" content=""bitFossil"">
+  <meta name=""twitter:card"" content=""summary"">
+  <meta name=""twitter:title"" content=""{pageTitle}"">
+  <meta name=""twitter:image"" content=""{H(ogImage)}"">
+  <meta name=""twitter:site"" content=""@bitFossil"">
+  <style>
+    *, *::before, *::after {{ box-sizing: border-box; }}
+    html {{ scroll-behavior: smooth; }}
+    body {{ background: #121212; color: #e0e0e0; font-family: Arial, sans-serif; margin: 0; padding: 0; min-height: 100vh; }}
+    a {{ color: #03dac6; text-decoration: none; }}
+    a:hover {{ color: #bb86fc; }}
+    #navbar {{
+      position: fixed; top: 0; left: 0; right: 0; z-index: 2000;
+      background: #1e1e1e; border-bottom: 2px solid #bb86fc;
+      display: flex; align-items: center; gap: 10px; padding: 7px 14px; height: 54px;
+    }}
+    #navbar .brand {{ display: flex; align-items: center; gap: 8px; flex-shrink: 0; text-decoration: none; color: #bb86fc; font-size: 1.15em; font-weight: bold; }}
+    #navbar .brand img {{ width: 36px; height: 36px; border-radius: 4px; object-fit: cover; }}
+    .nav-links {{ display: flex; align-items: center; gap: 12px; flex-shrink: 0; margin-left: auto; }}
+    .nav-links a {{ color: #b0b0b0; font-size: 0.82em; white-space: nowrap; padding: 4px 8px; border-radius: 4px; border: 1px solid #333; transition: all 0.2s; }}
+    .nav-links a:hover {{ background: #2a2a2a; color: #bb86fc; border-color: #bb86fc; }}
+    .page {{ max-width: 960px; margin: 0 auto; padding: 74px 16px 40px; }}
+    {ProfileCardCss()}
+  </style>
+</head>
+<body>
+<nav id=""navbar"">
+  <a class=""brand"" href=""/""><img src=""/bitfossil.png"" alt=""bitFossil"">bitFossil</a>
+  <div class=""nav-links""><a href=""/"">Search</a><a href=""/API"">API</a></div>
+</nav>
+<div class=""page"">
+{profileCard}</div>
+</body>
+</html>");
+            return sb.ToString();
+        }
+
+        // Returns the CSS block shared by the profile card (inlined into both page types)
+        private static string ProfileCardCss() => @"
+    .profile-panel { background: #1e1e1e; border-radius: 8px; border: 1px solid #2a2a2a; padding: 16px; margin-bottom: 18px; display: flex; gap: 16px; align-items: flex-start; }
+    .profile-panel-img { width: 88px; height: 88px; border-radius: 8px; object-fit: cover; background: #333; flex-shrink: 0; }
+    .profile-panel-info { flex: 1; min-width: 0; overflow: hidden; }
+    .profile-panel-info h2 { margin: 0 0 4px; color: #bb86fc; font-size: 1.1em; overflow-wrap: break-word; word-break: break-word; }
+    .profile-panel-info p { margin: 2px 0; font-size: 0.85em; color: #b0b0b0; overflow-wrap: break-word; word-break: break-word; }
+    .profile-handle-addr { font-family: monospace; font-size: 0.65em; color: #666; font-weight: normal; vertical-align: middle; }
+    .profile-url-link { display: inline-block; border: 1px solid #bb86fc; border-radius: 10px; padding: 1px 8px; font-size: 0.75em; color: #bb86fc; margin: 2px; transition: all 0.2s; }
+    .profile-url-link:hover { background: #bb86fc; color: #121212; }
+    .profile-url-link.internal { border-color: #03dac6; color: #03dac6; }
+    .profile-url-link.internal:hover { background: #03dac6; color: #121212; }
+    .profile-height { font-size: 0.78em; color: #888; margin-top: 4px; }
+    .profile-height span { color: #03dac6; font-weight: bold; }
+    @media(max-width:600px) { .profile-panel { flex-direction: column; } .profile-panel-img { width: 64px; height: 64px; } }
+";
+
+        // Renders the profile card HTML snippet (no <html>/<head> — embeds into any page)
+        private string BuildProfileCardHtml(string address, JsonElement profile)
+        {
+            string displayName  = GetString(profile, "DisplayName");
+            string urn          = GetString(profile, "URN");
+            string bio          = GetString(profile, "Bio");
+            string image        = GetString(profile, "Image");
+            string createdDate  = GetString(profile, "CreatedDate");
+            string changeDate   = GetString(profile, "ChangeDate");
+            string processHeight = GetString(profile, "ProcessHeight");
+
+            string headingName = !string.IsNullOrEmpty(displayName) ? displayName
+                               : !string.IsNullOrEmpty(urn)         ? $"@{urn}"
+                               : address;
+            string shortAddr   = address.Length > 12 ? address[..6] + "…" + address[^6..] : address;
+
+            // ── Avatar image URL ───────────────────────────────────────────────
+            string avatarUrl = ProfileImageUrl(image);
+            string chainAbbrev = DetectChain(address);
+
+            // ── Location ──────────────────────────────────────────────────────
+            string locText = "";
+            if (profile.TryGetProperty("Location", out var locProp))
+            {
+                if (locProp.ValueKind == JsonValueKind.Object)
+                {
+                    if (locProp.TryGetProperty("quark", out var q)) locText = q.GetString() ?? "";
+                    else if (locProp.TryGetProperty("Quark", out var q2)) locText = q2.GetString() ?? "";
+                }
+                else if (locProp.ValueKind == JsonValueKind.String)
+                    locText = locProp.GetString() ?? "";
+            }
+
+            // ── URL links ─────────────────────────────────────────────────────
+            var urlLinks = new List<(string label, string value)>();
+            if (profile.TryGetProperty("URL", out var urlProp) && urlProp.ValueKind == JsonValueKind.Object)
+                foreach (var entry in urlProp.EnumerateObject())
+                    urlLinks.Add((entry.Name, entry.Value.GetString() ?? ""));
+
+            // ── Build HTML ────────────────────────────────────────────────────
+            var sb = new StringBuilder();
+            sb.Append(@"<div class=""profile-panel"">
+");
+
+            // Avatar
+            if (!string.IsNullOrEmpty(avatarUrl))
+            {
+                // Use lazy JS loading for the image (same pattern as object media)
+                sb.Append($@"  <img class=""profile-panel-img"" id=""prof-avatar"" src=""/bitfossil.png"" alt=""{H(headingName)}"">
+");
+            }
+            else
+            {
+                sb.Append($@"  <img class=""profile-panel-img"" src=""/bitfossil.png"" alt=""{H(headingName)}"">
+");
+            }
+
+            sb.Append(@"  <div class=""profile-panel-info"">
+");
+            // Name + address
+            sb.Append($@"    <h2>{H(headingName)} <span class=""profile-handle-addr"">{H(shortAddr)}</span></h2>
+");
+
+            // Bio
+            if (!string.IsNullOrEmpty(bio))
+                sb.Append($@"    <p>{H(bio)}</p>
+");
+
+            // Location
+            if (!string.IsNullOrEmpty(locText))
+                sb.Append($@"    <p>📍 {H(locText)}</p>
+");
+
+            // URL links
+            if (urlLinks.Count > 0)
+            {
+                sb.Append("    <p>🔗 ");
+                foreach (var (label, val) in urlLinks)
+                {
+                    if (val.StartsWith("@"))
+                    {
+                        // Internal profile link — link to index.html profile view
+                        var urnTarget = val.TrimStart('@');
+                        sb.Append($@"<a class=""profile-url-link internal"" href=""/?profile={H(Uri.EscapeDataString(urnTarget))}"">@{H(urnTarget)}</a>");
+                    }
+                    else if (val.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+                             val.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                    {
+                        sb.Append($@"<a class=""profile-url-link"" href=""{H(val)}"" target=""_blank"" rel=""noopener"">{H(label)}</a>");
+                    }
+                    else if (!string.IsNullOrWhiteSpace(val))
+                    {
+                        sb.Append($@"<span class=""profile-url-link"">{H(label)}: {H(val)}</span>");
+                    }
+                }
+                sb.Append("</p>\n");
+            }
+
+            // Dates
+            if (!string.IsNullOrEmpty(createdDate) && DateTime.TryParse(createdDate, out var cdt)
+                && cdt.Year > 1)
+                sb.Append($@"    <p>Joined: {H(cdt.ToString("yyyy-MM-dd"))}</p>
+");
+            if (!string.IsNullOrEmpty(changeDate) && DateTime.TryParse(changeDate, out var chd)
+                && chd.Year > 1)
+                sb.Append($@"    <p>Modified: {H(chd.ToString("yyyy-MM-dd"))}</p>
+");
+
+            // Process height
+            if (!string.IsNullOrEmpty(processHeight) && processHeight != "0")
+                sb.Append($@"    <p class=""profile-height"">Process height: <span>{H(processHeight)}</span></p>
+");
+
+            // URN link
+            if (!string.IsNullOrEmpty(urn))
+                sb.Append($@"    <p><a href=""/?profile={H(Uri.EscapeDataString(urn))}"">View full profile →</a></p>
+");
+
+            sb.Append(@"  </div>
+</div>
+");
+
+            // Lazy-load avatar via JS
+            if (!string.IsNullOrEmpty(avatarUrl))
+            {
+                // Avatar may be IPFS (external) or on-chain (/root/... - same origin)
+                bool isCrossOrigin = avatarUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+                sb.Append($@"<script>
+(function(){{
+  var img=document.getElementById('prof-avatar');
+  if(!img) return;
+  var url='{H(avatarUrl)}';
+  var el=new Image();
+  {(isCrossOrigin ? "el.crossOrigin='Anonymous';" : "")}
+  el.onload=function(){{img.src=url;}};
+  el.onerror=function(){{}};
+  el.src=url;
+}})();
+</script>
+");
+            }
+
+            return sb.ToString();
         }
 
         private string BuildObjectHtml(string address, JsonElement obj)
@@ -284,10 +599,11 @@ namespace P2FK.IO.Controllers
       transition: all 0.2s;
     }}
     .nav-links a:hover {{ background: #2a2a2a; color: #bb86fc; border-color: #bb86fc; }}
+    /* ── Profile card (shown when GetProfileByAddress.json also exists) ── */
+    {ProfileCardCss()}
     /* ── Content ── */
     .page {{ max-width: 960px; margin: 0 auto; padding: 74px 16px 40px; }}
     .obj-header {{ word-break: break-all; color: #bb86fc; font-size: 1.4em; font-weight: bold; margin-bottom: 4px; }}
-    .obj-address {{ font-size: 0.8em; color: #888; word-break: break-all; margin-bottom: 16px; }}
     .section {{ background: #1e1e1e; border-radius: 8px; padding: 16px 20px; margin-bottom: 18px; }}
     .section-title {{
       font-size: 0.78em; font-weight: bold; text-transform: uppercase;
