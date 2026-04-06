@@ -114,10 +114,11 @@ namespace P2FK.IO.Controllers
             string image       = GetString(obj, "Image");
             string uri         = GetString(obj, "URI");
             string license     = GetString(obj, "License");
-            string maximum     = GetString(obj, "Maximum");
-            string txid        = GetString(obj, "TransactionId");
-            string createdDate = GetString(obj, "CreatedDate");
-            string changeDate  = GetString(obj, "ChangeDate");
+            string maximum      = GetString(obj, "Maximum");
+            string txid         = GetString(obj, "TransactionId");
+            string createdDate  = GetString(obj, "CreatedDate");
+            string changeDate   = GetString(obj, "ChangeDate");
+            string blockHeight  = GetString(obj, "BlockHeight");
 
             if (string.IsNullOrEmpty(name)) name = address;
 
@@ -142,15 +143,15 @@ namespace P2FK.IO.Controllers
                 : imageGatewayUrl;
 
             // ── Creators ──────────────────────────────────────────────────────
-            var creators = new List<string>();
+            var creators = new List<(string addr, string date)>();
             if (obj.TryGetProperty("Creators", out var creatorsProp))
             {
                 if (creatorsProp.ValueKind == JsonValueKind.Object)
                     foreach (var c in creatorsProp.EnumerateObject())
-                        creators.Add(c.Name);
+                        creators.Add((c.Name, c.Value.ValueKind == JsonValueKind.String ? c.Value.GetString() ?? "" : ""));
                 else if (creatorsProp.ValueKind == JsonValueKind.Array)
                     foreach (var c in creatorsProp.EnumerateArray())
-                        if (c.GetString() is string s) creators.Add(s);
+                        if (c.GetString() is string s) creators.Add((s, ""));
             }
 
             // ── Owners ────────────────────────────────────────────────────────
@@ -171,6 +172,10 @@ namespace P2FK.IO.Controllers
                     owners.Add((o.Name, qty, lastTx));
                 }
             }
+
+            // ── Edition size = sum of all owner qty values ────────────────────
+            long editionSize = owners.Count > 0 ? owners.Sum(o => (long)o.qty) : 0;
+            string editionSizeDisplay = editionSize > 0 ? editionSize.ToString("N0") : "0";
 
             // ── Listings ──────────────────────────────────────────────────────
             var listings = new List<(string seller, int qty, double value, string requestor, string listingDate)>();
@@ -423,8 +428,9 @@ namespace P2FK.IO.Controllers
 ");
             AddMeta(sb, "Object Address", H(address));
             AddMeta(sb, "Blockchain", H(chainDisplayName));
-            if (!string.IsNullOrEmpty(maximum))
-                AddMeta(sb, "Edition Size", H(maximum));
+            AddMeta(sb, "Edition Size", editionSizeDisplay);
+            if (!string.IsNullOrEmpty(blockHeight))
+                AddMeta(sb, "Block Height", H(blockHeight));
             if (!string.IsNullOrEmpty(license))
                 AddMeta(sb, "License", H(license));
             if (!string.IsNullOrEmpty(createdDate) && DateTime.TryParse(createdDate, out var cd))
@@ -464,12 +470,28 @@ namespace P2FK.IO.Controllers
                 sb.Append(@"  <div class=""section"">
     <div class=""section-title"">Creators</div>
     <table class=""data-table"">
-      <thead><tr><th>Address</th></tr></thead>
+      <thead><tr><th>Address</th><th>Date</th></tr></thead>
       <tbody>
 ");
-                foreach (var c in creators)
-                    sb.Append($@"        <tr><td><a href=""{H(ExplorerAddressUrl(chainAbbrev, c))}"" target=""_blank"" rel=""noopener"">{H(c)}</a></td></tr>
+                foreach (var (c, cDate) in creators)
+                {
+                    string dateDisplay = "";
+                    if (!string.IsNullOrEmpty(cDate))
+                    {
+                        bool isNullDate = cDate.StartsWith("0001-01-01") || cDate.StartsWith("1970-01-01");
+                        if (isNullDate)
+                            dateDisplay = "<span style=\"color:#666;font-style:italic;\">Pending</span>";
+                        else if (DateTime.TryParse(cDate, out var cdt))
+                            dateDisplay = H(cdt.ToString("yyyy-MM-dd HH:mm:ss") + " UTC");
+                        else
+                            dateDisplay = H(cDate);
+                    }
+                    sb.Append($@"        <tr>
+          <td><a href=""{H(ExplorerAddressUrl(chainAbbrev, c))}"" target=""_blank"" rel=""noopener"">{H(c)}</a></td>
+          <td>{dateDisplay}</td>
+        </tr>
 ");
+                }
                 sb.Append(@"      </tbody>
     </table>
   </div>
