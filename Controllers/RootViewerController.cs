@@ -29,7 +29,6 @@ namespace P2FK.IO.Controllers
         }
 
         [HttpGet("{txid}")]
-        [HttpGet("{txid}/index.html")]
         [HttpGet("{txid}/index.htm")]
         public IActionResult Get(string txid)
         {
