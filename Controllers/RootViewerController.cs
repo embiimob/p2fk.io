@@ -151,7 +151,7 @@ namespace P2FK.IO.Controllers
   <link rel=""icon"" type=""image/png"" sizes=""32x32"" href=""/favicon-32x32.png"">
   <link rel=""icon"" type=""image/png"" sizes=""16x16"" href=""/favicon-16x16.png"">
   <meta property=""og:title"" content=""Root Index {H(shortTxid)} – bitFossil"">
-  <meta property=""og:description"" content=""On-chain root record inscribed {H(blockDateDisplay)}"">
+  <meta property=""og:description"" content=""On-chain root record etched {H(blockDateDisplay)}"">
   <meta property=""og:image"" content=""{H(ogImage)}"">
   <meta property=""og:url"" content=""https://p2fk.io/root/{H(txid)}"">
   <meta property=""og:type"" content=""article"">
