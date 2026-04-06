@@ -1873,7 +1873,7 @@ const renderObjMiniCard=(obj,mainnet,ownerAddress)=>{
     fetchProfileByAddress(addr,mainnet,null).then(p=>{
       const name=p?(p.DisplayName||p.URN||abbreviateAddress(addr)):abbreviateAddress(addr);
       el.textContent=name;
-      el.title=(isUnack?'Unacknowledged: ':'')+name;
+      el.title=(isUnack?'u: ':'')+name;
       const navTarget=p?(p.URN||addr):addr;
       el.addEventListener('click',e=>{e.stopPropagation();navigateTo('profile',{profile:navTarget,mainnet});});
     }).catch(()=>{
@@ -2291,7 +2291,7 @@ const showObjectView=async(identifier,mainnet=true)=>{
           const isUnack=date==='0001-01-01T00:00:00';
           const p=await fetchProfileByAddress(addr,mainnet,null);
           const name=p?(p.DisplayName||p.URN||abbreviateAddress(addr)):abbreviateAddress(addr);
-          return `<div class="obj-list-row${isUnack?' unack':''}"><span class="col-name owner-addr" data-addr="${escapeHtml(addr)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(name)}${isUnack?' (unacknowledged)':''}</span></div>`;
+          return `<div class="obj-list-row${isUnack?' unack':''}"><span class="col-name owner-addr" data-addr="${escapeHtml(addr)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(name)}${isUnack?' (u)':''}</span></div>`;
         }));
         const listEl=document.getElementById('objCreatorsList');
         if(listEl){listEl.innerHTML='';populateObjList('objCreatorsList',rows,c=>c.querySelectorAll('.owner-addr').forEach(el=>el.addEventListener('click',()=>navigateTo('profile',{profile:el.dataset.addr,mainnet}))));}
