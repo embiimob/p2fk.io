@@ -1775,12 +1775,14 @@ const renderUrnLinkForObj=(urn)=>{
   return escapeHtml(urn);
 };
 
-const URN_BLOCKCHAIN_NAMES={'BTC':'Bitcoin','TBTC':'Bitcoin Testnet','LTC':'Litecoin','DOG':'Dogecoin','MZC':'Mazacoin','IPFS':'IPFS'};
-const urnBlockchainLabel=(urn)=>{
+const URN_BLOCKCHAIN_NAMES={'BTC':'Bitcoin','TBTC':'Bitcoin Testnet3','LTC':'Litecoin','DOG':'Dogecoin','MZC':'Mazacoin','IPFS':'IPFS'};
+const urnBlockchainLabel=(urn,mainnet)=>{
   if(!urn) return '';
   if(/^IPFS:/i.test(urn)||/^ipfs[:/]+/i.test(urn)) return 'IPFS';
   const m=urn.match(/^([A-Za-z]+):/);
   if(m){const k=m[1].toUpperCase();if(URN_BLOCKCHAIN_NAMES[k]) return URN_BLOCKCHAIN_NAMES[k];}
+  // Plain txid (hex string) or txid/path — message claim on BTC or TBTC
+  if(/^[0-9a-fA-F]{10,}(\/.*)?$/.test(urn)) return mainnet?'Bitcoin':'Bitcoin Testnet3';
   return '';
 };
 
@@ -2257,7 +2259,7 @@ const showObjectView=async(identifier,mainnet=true)=>{
     const lockedFull=isLocked?formatDateFull(obj.LockedDate):'';
 
     const info=document.createElement('div');info.className='object-detail-info';
-    const urnBlockchain=urnBlockchainLabel(obj.URN||'');
+    const urnBlockchain=urnBlockchainLabel(obj.URN||'',mainnet);
     const urnBlockchainHtml=urnBlockchain?`<div class="urn-blockchain-row">Blockchain: <span>${escapeHtml(urnBlockchain)}</span></div>`:'';
     const urnLinkHtml=obj.URN?`<div class="urn-link-row">URN: ${renderUrnLinkForObj(obj.URN)}</div>`:'';
     const descHtml=obj.Description?`<p class="desc">${escapeHtml(obj.Description)}</p>`:'';
