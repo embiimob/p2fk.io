@@ -454,7 +454,9 @@
     .obj-refresh-btn:hover { border-color: #03dac6; color: #03dac6; }
     .obj-refresh-btn.loading { animation: spin 1s linear infinite; }
     @keyframes spin { from{transform:rotate(0deg);} to{transform:rotate(360deg);} }
-    .urn-link-row { margin-top: 6px; font-size: 0.82em; color: #b0b0b0; word-break: break-all; }
+    .urn-blockchain-row { margin-top: 6px; font-size: 0.82em; color: #b0b0b0; }
+    .urn-blockchain-row span { color: #03dac6; }
+    .urn-link-row { margin-top: 2px; font-size: 0.82em; color: #b0b0b0; word-break: break-all; }
     .urn-link-row a { color: #bb86fc; }
     .urn-link-row a:hover { color: #03dac6; }
     .changelog { max-height: 200px; overflow-y: auto; }
@@ -1773,6 +1775,17 @@ const renderUrnLinkForObj=(urn)=>{
   return escapeHtml(urn);
 };
 
+const URN_BLOCKCHAIN_NAMES={'BTC':'Bitcoin','TBTC':'Bitcoin Testnet3','LTC':'Litecoin','DOG':'Dogecoin','MZC':'Mazacoin','IPFS':'IPFS'};
+const urnBlockchainLabel=(urn,mainnet)=>{
+  if(!urn) return '';
+  if(/^IPFS:/i.test(urn)||/^ipfs[:/]+/i.test(urn)) return 'IPFS';
+  const m=urn.match(/^([A-Za-z]+):/);
+  if(m){const k=m[1].toUpperCase();if(URN_BLOCKCHAIN_NAMES[k]) return URN_BLOCKCHAIN_NAMES[k];}
+  // Plain txid (hex string) or txid/path — message claim on BTC or TBTC
+  if(/^[0-9a-fA-F]{10,}(\/.*)?$/.test(urn)) return mainnet?'Bitcoin':'Bitcoin Testnet3';
+  return '';
+};
+
 // ── Update OG/Twitter meta tags ────────────────────────────────────────
 const updateMetaTags=(title,description,image,url)=>{
   const set=(id,content)=>{const el=document.getElementById(id);if(el&&content) el.setAttribute('content',content);};
@@ -2246,6 +2259,8 @@ const showObjectView=async(identifier,mainnet=true)=>{
     const lockedFull=isLocked?formatDateFull(obj.LockedDate):'';
 
     const info=document.createElement('div');info.className='object-detail-info';
+    const urnBlockchain=urnBlockchainLabel(obj.URN||'',mainnet);
+    const urnBlockchainHtml=urnBlockchain?`<div class="urn-blockchain-row">Blockchain: <span>${escapeHtml(urnBlockchain)}</span></div>`:'';
     const urnLinkHtml=obj.URN?`<div class="urn-link-row">URN: ${renderUrnLinkForObj(obj.URN)}</div>`:'';
     const descHtml=obj.Description?`<p class="desc">${escapeHtml(obj.Description)}</p>`:'';
     const keyHtml=obj.Keyword?`<p>Keywords: <span style="color:#03dac6">${escapeHtml(Array.isArray(obj.Keyword)?obj.Keyword.join(', '):String(obj.Keyword))}</span></p>`:'';
@@ -2257,7 +2272,7 @@ const showObjectView=async(identifier,mainnet=true)=>{
     // Name row: name + abbreviated copyable address on the right
     const addrShort=objectAddress?escapeHtml(abbreviateAddress(objectAddress)):'';
 
-    info.innerHTML=`<div class="obj-name-row"><h2>${escapeHtml(obj.Name||'Unnamed Object')}</h2>${addrShort?`<span class="obj-name-addr" id="objAddrCopy" title="Click to copy address">${addrShort}</span>`:''}</div><p><span class="badge badge-object">Object</span><span class="badge badge-chain">${escapeHtml(mainnet?'BTC':'TBTC')}</span> ${lockHtml}</p>${descHtml}${keyHtml}${dateHtml}${urnLinkHtml}`;
+    info.innerHTML=`<div class="obj-name-row"><h2>${escapeHtml(obj.Name||'Unnamed Object')}</h2>${addrShort?`<span class="obj-name-addr" id="objAddrCopy" title="Click to copy address">${addrShort}</span>`:''}</div><p><span class="badge badge-object">Object</span><span class="badge badge-chain">${escapeHtml(mainnet?'BTC':'TBTC')}</span> ${lockHtml}</p>${descHtml}${keyHtml}${dateHtml}${urnBlockchainHtml}${urnLinkHtml}`;
     header.appendChild(info);
     card.appendChild(header);
 
