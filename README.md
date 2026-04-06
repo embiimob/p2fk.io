@@ -1,14 +1,14 @@
 # P2FK.IO
 
-**P2FK.IO** is the official **bitfossil / Sunnsetter** open-source API — a .NET web service that exposes on-chain data written by the [Sup!?](https://github.com/embiimob/SUP) protocol across Bitcoin (mainnet & testnet3), Litecoin, Dogecoin, and Mazacoin through a standard REST/Swagger interface.
+**P2FK.IO** is the official **bitfossil / Sunnsetter** an open-source API — .NET web service that exposes on-chain data etched in the [P2FK](https://github.com/embiimob/Sup/tree/master/P2FK/contracts) metaprotocol format across Bitcoin (mainnet & testnet3), Litecoin, Dogecoin, and Mazacoin through a standard REST/Swagger interface.
 
-The live site at **https://p2fk.io** is the public demo running this exact codebase.  The old site now uses p2fk.io as its demo, so this repository is the real thing — fork it, self-host it, and build on it.
+The live site at **https://p2fk.io** is a public demo running this exact codebase and the latest release of Sup!?.  The old bitfossil.org site now uses p2fk.io as its demo, so this repository is the real thing — fork it, self-host it, and build on it.
 
 ---
 
 ## What does it do?
 
-Sup!? encodes messages, user profiles, and digital objects (NFTs) directly into blockchain transactions using the **Pay-To-Future-Key (P2FK)** technique — no sidechains, no tokens, no third-party servers.  P2FK.IO reads that on-chain data through the Sup!? CLI and makes it available via a clean HTTP API with an interactive Swagger UI at `/API`.
+[Sup!?](https://github.com/embiimob/Sup) compliant applications encode messages, user profiles, digital objects (NFTs) and related scripts directly into blockchain transactions using the **Pay-To-Future-Key (P2FK)** multichain metaprotocol invented by embii in 2013 as part of the HugPuddle project.  P2FK.IO reads that on-chain data through the Sup!? CLI and makes it available via a clean HTTP API with an interactive Swagger UI at `/API`.  A demo API based application hosted at the root effectively replaces the functions of [bitfossil.org](https://github.com/embiimob/bitFossil)
 
 ---
 
