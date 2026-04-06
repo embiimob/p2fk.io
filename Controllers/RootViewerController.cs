@@ -28,78 +28,51 @@ namespace P2FK.IO.Controllers
             _wrapper = wrapper;
         }
 
-        [HttpGet("{txid:length(64)}")]
-        [HttpGet("{txid:length(64)}/index.htm")]
-        public IActionResult Get(string txid)
+        // Single dispatcher: handles both /root/{txid} (64-char hex) and /root/{address} (26-34 char base58)
+        [HttpGet("{value}")]
+        [HttpGet("{value}/index.htm")]
+        public IActionResult Get(string value)
         {
-            if (!Regex.IsMatch(txid, @"^[0-9a-fA-F]{64}$"))
-                return NotFound();
+            // 64-char hex → transaction root page
+            if (Regex.IsMatch(value, @"^[0-9a-fA-F]{64}$"))
+            {
+                var rootJsonPath = Path.Combine(_wrapper.RootPath, value, "ROOT.json");
+                if (!System.IO.File.Exists(rootJsonPath))
+                    return NotFound();
 
-            var rootJsonPath = Path.Combine(_wrapper.RootPath, txid, "ROOT.json");
-            if (!System.IO.File.Exists(rootJsonPath))
-                return NotFound();
+                string json;
+                try { json = System.IO.File.ReadAllText(rootJsonPath, Encoding.UTF8); }
+                catch { return NotFound(); }
 
-            string json;
-            try
-            {
-                json = System.IO.File.ReadAllText(rootJsonPath, Encoding.UTF8);
-            }
-            catch
-            {
-                return NotFound();
-            }
+                JsonElement root;
+                try { root = JsonSerializer.Deserialize<JsonElement>(json); }
+                catch { return Content("<html><body>Error parsing ROOT.json</body></html>", "text/html"); }
 
-            JsonElement root;
-            try
-            {
-                root = JsonSerializer.Deserialize<JsonElement>(json);
-            }
-            catch
-            {
-                return Content("<html><body>Error parsing ROOT.json</body></html>", "text/html");
+                return Content(BuildHtml(value, root), "text/html; charset=utf-8");
             }
 
-            var html = BuildHtml(txid, root);
-            return Content(html, "text/html; charset=utf-8");
-        }
-
-        [HttpGet("{address:minlength(26):maxlength(34)}")]
-        public IActionResult GetByAddress(string address)
-        {
-            string base58AddressPattern = @"^[a-zA-Z0-9][a-km-zA-HJ-NP-Z1-9]{25,33}$";
-            if (!Regex.IsMatch(address, base58AddressPattern))
-                return NotFound();
-
-            var objJsonPath = Path.Combine(_wrapper.RootPath, address, "OBJ.json");
-            if (!System.IO.File.Exists(objJsonPath))
-                return NotFound();
-
-            string json;
-            try
+            // base58 address → object index page
+            if (Regex.IsMatch(value, @"^[a-zA-Z0-9][a-km-zA-HJ-NP-Z1-9]{25,33}$"))
             {
-                json = System.IO.File.ReadAllText(objJsonPath, Encoding.UTF8);
-            }
-            catch
-            {
-                return NotFound();
+                var objJsonPath = Path.Combine(_wrapper.RootPath, value, "OBJ.json");
+                if (!System.IO.File.Exists(objJsonPath))
+                    return NotFound();
+
+                string json;
+                try { json = System.IO.File.ReadAllText(objJsonPath, Encoding.UTF8); }
+                catch { return NotFound(); }
+
+                JsonElement objArray;
+                try { objArray = JsonSerializer.Deserialize<JsonElement>(json); }
+                catch { return Content("<html><body>Error parsing OBJ.json</body></html>", "text/html"); }
+
+                if (objArray.ValueKind != JsonValueKind.Array || objArray.GetArrayLength() == 0)
+                    return NotFound();
+
+                return Content(BuildObjectHtml(value, objArray[0]), "text/html; charset=utf-8");
             }
 
-            JsonElement objArray;
-            try
-            {
-                objArray = JsonSerializer.Deserialize<JsonElement>(json);
-            }
-            catch
-            {
-                return Content("<html><body>Error parsing OBJ.json</body></html>", "text/html");
-            }
-
-            if (objArray.ValueKind != JsonValueKind.Array || objArray.GetArrayLength() == 0)
-                return NotFound();
-
-            var obj = objArray[0];
-            var html = BuildObjectHtml(address, obj);
-            return Content(html, "text/html; charset=utf-8");
+            return NotFound();
         }
 
         // Convert IPFS:CID\filename or IPFS:CID/filename to https://ipfs.io/ipfs/CID
