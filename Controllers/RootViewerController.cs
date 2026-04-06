@@ -66,8 +66,8 @@ namespace P2FK.IO.Controllers
         [HttpGet("{address:minlength(26):maxlength(34)}")]
         public IActionResult GetByAddress(string address)
         {
-            string pattern = @"^[a-zA-Z0-9][a-km-zA-HJ-NP-Z1-9]{25,33}$";
-            if (!Regex.IsMatch(address, pattern))
+            string base58AddressPattern = @"^[a-zA-Z0-9][a-km-zA-HJ-NP-Z1-9]{25,33}$";
+            if (!Regex.IsMatch(address, base58AddressPattern))
                 return NotFound();
 
             var objJsonPath = Path.Combine(_wrapper.RootPath, address, "OBJ.json");
@@ -194,15 +194,15 @@ namespace P2FK.IO.Controllers
             }
 
             // ── Listings ──────────────────────────────────────────────────────
-            var listings = new List<(string seller, int qty, double value, string requestor, string blockDate)>();
+            var listings = new List<(string seller, int qty, double value, string requestor, string listingDate)>();
             if (obj.TryGetProperty("Listings", out var listingsProp) && listingsProp.ValueKind == JsonValueKind.Object)
             {
                 foreach (var l in listingsProp.EnumerateObject())
                 {
                     int qty = 0;
                     double value = 0;
-                    string requestor = "";
-                    string blockDate2 = "";
+                    string requestor = ""; // parsed for completeness; not currently displayed
+                    string listingDate = "";
                     if (l.Value.ValueKind == JsonValueKind.Object)
                     {
                         if (l.Value.TryGetProperty("Qty", out var qtyProp) && qtyProp.ValueKind == JsonValueKind.Number)
@@ -212,9 +212,9 @@ namespace P2FK.IO.Controllers
                         if (l.Value.TryGetProperty("Requestor", out var rProp) && rProp.ValueKind == JsonValueKind.String)
                             requestor = rProp.GetString() ?? "";
                         if (l.Value.TryGetProperty("BlockDate", out var bdProp) && bdProp.ValueKind == JsonValueKind.String)
-                            blockDate2 = bdProp.GetString() ?? "";
+                            listingDate = bdProp.GetString() ?? "";
                     }
-                    listings.Add((l.Name, qty, value, requestor, blockDate2));
+                    listings.Add((l.Name, qty, value, requestor, listingDate));
                 }
             }
 
@@ -532,10 +532,10 @@ namespace P2FK.IO.Controllers
       <thead><tr><th>Seller</th><th>Qty</th><th>Price</th><th>Listed</th></tr></thead>
       <tbody>
 ");
-                foreach (var (seller, qty, value, _, blockDate2) in listings)
+                foreach (var (seller, qty, value, _, listingDate) in listings)
                 {
                     string listedHtml = "";
-                    if (!string.IsNullOrEmpty(blockDate2) && DateTime.TryParse(blockDate2, out var ld))
+                    if (!string.IsNullOrEmpty(listingDate) && DateTime.TryParse(listingDate, out var ld))
                         listedHtml = H(ld.ToString("yyyy-MM-dd HH:mm") + " UTC");
                     sb.Append($@"        <tr>
           <td><a href=""{H(ExplorerAddressUrl(chainAbbrev, seller))}"" target=""_blank"" rel=""noopener"">{H(seller)}</a></td>
@@ -576,7 +576,7 @@ namespace P2FK.IO.Controllers
     if (thumbEl) thumbEl.src = thumbUrl;
   }}
 
-  // Load artifact on a side thread
+  // Load artifact asynchronously (deferred via event loop)
   var artifactUrl = '{artifactUrl}';
   var artifactFn  = '{artifactFn}';
   var card = document.getElementById('artifact-card');
