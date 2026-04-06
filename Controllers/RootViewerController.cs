@@ -119,6 +119,7 @@ namespace P2FK.IO.Controllers
             string createdDate  = GetString(obj, "CreatedDate");
             string changeDate   = GetString(obj, "ChangeDate");
             string blockHeight  = GetString(obj, "BlockHeight");
+            string buildDate    = GetString(obj, "BuildDate");
 
             if (string.IsNullOrEmpty(name)) name = address;
 
@@ -437,6 +438,8 @@ namespace P2FK.IO.Controllers
                 AddMeta(sb, "Created", H(cd.ToString("yyyy-MM-dd HH:mm:ss") + " UTC"));
             if (!string.IsNullOrEmpty(changeDate) && DateTime.TryParse(changeDate, out var chd))
                 AddMeta(sb, "Last Updated", H(chd.ToString("yyyy-MM-dd HH:mm:ss") + " UTC"));
+            if (!string.IsNullOrEmpty(buildDate))
+                AddMeta(sb, "Cached On", H(buildDate));
             if (!string.IsNullOrEmpty(txid))
                 AddMeta(sb, "Mint Transaction", $@"<a href=""{H(ExplorerTxUrl(chainAbbrev, txid))}"" target=""_blank"" rel=""noopener"" class=""tx-mono"">{H(txid)}</a>");
             if (!string.IsNullOrEmpty(uri))
