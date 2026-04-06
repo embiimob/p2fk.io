@@ -62,14 +62,20 @@ namespace P2FK.IO.Controllers
                 try { json = System.IO.File.ReadAllText(objJsonPath, Encoding.UTF8); }
                 catch { return NotFound(); }
 
-                JsonElement objArray;
-                try { objArray = JsonSerializer.Deserialize<JsonElement>(json); }
+                JsonElement objElement;
+                try { objElement = JsonSerializer.Deserialize<JsonElement>(json); }
                 catch { return Content("<html><body>Error parsing OBJ.json</body></html>", "text/html"); }
 
-                if (objArray.ValueKind != JsonValueKind.Array || objArray.GetArrayLength() == 0)
+                // OBJ.json on disk is a single JSON object; handle arrays defensively for compatibility
+                JsonElement obj;
+                if (objElement.ValueKind == JsonValueKind.Object)
+                    obj = objElement;
+                else if (objElement.ValueKind == JsonValueKind.Array && objElement.GetArrayLength() > 0)
+                    obj = objElement[0];
+                else
                     return NotFound();
 
-                return Content(BuildObjectHtml(value, objArray[0]), "text/html; charset=utf-8");
+                return Content(BuildObjectHtml(value, obj), "text/html; charset=utf-8");
             }
 
             return NotFound();
