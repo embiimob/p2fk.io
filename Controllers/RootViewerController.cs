@@ -289,7 +289,7 @@ namespace P2FK.IO.Controllers
     <div class=""section-title"">Transaction Info</div>
     <div class=""meta-grid"">
 ");
-            AddMeta(sb, "Transaction ID", $@"<a href=""https://mempool.space/testnet/tx/{H(txid)}"" target=""_blank"" rel=""noopener"">{H(txid)}</a>");
+            AddMeta(sb, "Transaction ID", $@"<a href=""{H(ExplorerTxUrl(chainAbbrev, txid))}"" target=""_blank"" rel=""noopener"">{H(txid)}</a>");
             AddMeta(sb, "Blockchain", H(chainDisplayName));
             AddMeta(sb, "Block Date", H(blockDateDisplay));
             if (!string.IsNullOrEmpty(blockHeight) && blockHeight != "0")
@@ -385,7 +385,7 @@ namespace P2FK.IO.Controllers
 ");
                 foreach (var (addr, amount) in outputs)
                     sb.Append($@"        <tr>
-          <td><a href=""https://mempool.space/testnet/address/{H(addr)}"" target=""_blank"" rel=""noopener"">{H(addr)}</a></td>
+          <td><a href=""{H(ExplorerAddressUrl(chainAbbrev, addr))}"" target=""_blank"" rel=""noopener"">{H(addr)}</a></td>
           <td class=""amount"">{H(amount)}</td>
         </tr>
 ");
@@ -403,7 +403,7 @@ namespace P2FK.IO.Controllers
     <div class=""meta-grid"">
 ");
                 if (!string.IsNullOrEmpty(signedBy))
-                    AddMeta(sb, "Signed By", $@"<a href=""https://mempool.space/testnet/address/{H(signedBy)}"" target=""_blank"" rel=""noopener"">{H(signedBy)}</a>");
+                    AddMeta(sb, "Signed By", $@"<a href=""{H(ExplorerAddressUrl(chainAbbrev, signedBy))}"" target=""_blank"" rel=""noopener"">{H(signedBy)}</a>");
                 if (!string.IsNullOrEmpty(hash))
                     AddMeta(sb, "Hash", $@"<span class=""sig-mono"">{H(hash)}</span>");
                 if (!string.IsNullOrEmpty(signature))
@@ -482,6 +482,24 @@ namespace P2FK.IO.Controllers
             "MZC"  => "Mazacoin (MZC)",
             "TBTC" => "Bitcoin Testnet (TBTC)",
             _      => "Bitcoin (BTC)",
+        };
+
+        private static string ExplorerTxUrl(string chain, string txid) => chain switch
+        {
+            "TBTC" => $"https://mempool.space/testnet/tx/{txid}",
+            "LTC"  => $"https://litecoinspace.org/tx/{txid}",
+            "DOG"  => $"https://blockchair.com/dogecoin/transaction/{txid}",
+            "MZC"  => $"https://mazacha.in/tx/{txid}",
+            _      => $"https://mempool.space/tx/{txid}",
+        };
+
+        private static string ExplorerAddressUrl(string chain, string address) => chain switch
+        {
+            "TBTC" => $"https://mempool.space/testnet/address/{address}",
+            "LTC"  => $"https://litecoinspace.org/address/{address}",
+            "DOG"  => $"https://blockchair.com/dogecoin/address/{address}",
+            "MZC"  => $"https://mazacha.in/address/{address}",
+            _      => $"https://mempool.space/address/{address}",
         };
     }
 }
