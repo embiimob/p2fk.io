@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Caching.Memory;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -11,6 +12,12 @@ namespace P2FK.IO.Controllers
     public class RootViewerController : ControllerBase
     {
         private readonly Wrapper _wrapper;
+        private readonly IMemoryCache _cache;
+
+        // Rendered HTML for a given txid/address rarely changes (on-chain data is immutable
+        // once written).  A 5-minute TTL keeps the page fresh while eliminating redundant
+        // File.ReadAllText + StringBuilder allocations for every duplicate page view.
+        private static readonly TimeSpan HtmlCacheTtl = TimeSpan.FromMinutes(5);
 
         private static readonly HashSet<string> ImageExtensions = new(StringComparer.OrdinalIgnoreCase)
             { ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg" };
@@ -23,9 +30,10 @@ namespace P2FK.IO.Controllers
         private static readonly HashSet<string> PdfExtensions = new(StringComparer.OrdinalIgnoreCase)
             { ".pdf" };
 
-        public RootViewerController(Wrapper wrapper)
+        public RootViewerController(Wrapper wrapper, IMemoryCache cache)
         {
             _wrapper = wrapper;
+            _cache = cache;
         }
 
         // Single dispatcher: handles both /root/{txid} (64-char hex) and /root/{address} (26-34 char base58)
@@ -33,9 +41,14 @@ namespace P2FK.IO.Controllers
         [HttpGet("{value}/index.htm")]
         public IActionResult Get(string value)
         {
+            string htmlCacheKey = $"root-html:{value}";
+
             // 64-char hex → transaction root page
             if (Regex.IsMatch(value, @"^[0-9a-fA-F]{64}$"))
             {
+                if (_cache.TryGetValue(htmlCacheKey, out string? cachedHtml) && cachedHtml != null)
+                    return Content(cachedHtml, "text/html; charset=utf-8");
+
                 var rootJsonPath = Path.Combine(_wrapper.RootPath, value, "ROOT.json");
                 if (!System.IO.File.Exists(rootJsonPath))
                     return NotFound();
@@ -48,12 +61,19 @@ namespace P2FK.IO.Controllers
                 try { root = JsonSerializer.Deserialize<JsonElement>(json); }
                 catch { return Content("<html><body>Error parsing ROOT.json</body></html>", "text/html"); }
 
-                return Content(BuildHtml(value, root), "text/html; charset=utf-8");
+                string html = BuildHtml(value, root);
+                _cache.Set(htmlCacheKey, html, new MemoryCacheEntryOptions()
+                    .SetSize(1)
+                    .SetAbsoluteExpiration(HtmlCacheTtl));
+                return Content(html, "text/html; charset=utf-8");
             }
 
             // base58 address → object and/or profile page
             if (Regex.IsMatch(value, @"^[a-zA-Z0-9][a-km-zA-HJ-NP-Z1-9]{25,33}$"))
             {
+                if (_cache.TryGetValue(htmlCacheKey, out string? cachedHtml) && cachedHtml != null)
+                    return Content(cachedHtml, "text/html; charset=utf-8");
+
                 // Try loading OBJ.json
                 JsonElement? obj = null;
                 var objJsonPath = Path.Combine(_wrapper.RootPath, value, "OBJ.json");
@@ -91,7 +111,11 @@ namespace P2FK.IO.Controllers
                 if (obj == null && profile == null)
                     return NotFound();
 
-                return Content(BuildAddressHtml(value, obj, profile), "text/html; charset=utf-8");
+                string html = BuildAddressHtml(value, obj, profile);
+                _cache.Set(htmlCacheKey, html, new MemoryCacheEntryOptions()
+                    .SetSize(1)
+                    .SetAbsoluteExpiration(HtmlCacheTtl));
+                return Content(html, "text/html; charset=utf-8");
             }
 
             return NotFound();

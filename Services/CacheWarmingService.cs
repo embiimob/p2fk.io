@@ -18,7 +18,9 @@ namespace P2FK.IO.Services
     public class CacheWarmingService : BackgroundService
     {
         // Warm this many seconds before the cache entry would naturally expire.
-        private const int WarmLeadSeconds = 30;
+        // With CacheTtl = 300 s the warm interval is 300 - 60 = 240 s (4 minutes),
+        // down from the previous 30-second churn.
+        private const int WarmLeadSeconds = 60;
 
         // Brief pause after host startup so routes and services are fully initialised
         // before the first warm query hits the search index.

@@ -51,7 +51,15 @@ builder.Services.AddSwaggerGen(c =>
     c.OrderActionsBy(a => a.ActionDescriptor.RouteValues["controller"]);
 });
 builder.Services.AddSingleton<P2FK.IO.Wrapper>();
-builder.Services.AddMemoryCache();
+builder.Services.AddMemoryCache(options =>
+{
+    // Cap the total number of distinct cache entries at 1024.
+    // Each entry is registered with size=1.  Combined with the 5-minute TTL this
+    // prevents unbounded growth from cache-key explosion or runaway user queries.
+    // When the limit is reached the oldest 25 % of entries are evicted.
+    options.SizeLimit = 1024;
+    options.CompactionPercentage = 0.25;
+});
 if (OperatingSystem.IsWindows())
 {
     builder.Services.AddSingleton<P2FK.IO.Services.WindowsSearchService>();
