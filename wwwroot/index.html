@@ -91,6 +91,8 @@
     }
     #navbar-search-btn:hover:not(:disabled) { background: #7c4dff; }
     #navbar-search-btn:disabled { background: #444; opacity: 0.7; }
+    #navbar-search-btn.cancel-mode { background: #b71c1c; }
+    #navbar-search-btn.cancel-mode:hover { background: #e53935; }
     .nav-links {
       display: flex;
       align-items: center;
@@ -676,6 +678,7 @@ const DISPLAY_BATCH_SIZE = 20;
 const MAX_PER_CHAIN = 1000;
 const MSG_PAGE_SIZE = 20;
 const GAVE_UP_ROUNDS = 4;
+const MAX_INITIAL_ROUNDS = 3;
 
 const CHAINS = {
   chkBitcoin:  { key: 'BTC',  params: 'blockchain=BTC'  },
@@ -708,6 +711,7 @@ const state = {
   keywordAddress: '',
   keywordMainnet: true,
   consecutiveEmptyRounds: 0,
+  initialLoadRounds: 0,
   profileMsgSkip: 0,
   profileMsgAddress: null,
   profileMsgMainnet: true,
@@ -811,8 +815,11 @@ const loadImageWithTimeout=async(url,timeout=180000)=>{
 const fetchAPI=async(url,errMsg,signal,timeout=15000)=>{
   const ctrl=new AbortController();
   const tid=setTimeout(()=>ctrl.abort(),timeout);
+  // Forward external signal into our own controller so both the timeout
+  // AND an upstream cancel will abort the fetch.
+  if(signal&&!signal.aborted) signal.addEventListener('abort',()=>ctrl.abort(),{once:true});
   try{
-    const res=await fetch(url,{signal:signal||ctrl.signal});
+    const res=await fetch(url,{signal:ctrl.signal});
     clearTimeout(tid);
     if(!res.ok) throw new Error(errMsg||`HTTP ${res.status}`);
     return res.json();
@@ -1296,6 +1303,25 @@ const anyMoreNeeded=()=>Object.values(state.pagination).some(p=>!p.exhausted)||s
 const updateResultCount=()=>{const n=state.totalDisplayed;const rc=document.getElementById('resultCount');if(n){rc.textContent=`${n} result${n===1?'':'s'} found`;rc.style.display='block';}};
 const endpointForType=(type)=>type==='objects'?'GetKnownObjectsBySearchString':type==='profiles'?'GetKnownProfilesBySearchString':'GetKnownRootsBySearchString';
 
+// ── Cancel-mode helpers ────────────────────────────────────────────────
+const setCancelMode=(active)=>{
+  const btn=document.getElementById('navbar-search-btn');
+  if(active){btn.textContent='✕ Stop';btn.classList.add('cancel-mode');}
+  else{btn.textContent='Search';btn.classList.remove('cancel-mode');}
+};
+const cancelSearch=()=>{
+  // Invalidate any in-flight finally blocks so they don't restart loading.
+  state.currentSearchId='__cancelled__';
+  if(state.abortController) state.abortController.abort();
+  state.isSearching=false;
+  state.isLoadingMore=false;
+  scrollObserver.unobserve(document.getElementById('loadSentinel'));
+  setCancelMode(false);
+  const loadEl=document.getElementById('searchLoading');
+  loadEl.style.display='none';loadEl.textContent='Loading…';
+  if(state.totalDisplayed>0) updateResultCount();
+};
+
 const fetchNextPage=async(signal)=>{
   const pending=Object.entries(state.pagination).filter(([,p])=>!p.exhausted);
   if(!pending.length) return{objectResults:[],profileResults:[],rootResults:[]};
@@ -1303,26 +1329,31 @@ const fetchNextPage=async(signal)=>{
     const[type]=key.split(':',2);const p=state.pagination[key];
     if(state.keywordMode){
       const addr=state.keywordAddress;const mn=state.keywordMainnet;
-      if(type==='objects') return fetchAPI(`${BASE_URL}/GetObjectsByAddress/${encodeURIComponent(addr)}?mainnet=${mn}&skip=${p.skip}&qty=${API_FETCH_BATCH_SIZE}&verbose=false`,'',signal).catch(()=>[]);
-      if(type==='profiles') return fetchAPI(`${BASE_URL}/GetProfileByAddress/${encodeURIComponent(addr)}?mainnet=${mn}`,'',signal).catch(()=>null);
-      return fetchAPI(`${BASE_URL}/GetPublicMessagesByAddress/${encodeURIComponent(addr)}?mainnet=${mn}&skip=${p.skip}&qty=${API_FETCH_BATCH_SIZE}`,'',signal).catch(()=>[]);
+      if(type==='objects') return fetchAPI(`${BASE_URL}/GetObjectsByAddress/${encodeURIComponent(addr)}?mainnet=${mn}&skip=${p.skip}&qty=${API_FETCH_BATCH_SIZE}&verbose=false`,'',signal,30000).catch(()=>null);
+      if(type==='profiles') return fetchAPI(`${BASE_URL}/GetProfileByAddress/${encodeURIComponent(addr)}?mainnet=${mn}`,'',signal,30000).catch(()=>null);
+      return fetchAPI(`${BASE_URL}/GetPublicMessagesByAddress/${encodeURIComponent(addr)}?mainnet=${mn}&skip=${p.skip}&qty=${API_FETCH_BATCH_SIZE}`,'',signal,30000).catch(()=>null);
     }
-    return fetchAPI(`${BASE_URL}/${endpointForType(type)}?searchString=${encodeURIComponent(state.lastSearchText)}&qty=${API_FETCH_BATCH_SIZE}&skip=${p.skip}&${p.params}&showSystemFiles=${document.getElementById('chkSystem')?.checked??false}`,'',signal).catch(()=>[]);
+    return fetchAPI(`${BASE_URL}/${endpointForType(type)}?searchString=${encodeURIComponent(state.lastSearchText)}&qty=${API_FETCH_BATCH_SIZE}&skip=${p.skip}&${p.params}&showSystemFiles=${document.getElementById('chkSystem')?.checked??false}`,'',signal,30000).catch(()=>null);
   }));
   pending.forEach(([key],i)=>{
     const[type]=key.split(':',2);
+    // null means the request was aborted or errored — do NOT exhaust the slot;
+    // only a real (possibly empty) array response should advance skip / set exhausted.
+    if(raw[i]===null) return;
     if(state.keywordMode){
       if(type==='profiles'){state.pagination[key].exhausted=true;return;}
-      const len=Array.isArray(raw[i])?(raw[i]||[]).length:0;
+      const len=Array.isArray(raw[i])?raw[i].length:0;
       state.pagination[key].skip+=len;if(len<API_FETCH_BATCH_SIZE)state.pagination[key].exhausted=true;
     }else{
-      const len=(raw[i]||[]).length;state.pagination[key].skip+=len;if(len<API_FETCH_BATCH_SIZE)state.pagination[key].exhausted=true;
+      const arr=Array.isArray(raw[i])?raw[i]:[];
+      const len=arr.length;state.pagination[key].skip+=len;if(len<API_FETCH_BATCH_SIZE)state.pagination[key].exhausted=true;
     }
   });
   const objectResults=[],profileResults=[],rootResults=[];
   const kwChain=state.keywordMode?(state.keywordMainnet?'BTC':'BTC-TESTNET'):'';
   pending.forEach(([key],i)=>{
     const[type]=key.split(':',2);const r=raw[i];
+    if(r===null) return; // skip failed requests — slot stays alive for next round
     if(state.keywordMode){
       if(type==='objects'){const arr=Array.isArray(r)?r:[];objectResults.push(...arr.map(item=>{const o=item.Object||item.object||item;return{Object:o,Blockchain:kwChain};}));}
       else if(type==='profiles'){if(r&&typeof r==='object'&&!Array.isArray(r)) profileResults.push({Profile:r,Blockchain:kwChain,Address:state.keywordAddress});}
@@ -1385,6 +1416,7 @@ const loadMoreBatch=async()=>{
   const gaveUpEl=document.getElementById('searchGaveUp');
   scrollObserver.unobserve(sentinel);
   state.isLoadingMore=true;
+  setCancelMode(true);
   const searchId=state.currentSearchId;
   const signal=state.abortController?.signal;
   const loadEl=document.getElementById('searchLoading');
@@ -1408,15 +1440,22 @@ const loadMoreBatch=async()=>{
   finally{
     loadEl.style.display='none';loadEl.textContent='Loading…';state.isLoadingMore=false;
     if(state.currentSearchId===searchId&&anyMoreNeeded()){
-      if(addedInRound===0){state.consecutiveEmptyRounds+=1;}
-      else{state.consecutiveEmptyRounds=0;}
+      if(addedInRound===0) state.consecutiveEmptyRounds+=1;
+      else state.consecutiveEmptyRounds=0;
+      state.initialLoadRounds+=1;
+      const hitRoundLimit=state.totalDisplayed<DISPLAY_BATCH_SIZE&&state.initialLoadRounds>=MAX_INITIAL_ROUNDS;
       if(state.consecutiveEmptyRounds>=GAVE_UP_ROUNDS){
+        setCancelMode(false);
         gaveUpEl.style.display='block';
-      }else if(state.totalDisplayed<DISPLAY_BATCH_SIZE){
+      }else if(state.totalDisplayed<DISPLAY_BATCH_SIZE&&!hitRoundLimit){
+        // Still filling the first page — keep looping (button stays in cancel mode)
         setTimeout(()=>loadMoreBatch(),0);
       }else{
+        setCancelMode(false);
         scrollObserver.observe(sentinel);
       }
+    }else{
+      setCancelMode(false);
     }
   }
 };
@@ -1444,14 +1483,12 @@ const performKeywordSearch=async(keyword)=>{
   const signal=state.abortController.signal;
   const feedEl=document.getElementById('feed');
   const loadEl=document.getElementById('searchLoading');
-  const btn=document.getElementById('navbar-search-btn');
-  const inp=document.getElementById('navbar-search-input');
   feedEl.innerHTML='';
   document.getElementById('resultCount').style.display='none';
   document.getElementById('searchError').style.display='none';
   document.getElementById('searchGaveUp').style.display='none';
   loadEl.style.display='block';loadEl.textContent='Searching keyword…';
-  btn.disabled=true;btn.textContent='…';inp.disabled=true;
+  setCancelMode(true);
   setView('search');
   scrollObserver.unobserve(document.getElementById('loadSentinel'));
   let addedInRound=0;
@@ -1464,7 +1501,7 @@ const performKeywordSearch=async(keyword)=>{
     if(wantProfiles) pagination[`profiles:${chainKey}`]={skip:0,exhausted:false};
     if(wantMessages) pagination[`messages:${chainKey}`]={skip:0,exhausted:false};
     state.keywordMode=true;state.keywordAddress=addr;state.keywordMainnet=isMainnet;
-    state.lastSearchText='#'+keyword;state.pagination=pagination;state.totalDisplayed=0;state.chainCounts={};state.buffer=[];state.consecutiveEmptyRounds=0;
+    state.lastSearchText='#'+keyword;state.pagination=pagination;state.totalDisplayed=0;state.chainCounts={};state.buffer=[];state.consecutiveEmptyRounds=0;state.initialLoadRounds=0;
     loadEl.textContent='Loading…';
     const{objectResults,profileResults,rootResults}=await fetchNextPage(signal);
     if(state.currentSearchId!==searchId) return;
@@ -1478,10 +1515,10 @@ const performKeywordSearch=async(keyword)=>{
   }catch(e){
     if(e.name!=='AbortError'){showSearchError('Keyword search failed: '+e.message);loadEl.style.display='none';}
   }finally{
-    if(state.currentSearchId===searchId){state.isSearching=false;btn.disabled=false;btn.textContent='Search';inp.disabled=false;loadEl.style.display='none';loadEl.textContent='Loading…';}
+    if(state.currentSearchId===searchId){state.isSearching=false;setCancelMode(false);loadEl.style.display='none';loadEl.textContent='Loading…';}
     if(state.currentSearchId===searchId&&anyMoreNeeded()){
-      if(addedInRound===0){state.consecutiveEmptyRounds+=1;}
-      else{state.consecutiveEmptyRounds=0;}
+      if(addedInRound===0) state.consecutiveEmptyRounds+=1;
+      else state.consecutiveEmptyRounds=0;
       if(state.consecutiveEmptyRounds>=GAVE_UP_ROUNDS){
         document.getElementById('searchGaveUp').style.display='block';
       }else if(state.totalDisplayed<DISPLAY_BATCH_SIZE){
@@ -1517,8 +1554,7 @@ const performSearch=async(searchText)=>{
   state.currentSearchId=searchId;
   const signal=state.abortController.signal;
 
-  const btn=document.getElementById('navbar-search-btn'),inp=document.getElementById('navbar-search-input');
-  btn.disabled=true;btn.textContent='…';inp.disabled=true;
+  setCancelMode(true);
   document.getElementById('feed').innerHTML='';
   document.getElementById('resultCount').style.display='none';
   document.getElementById('searchError').style.display='none';
@@ -1534,7 +1570,7 @@ const performSearch=async(searchText)=>{
     if(wantMessages) pagination[`messages:${key}`]={skip:0,exhausted:false,params};
   });
 
-  state.lastSearchText=text;state.pagination=pagination;state.totalDisplayed=0;state.chainCounts={};state.buffer=[];state.consecutiveEmptyRounds=0;
+  state.lastSearchText=text;state.pagination=pagination;state.totalDisplayed=0;state.chainCounts={};state.buffer=[];state.consecutiveEmptyRounds=0;state.initialLoadRounds=0;
 
   let addedInRound=0;
   try{
@@ -1550,10 +1586,10 @@ const performSearch=async(searchText)=>{
   }catch(e){
     if(e.name!=='AbortError'){showSearchError('Search failed: '+e.message);document.getElementById('searchLoading').style.display='none';}
   }finally{
-    if(state.currentSearchId===searchId){state.isSearching=false;btn.disabled=false;btn.textContent='Search';inp.disabled=false;}
+    if(state.currentSearchId===searchId){state.isSearching=false;setCancelMode(false);}
     if(state.currentSearchId===searchId&&anyMoreNeeded()){
-      if(addedInRound===0){state.consecutiveEmptyRounds+=1;}
-      else{state.consecutiveEmptyRounds=0;}
+      if(addedInRound===0) state.consecutiveEmptyRounds+=1;
+      else state.consecutiveEmptyRounds=0;
       if(state.consecutiveEmptyRounds>=GAVE_UP_ROUNDS){
         document.getElementById('searchGaveUp').style.display='block';
       }else if(state.totalDisplayed<DISPLAY_BATCH_SIZE){
@@ -2602,11 +2638,8 @@ window.addEventListener('popstate',(e)=>{
 // ── Navbar search ──────────────────────────────────────────────────────
 // ── Smart search: @username → profile, #keyword → object search ─────
 const handleNavSearch=async()=>{
-  // User action always cancels any in-progress auto-triggered search
-  if(state.isSearching){
-    if(state.abortController) state.abortController.abort();
-    state.isSearching=false;
-  }
+  // User action always cancels any in-progress search or auto-load
+  if(state.isSearching||state.isLoadingMore) cancelSearch();
   const raw=document.getElementById('navbar-search-input').value.trim();
   if(!raw){navigateTo('search',{});return;}
   if(raw.startsWith('@')){
@@ -2619,16 +2652,14 @@ const handleNavSearch=async()=>{
       setView('search');
       return;
     }
-    // Use selected network; if neither is checked default to TBTC (common dev default)
     const isMainnet=btcChk&&!tbtcChk;
     navigateTo('profile',{profile:urnTarget,mainnet:isMainnet});
     return;
   }
   if(raw.startsWith('#')){
-    // Keyword object search
     const kw=raw.slice(1).trim();
     if(!kw) return;
-    navigateTo('search',{search:raw}); // performSearch will detect #
+    navigateTo('search',{search:raw});
     return;
   }
   navigateTo('search',{search:raw});
@@ -2641,12 +2672,16 @@ document.getElementById('search-form').addEventListener('submit',(e)=>{
 
 document.getElementById('navbar-search-btn').addEventListener('click',(e)=>{
   e.preventDefault();
-  handleNavSearch();
+  // If actively searching/loading: cancel only (let user type a new query first).
+  // If idle: start a new search.
+  if(state.isSearching||state.isLoadingMore){cancelSearch();}
+  else{handleNavSearch();}
 });
 
 document.getElementById('searchContinueBtn').addEventListener('click',()=>{
   document.getElementById('searchGaveUp').style.display='none';
   state.consecutiveEmptyRounds=0;
+  state.initialLoadRounds=0;
   loadMoreBatch();
 });
 
