@@ -1565,10 +1565,20 @@ const performSearch=async(searchText)=>{
   const activeChains=Object.entries(CHAINS).filter(([id])=>document.getElementById(id).checked).map(([,c])=>c);
   const pagination={};
   activeChains.forEach(({key,params})=>{
-    if(wantObjects)  pagination[`objects:${key}`] ={skip:0,exhausted:false,params};
-    if(wantProfiles) pagination[`profiles:${key}`]={skip:0,exhausted:false,params};
+    // Objects and profiles only exist on BTC/TBTC — skip those slots for sidechains
+    const isBtcFamily=key==='BTC'||key==='TBTC';
+    if(wantObjects&&isBtcFamily)  pagination[`objects:${key}`] ={skip:0,exhausted:false,params};
+    if(wantProfiles&&isBtcFamily) pagination[`profiles:${key}`]={skip:0,exhausted:false,params};
     if(wantMessages) pagination[`messages:${key}`]={skip:0,exhausted:false,params};
   });
+
+  if(!Object.keys(pagination).length){
+    // Only sidechains selected with only Objects/Profiles checked — nothing to search
+    state.isSearching=false;setCancelMode(false);
+    document.getElementById('searchLoading').style.display='none';
+    document.getElementById('feed').innerHTML='<div style="text-align:center;padding:30px;color:#666;">Objects and profiles are only available on BTC / TBTC. Select Messages or add a BTC/TBTC chain.</div>';
+    return;
+  }
 
   state.lastSearchText=text;state.pagination=pagination;state.totalDisplayed=0;state.chainCounts={};state.buffer=[];state.consecutiveEmptyRounds=0;state.initialLoadRounds=0;
 
