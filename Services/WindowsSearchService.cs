@@ -12,7 +12,9 @@ namespace P2FK.IO.Services
     {
         private readonly string _rootPath;
         private readonly IMemoryCache _cache;
-        internal static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(60);
+        // Cache entries live for 5 minutes. CacheWarmingService refreshes 60 s before expiry,
+        // so the warm interval is 4 minutes — down from the previous 30 s churn.
+        internal static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(300);
         private static readonly Regex TxIdRegex = new Regex(@"[0-9a-fA-F]{64}", RegexOptions.Compiled);
         private const int MaxSearchLength = 2048;
 
@@ -66,6 +68,13 @@ namespace P2FK.IO.Services
         // ── Windows Search OLE DB helper ───────────────────────────────────────
 
         private record SearchRow(string Path, DateTime Modified);
+
+        // Internal cache types — raw JSON strings so the backing JsonDocument is not
+        // pinned in the cache for the full TTL.  JsonElement is only materialised during
+        // the scope of an individual request, then GC'd.
+        private record CachedRootEntry(string Blockchain, string TxId, string RawJson);
+        private record CachedObjectEntry(string Blockchain, string Address, string RawJson);
+        private record CachedProfileEntry(string Blockchain, string Address, string RawJson);
 
         [SupportedOSPlatform("windows")]
         private List<SearchRow> ExecuteSearchQuery(string sql)
@@ -146,9 +155,12 @@ namespace P2FK.IO.Services
             skip = Math.Clamp(skip, 0, 999);
             qty = Math.Min(qty, 1000 - skip);
 
-            string cacheKey = $"roots:{searchString?.ToLowerInvariant() ?? ""}:{qty}:{skip}:{blockchain ?? ""}:{showSystemFiles}";
-            if (!forceRefresh && _cache.TryGetValue(cacheKey, out List<SearchResultRoot>? cached) && cached != null)
-                return cached;
+            // qty/skip are intentionally excluded from the cache key: we cache the full
+            // filtered list and slice it in memory, eliminating the (qty × skip) key
+            // explosion that previously caused unbounded cache growth.
+            string cacheKey = $"roots:{searchString?.ToLowerInvariant() ?? ""}:{blockchain ?? ""}:{showSystemFiles}";
+            if (!forceRefresh && _cache.TryGetValue(cacheKey, out List<CachedRootEntry>? cachedEntries) && cachedEntries != null)
+                return SliceRootResults(cachedEntries, skip, qty);
 
             // Detect wildcard "*" before sanitisation strips the asterisk
             bool isWildcard = (searchString ?? "").Trim() == "*";
@@ -165,23 +177,26 @@ namespace P2FK.IO.Services
             //
             // When the wildcard "*" is used, return all files in scope ordered by newest
             // modified date so the caller sees a stream of the latest built-to-disk files.
+            //
+            // TOP 10000 caps the number of raw index rows returned so that the entire
+            // 415 MB directory tree is never materialised into memory in one shot.
             string sql = isWildcard
                 ? $"""
-                    SELECT System.ItemPathDisplay, System.DateModified
+                    SELECT TOP 10000 System.ItemPathDisplay, System.DateModified
                     FROM SystemIndex
                     WHERE SCOPE='{scopeUri}'
                     ORDER BY System.DateModified DESC
                     """
                 : hasSearch
                 ? $"""
-                    SELECT System.ItemPathDisplay, System.DateModified
+                    SELECT TOP 10000 System.ItemPathDisplay, System.DateModified
                     FROM SystemIndex
                     WHERE SCOPE='{scopeUri}'
                       AND FREETEXT('{sanitized}')
                     ORDER BY System.DateModified DESC
                     """
                 : $"""
-                    SELECT System.ItemPathDisplay, System.DateModified
+                    SELECT TOP 10000 System.ItemPathDisplay, System.DateModified
                     FROM SystemIndex
                     WHERE SCOPE='{scopeUri}'
                       AND System.FileName = 'ROOT.json'
@@ -232,14 +247,13 @@ namespace P2FK.IO.Services
                     txMap[txId] = row;
             }
 
-            var results = new List<SearchResultRoot>();
-            int skipped = 0;
+            var entries = new List<CachedRootEntry>();
 
-            // Order by newest modified date first
+            // Build the full filtered list — no early qty/skip break here.
+            // Pagination is applied after the cache is populated so a single cache entry
+            // serves all skip/qty combinations for the same search+chain+filter tuple.
             foreach (var kvp in txMap.OrderByDescending(x => x.Value.Modified))
             {
-                if (results.Count >= qty) break;
-
                 string txId = kvp.Key;
 
                 // Short-circuit: txId already identified as a system transaction from the Windows
@@ -251,14 +265,23 @@ namespace P2FK.IO.Services
 
                 if (!File.Exists(rootJsonPath)) continue;
 
-                var rootObj = await ReadJsonAsync<JsonElement?>(rootJsonPath);
-                if (rootObj == null) continue;
+                // Read raw JSON text — store the string in the cache rather than a deserialized
+                // JsonElement so the backing JsonDocument is not pinned for the full cache TTL.
+                string rawJson;
+                try { rawJson = await File.ReadAllTextAsync(rootJsonPath); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { continue; }
+
+                // Parse transiently to validate required fields; the JsonElement (and its
+                // JsonDocument) go out of scope at the end of this loop body.
+                JsonElement rootEl;
+                try { rootEl = JsonSerializer.Deserialize<JsonElement>(rawJson); }
+                catch (JsonException) { continue; }
 
                 // Skip roots where Output is null or missing
-                if (!rootObj.Value.TryGetProperty("Output", out var rootOutput) || rootOutput.ValueKind == JsonValueKind.Null)
+                if (!rootEl.TryGetProperty("Output", out var rootOutput) || rootOutput.ValueKind == JsonValueKind.Null)
                     continue;
 
-                string detectedBlockchain = DetectFirstOutputAddress(rootObj.Value);
+                string detectedBlockchain = DetectFirstOutputAddress(rootEl);
 
                 // Filter by blockchain if requested
                 if (blockchain != null && !string.Equals(detectedBlockchain, blockchain, StringComparison.OrdinalIgnoreCase))
@@ -267,20 +290,16 @@ namespace P2FK.IO.Services
                 // Fallback for transactions not caught by the file-listing scan: handles the
                 // edge case where the message is empty and there are no attached files on disk
                 // (ROOT.json is the only file in the folder, so no extension clue is available).
-                if (!showSystemFiles && IsSystemRoot(rootObj.Value))
+                if (!showSystemFiles && IsSystemRoot(rootEl))
                     continue;
 
-                if (skipped < skip) { skipped++; continue; }
-
-                results.Add(new SearchResultRoot
-                {
-                    Blockchain = detectedBlockchain,
-                    Root = rootObj
-                });
+                entries.Add(new CachedRootEntry(detectedBlockchain, txId, rawJson));
             }
 
-            _cache.Set(cacheKey, results, CacheTtl);
-            return results;
+            _cache.Set(cacheKey, entries, new MemoryCacheEntryOptions()
+                .SetSize(1)
+                .SetAbsoluteExpiration(CacheTtl));
+            return SliceRootResults(entries, skip, qty);
         }
 
         public async Task<List<SearchResultObject>> SearchObjectsAsync(
@@ -290,9 +309,9 @@ namespace P2FK.IO.Services
             skip = Math.Clamp(skip, 0, 999);
             qty = Math.Min(qty, 1000 - skip);
 
-            string cacheKey = $"objects:{searchString?.ToLowerInvariant() ?? ""}:{qty}:{skip}:{blockchain ?? ""}";
-            if (_cache.TryGetValue(cacheKey, out List<SearchResultObject>? cached) && cached != null)
-                return cached;
+            string cacheKey = $"objects:{searchString?.ToLowerInvariant() ?? ""}:{blockchain ?? ""}";
+            if (_cache.TryGetValue(cacheKey, out List<CachedObjectEntry>? cachedEntries) && cachedEntries != null)
+                return SliceObjectResults(cachedEntries, skip, qty);
 
             // Detect wildcard "*" before sanitisation strips the asterisk
             bool isWildcard = (searchString ?? "").Trim() == "*";
@@ -308,23 +327,26 @@ namespace P2FK.IO.Services
             //
             // When the wildcard "*" is used, return all files in scope ordered by newest
             // modified date so the caller sees a stream of the latest built-to-disk files.
+            //
+            // TOP 10000 caps the number of raw index rows returned so that the entire
+            // directory tree is never materialised into memory in one shot.
             string sql = isWildcard
                 ? $"""
-                    SELECT System.ItemPathDisplay, System.DateModified
+                    SELECT TOP 10000 System.ItemPathDisplay, System.DateModified
                     FROM SystemIndex
                     WHERE SCOPE='{scopeUri}'
                     ORDER BY System.DateModified DESC
                     """
                 : hasSearch
                 ? $"""
-                    SELECT System.ItemPathDisplay, System.DateModified
+                    SELECT TOP 10000 System.ItemPathDisplay, System.DateModified
                     FROM SystemIndex
                     WHERE SCOPE='{scopeUri}'
                       AND FREETEXT('{sanitized}')
                     ORDER BY System.DateModified DESC
                     """
                 : $"""
-                    SELECT System.ItemPathDisplay, System.DateModified
+                    SELECT TOP 10000 System.ItemPathDisplay, System.DateModified
                     FROM SystemIndex
                     WHERE SCOPE='{scopeUri}'
                       AND System.FileName = 'OBJ.json'
@@ -348,13 +370,10 @@ namespace P2FK.IO.Services
                 .OrderByDescending(r => r.Modified)
                 .ToList();
 
-            var results = new List<SearchResultObject>();
-            int skipped = 0;
+            var entries = new List<CachedObjectEntry>();
 
             foreach (var row in ordered)
             {
-                if (results.Count >= qty) break;
-
                 string? address = ExtractAddressFromPath(row.Path);
                 if (address == null) continue;
 
@@ -369,26 +388,27 @@ namespace P2FK.IO.Services
                 string objJsonPath = Path.Combine(_rootPath, address, "OBJ.json");
                 if (!File.Exists(objJsonPath)) continue;
 
-                var obj = await ReadJsonAsync<JsonElement?>(objJsonPath);
-                if (obj == null) continue;
+                string rawJson;
+                try { rawJson = await File.ReadAllTextAsync(objJsonPath); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { continue; }
+
+                JsonElement objEl;
+                try { objEl = JsonSerializer.Deserialize<JsonElement>(rawJson); }
+                catch (JsonException) { continue; }
 
                 // Skip objects where URN is null, missing, or empty
-                if (!obj.Value.TryGetProperty("URN", out var objUrn) ||
+                if (!objEl.TryGetProperty("URN", out var objUrn) ||
                     objUrn.ValueKind == JsonValueKind.Null ||
                     (objUrn.ValueKind == JsonValueKind.String && string.IsNullOrWhiteSpace(objUrn.GetString())))
                     continue;
 
-                if (skipped < skip) { skipped++; continue; }
-
-                results.Add(new SearchResultObject
-                {
-                    Blockchain = detectedBlockchain,
-                    Object = obj
-                });
+                entries.Add(new CachedObjectEntry(detectedBlockchain, address, rawJson));
             }
 
-            _cache.Set(cacheKey, results, CacheTtl);
-            return results;
+            _cache.Set(cacheKey, entries, new MemoryCacheEntryOptions()
+                .SetSize(1)
+                .SetAbsoluteExpiration(CacheTtl));
+            return SliceObjectResults(entries, skip, qty);
         }
 
         public async Task<List<SearchResultProfile>> SearchProfilesAsync(
@@ -398,9 +418,9 @@ namespace P2FK.IO.Services
             skip = Math.Clamp(skip, 0, 999);
             qty = Math.Min(qty, 1000 - skip);
 
-            string cacheKey = $"profiles:{searchString?.ToLowerInvariant() ?? ""}:{qty}:{skip}:{blockchain ?? ""}";
-            if (_cache.TryGetValue(cacheKey, out List<SearchResultProfile>? cached) && cached != null)
-                return cached;
+            string cacheKey = $"profiles:{searchString?.ToLowerInvariant() ?? ""}:{blockchain ?? ""}";
+            if (_cache.TryGetValue(cacheKey, out List<CachedProfileEntry>? cachedEntries) && cachedEntries != null)
+                return SliceProfileResults(cachedEntries, skip, qty);
 
             // Detect wildcard "*" before sanitisation strips the asterisk
             bool isWildcard = (searchString ?? "").Trim() == "*";
@@ -416,23 +436,26 @@ namespace P2FK.IO.Services
             //
             // When the wildcard "*" is used, return all files in scope ordered by newest
             // modified date so the caller sees a stream of the latest built-to-disk files.
+            //
+            // TOP 10000 caps the number of raw index rows returned so that the entire
+            // directory tree is never materialised into memory in one shot.
             string sql = isWildcard
                 ? $"""
-                    SELECT System.ItemPathDisplay, System.DateModified
+                    SELECT TOP 10000 System.ItemPathDisplay, System.DateModified
                     FROM SystemIndex
                     WHERE SCOPE='{scopeUri}'
                     ORDER BY System.DateModified DESC
                     """
                 : hasSearch
                 ? $"""
-                    SELECT System.ItemPathDisplay, System.DateModified
+                    SELECT TOP 10000 System.ItemPathDisplay, System.DateModified
                     FROM SystemIndex
                     WHERE SCOPE='{scopeUri}'
                       AND FREETEXT('{sanitized}')
                     ORDER BY System.DateModified DESC
                     """
                 : $"""
-                    SELECT System.ItemPathDisplay, System.DateModified
+                    SELECT TOP 10000 System.ItemPathDisplay, System.DateModified
                     FROM SystemIndex
                     WHERE SCOPE='{scopeUri}'
                       AND System.FileName = 'GetProfileByAddress.json'
@@ -456,13 +479,10 @@ namespace P2FK.IO.Services
                 .OrderByDescending(r => r.Modified)
                 .ToList();
 
-            var results = new List<SearchResultProfile>();
-            int skipped = 0;
+            var entries = new List<CachedProfileEntry>();
 
             foreach (var row in ordered)
             {
-                if (results.Count >= qty) break;
-
                 string? address = ExtractAddressFromPath(row.Path);
                 if (address == null) continue;
 
@@ -477,27 +497,27 @@ namespace P2FK.IO.Services
                 string profileJsonPath = Path.Combine(_rootPath, address, "GetProfileByAddress.json");
                 if (!File.Exists(profileJsonPath)) continue;
 
-                var profile = await ReadJsonAsync<JsonElement?>(profileJsonPath);
-                if (profile == null) continue;
+                string rawJson;
+                try { rawJson = await File.ReadAllTextAsync(profileJsonPath); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { continue; }
+
+                JsonElement profileEl;
+                try { profileEl = JsonSerializer.Deserialize<JsonElement>(rawJson); }
+                catch (JsonException) { continue; }
 
                 // Skip profiles where URN is null, missing, or empty
-                if (!profile.Value.TryGetProperty("URN", out var profileUrn) ||
+                if (!profileEl.TryGetProperty("URN", out var profileUrn) ||
                     profileUrn.ValueKind == JsonValueKind.Null ||
                     (profileUrn.ValueKind == JsonValueKind.String && string.IsNullOrWhiteSpace(profileUrn.GetString())))
                     continue;
 
-                if (skipped < skip) { skipped++; continue; }
-
-                results.Add(new SearchResultProfile
-                {
-                    Blockchain = detectedBlockchain,
-                    Address = address,
-                    Profile = profile
-                });
+                entries.Add(new CachedProfileEntry(detectedBlockchain, address, rawJson));
             }
 
-            _cache.Set(cacheKey, results, CacheTtl);
-            return results;
+            _cache.Set(cacheKey, entries, new MemoryCacheEntryOptions()
+                .SetSize(1)
+                .SetAbsoluteExpiration(CacheTtl));
+            return SliceProfileResults(entries, skip, qty);
         }
 
         // ── Fallback filesystem scan ───────────────────────────────────────────
@@ -525,10 +545,18 @@ namespace P2FK.IO.Services
                 foreach (string filePath in Directory.EnumerateFiles(
                     _rootPath, fileName, SearchOption.AllDirectories))
                 {
+                    // Hard cap: prevent the in-memory list from growing without bound
+                    // when the index is cold and the tree is large.
+                    if (rows.Count >= 10_000) break;
+
                     try
                     {
                         if (filterByContent)
                         {
+                            // Skip files larger than 1 MB to avoid loading images, PDFs,
+                            // and other large binaries into a managed string on the LOH.
+                            if (new FileInfo(filePath).Length > 1_048_576) continue;
+
                             string content = File.ReadAllText(filePath);
                             if (!content.Contains(searchString, StringComparison.OrdinalIgnoreCase))
                                 continue;
@@ -568,19 +596,70 @@ namespace P2FK.IO.Services
             return string.IsNullOrEmpty(parentFolderName) ? null : parentFolderName;
         }
 
-        // ── JSON helpers ───────────────────────────────────────────────────────
+        // ── Slice helpers ─────────────────────────────────────────────────────
 
-        private static async Task<T?> ReadJsonAsync<T>(string filePath)
+        /// <summary>
+        /// Projects a slice of the full cached root list into <see cref="SearchResultRoot"/>
+        /// objects.  <see cref="JsonElement"/> is materialised here — it lives only for the
+        /// duration of the current request, not for the cache TTL.  Only entries whose cached
+        /// JSON can be re-parsed are included (malformed entries are silently dropped).
+        /// </summary>
+        private static List<SearchResultRoot> SliceRootResults(List<CachedRootEntry> entries, int skip, int qty)
         {
-            try
+            var results = new List<SearchResultRoot>(qty);
+            foreach (var e in entries.Skip(skip))
             {
-                await using var stream = File.OpenRead(filePath);
-                return await JsonSerializer.DeserializeAsync<T>(stream);
+                if (results.Count >= qty) break;
+                try
+                {
+                    results.Add(new SearchResultRoot
+                    {
+                        Blockchain = e.Blockchain,
+                        Root = JsonSerializer.Deserialize<JsonElement>(e.RawJson)
+                    });
+                }
+                catch (JsonException) { /* skip malformed entry */ }
             }
-            catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
+            return results;
+        }
+
+        private static List<SearchResultObject> SliceObjectResults(List<CachedObjectEntry> entries, int skip, int qty)
+        {
+            var results = new List<SearchResultObject>(qty);
+            foreach (var e in entries.Skip(skip))
             {
-                return default;
+                if (results.Count >= qty) break;
+                try
+                {
+                    results.Add(new SearchResultObject
+                    {
+                        Blockchain = e.Blockchain,
+                        Object = JsonSerializer.Deserialize<JsonElement>(e.RawJson)
+                    });
+                }
+                catch (JsonException) { /* skip malformed entry */ }
             }
+            return results;
+        }
+
+        private static List<SearchResultProfile> SliceProfileResults(List<CachedProfileEntry> entries, int skip, int qty)
+        {
+            var results = new List<SearchResultProfile>(qty);
+            foreach (var e in entries.Skip(skip))
+            {
+                if (results.Count >= qty) break;
+                try
+                {
+                    results.Add(new SearchResultProfile
+                    {
+                        Blockchain = e.Blockchain,
+                        Address = e.Address,
+                        Profile = JsonSerializer.Deserialize<JsonElement>(e.RawJson)
+                    });
+                }
+                catch (JsonException) { /* skip malformed entry */ }
+            }
+            return results;
         }
 
         private static string DetectFirstOutputAddress(JsonElement root)
