@@ -172,6 +172,24 @@
       gap: 10px;
     }
     #loadSentinel { height: 20px; }
+    #searchGaveUp {
+      display: none;
+      text-align: center;
+      padding: 18px 20px;
+      color: #888;
+      font-size: 0.88em;
+    }
+    #searchGaveUp button {
+      margin-left: 10px;
+      padding: 5px 14px;
+      background: #2a2a2a;
+      border: 1px solid #555;
+      color: #bb86fc;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 0.9em;
+    }
+    #searchGaveUp button:hover { background: #3a3a3a; border-color: #bb86fc; }
     #searchLoading, #profileLoading, #objectLoading, #msgLoading {
       text-align: center;
       padding: 20px;
@@ -591,6 +609,7 @@
     <div id="searchError" class="error"></div>
     <div id="searchLoading">Loading…</div>
     <div id="feed"></div>
+    <div id="searchGaveUp">⏸ Paused — searched many results without finding more matches. <button id="searchContinueBtn">Search more</button></div>
     <div id="loadSentinel"></div>
   </div>
 
@@ -656,6 +675,7 @@ const API_FETCH_BATCH_SIZE = 200;
 const DISPLAY_BATCH_SIZE = 20;
 const MAX_PER_CHAIN = 1000;
 const MSG_PAGE_SIZE = 20;
+const GAVE_UP_ROUNDS = 4;
 
 const CHAINS = {
   chkBitcoin:  { key: 'BTC',  params: 'blockchain=BTC'  },
@@ -687,6 +707,7 @@ const state = {
   keywordMode: false,
   keywordAddress: '',
   keywordMainnet: true,
+  consecutiveEmptyRounds: 0,
   profileMsgSkip: 0,
   profileMsgAddress: null,
   profileMsgMainnet: true,
@@ -1361,6 +1382,7 @@ const loadMoreBatch=async()=>{
   if(state.isLoadingMore||state.isSearching) return;
   if(allExhausted()) return;
   const sentinel=document.getElementById('loadSentinel');
+  const gaveUpEl=document.getElementById('searchGaveUp');
   scrollObserver.unobserve(sentinel);
   state.isLoadingMore=true;
   const searchId=state.currentSearchId;
@@ -1368,6 +1390,7 @@ const loadMoreBatch=async()=>{
   const loadEl=document.getElementById('searchLoading');
   loadEl.textContent=state.totalDisplayed===0?'Searching deeper…':'Loading more…';
   loadEl.style.display='block';
+  let addedInRound=0;
   try{
     // Drain the buffer first; only fetch from the API when it is empty
     let objectResults=[],profileResults=[],rootResults=[];
@@ -1378,14 +1401,22 @@ const loadMoreBatch=async()=>{
     }
     const added=await appendResultItems(objectResults,profileResults,rootResults,searchId,signal);
     if(state.currentSearchId!==searchId) return;
+    addedInRound=added;
     state.totalDisplayed+=added;
     updateResultCount();
   }catch(e){if(e.name!=='AbortError') showSearchError('Failed to load more: '+e.message);}
   finally{
     loadEl.style.display='none';loadEl.textContent='Loading…';state.isLoadingMore=false;
     if(state.currentSearchId===searchId&&anyMoreNeeded()){
-      if(state.totalDisplayed<DISPLAY_BATCH_SIZE&&(state.autoLoadDepth||0)<6){state.autoLoadDepth=(state.autoLoadDepth||0)+1;setTimeout(()=>loadMoreBatch(),0);}
-      else{state.autoLoadDepth=0;scrollObserver.observe(sentinel);}
+      if(addedInRound===0){state.consecutiveEmptyRounds=(state.consecutiveEmptyRounds||0)+1;}
+      else{state.consecutiveEmptyRounds=0;}
+      if(state.consecutiveEmptyRounds>=GAVE_UP_ROUNDS){
+        gaveUpEl.style.display='block';
+      }else if(state.totalDisplayed<DISPLAY_BATCH_SIZE){
+        setTimeout(()=>loadMoreBatch(),0);
+      }else{
+        scrollObserver.observe(sentinel);
+      }
     }
   }
 };
@@ -1418,10 +1449,12 @@ const performKeywordSearch=async(keyword)=>{
   feedEl.innerHTML='';
   document.getElementById('resultCount').style.display='none';
   document.getElementById('searchError').style.display='none';
+  document.getElementById('searchGaveUp').style.display='none';
   loadEl.style.display='block';loadEl.textContent='Searching keyword…';
   btn.disabled=true;btn.textContent='…';inp.disabled=true;
   setView('search');
   scrollObserver.unobserve(document.getElementById('loadSentinel'));
+  let addedInRound=0;
   try{
     const addr=await fetchAPI(`${BASE_URL}/GetPublicAddressByKeyword/${encodeURIComponent(keyword)}?mainnet=${isMainnet}`,'',signal,15000);
     if(!addr||typeof addr!=='string') throw new Error(`No address found for keyword: ${keyword}`);
@@ -1431,13 +1464,14 @@ const performKeywordSearch=async(keyword)=>{
     if(wantProfiles) pagination[`profiles:${chainKey}`]={skip:0,exhausted:false};
     if(wantMessages) pagination[`messages:${chainKey}`]={skip:0,exhausted:false};
     state.keywordMode=true;state.keywordAddress=addr;state.keywordMainnet=isMainnet;
-    state.lastSearchText='#'+keyword;state.pagination=pagination;state.totalDisplayed=0;state.chainCounts={};state.buffer=[];state.autoLoadDepth=0;
+    state.lastSearchText='#'+keyword;state.pagination=pagination;state.totalDisplayed=0;state.chainCounts={};state.buffer=[];state.consecutiveEmptyRounds=0;
     loadEl.textContent='Loading…';
     const{objectResults,profileResults,rootResults}=await fetchNextPage(signal);
     if(state.currentSearchId!==searchId) return;
     loadEl.style.display='none';
     const added=await appendResultItems(objectResults,profileResults,rootResults,searchId,signal);
     if(state.currentSearchId!==searchId) return;
+    addedInRound=added;
     state.totalDisplayed+=added;
     if(!added&&allExhausted()){feedEl.innerHTML='<div style="text-align:center;padding:30px;color:#666;">No results for #'+escapeHtml(keyword)+'</div>';document.getElementById('resultCount').style.display='none';}
     else updateResultCount();
@@ -1446,8 +1480,15 @@ const performKeywordSearch=async(keyword)=>{
   }finally{
     if(state.currentSearchId===searchId){state.isSearching=false;btn.disabled=false;btn.textContent='Search';inp.disabled=false;loadEl.style.display='none';loadEl.textContent='Loading…';}
     if(state.currentSearchId===searchId&&anyMoreNeeded()){
-      if(state.totalDisplayed<DISPLAY_BATCH_SIZE&&(state.autoLoadDepth||0)<6){state.autoLoadDepth=(state.autoLoadDepth||0)+1;setTimeout(()=>loadMoreBatch(),0);}
-      else{state.autoLoadDepth=0;scrollObserver.observe(document.getElementById('loadSentinel'));}
+      if(addedInRound===0){state.consecutiveEmptyRounds=(state.consecutiveEmptyRounds||0)+1;}
+      else{state.consecutiveEmptyRounds=0;}
+      if(state.consecutiveEmptyRounds>=GAVE_UP_ROUNDS){
+        document.getElementById('searchGaveUp').style.display='block';
+      }else if(state.totalDisplayed<DISPLAY_BATCH_SIZE){
+        setTimeout(()=>loadMoreBatch(),0);
+      }else{
+        scrollObserver.observe(document.getElementById('loadSentinel'));
+      }
     }
   }
 };
@@ -1481,6 +1522,7 @@ const performSearch=async(searchText)=>{
   document.getElementById('feed').innerHTML='';
   document.getElementById('resultCount').style.display='none';
   document.getElementById('searchError').style.display='none';
+  document.getElementById('searchGaveUp').style.display='none';
   document.getElementById('searchLoading').style.display='block';
   scrollObserver.unobserve(document.getElementById('loadSentinel'));
 
@@ -1492,14 +1534,16 @@ const performSearch=async(searchText)=>{
     if(wantMessages) pagination[`messages:${key}`]={skip:0,exhausted:false,params};
   });
 
-  state.lastSearchText=text;state.pagination=pagination;state.totalDisplayed=0;state.chainCounts={};state.buffer=[];state.autoLoadDepth=0;
+  state.lastSearchText=text;state.pagination=pagination;state.totalDisplayed=0;state.chainCounts={};state.buffer=[];state.consecutiveEmptyRounds=0;
 
+  let addedInRound=0;
   try{
     const{objectResults,profileResults,rootResults}=await fetchNextPage(signal);
     if(state.currentSearchId!==searchId) return;
     document.getElementById('searchLoading').style.display='none';
     const added=await appendResultItems(objectResults,profileResults,rootResults,searchId,signal);
     if(state.currentSearchId!==searchId) return;
+    addedInRound=added;
     state.totalDisplayed+=added;
     if(!added&&allExhausted()){document.getElementById('feed').innerHTML='<div style="text-align:center;padding:30px;color:#666;">No results found.</div>';document.getElementById('resultCount').style.display='none';}
     else updateResultCount();
@@ -1508,8 +1552,15 @@ const performSearch=async(searchText)=>{
   }finally{
     if(state.currentSearchId===searchId){state.isSearching=false;btn.disabled=false;btn.textContent='Search';inp.disabled=false;}
     if(state.currentSearchId===searchId&&anyMoreNeeded()){
-      if(state.totalDisplayed<DISPLAY_BATCH_SIZE&&(state.autoLoadDepth||0)<6){state.autoLoadDepth=(state.autoLoadDepth||0)+1;setTimeout(()=>loadMoreBatch(),0);}
-      else{state.autoLoadDepth=0;scrollObserver.observe(document.getElementById('loadSentinel'));}
+      if(addedInRound===0){state.consecutiveEmptyRounds=(state.consecutiveEmptyRounds||0)+1;}
+      else{state.consecutiveEmptyRounds=0;}
+      if(state.consecutiveEmptyRounds>=GAVE_UP_ROUNDS){
+        document.getElementById('searchGaveUp').style.display='block';
+      }else if(state.totalDisplayed<DISPLAY_BATCH_SIZE){
+        setTimeout(()=>loadMoreBatch(),0);
+      }else{
+        scrollObserver.observe(document.getElementById('loadSentinel'));
+      }
     }
   }
 };
@@ -2591,6 +2642,12 @@ document.getElementById('search-form').addEventListener('submit',(e)=>{
 document.getElementById('navbar-search-btn').addEventListener('click',(e)=>{
   e.preventDefault();
   handleNavSearch();
+});
+
+document.getElementById('searchContinueBtn').addEventListener('click',()=>{
+  document.getElementById('searchGaveUp').style.display='none';
+  state.consecutiveEmptyRounds=0;
+  loadMoreBatch();
 });
 
 document.getElementById('brandHome').addEventListener('click',()=>{
