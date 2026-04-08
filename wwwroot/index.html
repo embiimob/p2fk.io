@@ -2797,12 +2797,12 @@ const updateCacheIndicator=(data)=>{
     const parts=key.split(':');
     const type=parts[0];  // roots | objects | profiles
     const chain=parts[2]||'all';
-    if(byType[type]&&chain!=='') byType[type][chain]=(byType[type][chain]||0)+cnt;
+    if(byType[type]&&chain!=='all') byType[type][chain]=(byType[type][chain]||0)+cnt;
   }
   let html='';
   const chainLabel=(c)=>({''  :'All','btc':'BTC','btc-testnet':'TBTC','ltc':'LTC','dog':'DOG','mzc':'MZC'}[c.toLowerCase()]||c.toUpperCase());
   const typeRows=(typeEntries,label)=>{
-    const ents=Object.entries(typeEntries).filter(([c])=>c!=='all'&&c!=='');
+    const ents=Object.entries(typeEntries).filter(([c])=>c!=='all');
     if(!ents.length) return '';
     let r=`<div class="ct-row" style="margin-top:5px;color:#888;font-size:0.88em;">${label}</div>`;
     for(const[c,n] of ents) r+=`<div class="ct-row"><span>${chainLabel(c)}</span><span>${fmtCountNum(n)}</span></div>`;

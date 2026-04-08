@@ -27,6 +27,8 @@ namespace P2FK.IO.Services
     public class CacheWarmingService : BackgroundService
     {
         // Minimum wait between warm cycles regardless of scan speed (ms).
+        // Set to 65 s (5 s above the 60 s padding constant) so a very fast scan
+        // never produces a sub-60 s interval through rounding.
         private const long MinRefreshIntervalMs = 65_000;
 
         // Extra padding added on top of the measured scan duration (ms).
