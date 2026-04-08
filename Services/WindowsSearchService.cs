@@ -75,7 +75,7 @@ namespace P2FK.IO.Services
         // Internal cache types — raw JSON strings so the backing JsonDocument is not
         // pinned in the cache for the full TTL.  JsonElement is only materialised during
         // the scope of an individual request, then GC'd.
-        private record CachedRootEntry(string Blockchain, string TxId, string RawJson);
+        private record CachedRootEntry(string Blockchain, string TxId, string RawJson, DateTime BlockDate);
         private record CachedObjectEntry(string Blockchain, string Address, string RawJson);
         private record CachedProfileEntry(string Blockchain, string Address, string RawJson);
 
@@ -327,8 +327,28 @@ namespace P2FK.IO.Services
                 if (!showSystemFiles && IsSystemRoot(rootEl))
                     continue;
 
-                entries.Add(new CachedRootEntry(detectedBlockchain, txId, rawJson));
+                // Extract BlockDate from the already-parsed root element.
+                // Pending transactions have no confirmed block and carry the Unix epoch
+                // (1970-01-01T00:00:00) as their BlockDate; treat any missing or
+                // unparseable value the same way.
+                DateTime blockDate = default;
+                if (rootEl.TryGetProperty("BlockDate", out var bdProp) && bdProp.ValueKind == JsonValueKind.String)
+                    DateTime.TryParse(bdProp.GetString(), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind, out blockDate);
+
+                entries.Add(new CachedRootEntry(detectedBlockchain, txId, rawJson, blockDate));
             }
+
+            // Sort by BlockDate descending so the newest confirmed transactions appear first.
+            // Pending transactions carry the Unix epoch (≤ 1970-01-01) as their BlockDate;
+            // they are always placed at the top of the list regardless of date order.
+            entries.Sort((a, b) =>
+            {
+                bool aPending = a.BlockDate <= DateTime.UnixEpoch;
+                bool bPending = b.BlockDate <= DateTime.UnixEpoch;
+                if (aPending == bPending)
+                    return b.BlockDate.CompareTo(a.BlockDate);
+                return aPending ? -1 : 1;
+            });
 
             _cache.Set(cacheKey, entries, new MemoryCacheEntryOptions()
                 .SetSize(1)
