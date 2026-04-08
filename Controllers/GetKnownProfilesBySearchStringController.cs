@@ -29,7 +29,7 @@ namespace P2FK.IO.Controllers
         /// <param name="blockchain">Target blockchain: BTC (default), LTC, DOG, or MZC.</param>
         /// <param name="showSystemFiles">Reserved for API consistency with GetKnownRootsBySearchString. Profiles have no system-file filter; this parameter is accepted but has no effect (default true).</param>
         [HttpGet]
-        public async Task<ActionResult> Get(string searchString = "", int qty = 10, int skip = 0, bool mainnet = true, string blockchain = "BTC", bool showSystemFiles = true)
+        public async Task<ActionResult> Get(string searchString = "", int qty = 200, int skip = 0, bool mainnet = true, string blockchain = "BTC", bool showSystemFiles = true)
         {
             if (searchString.Length > 2048)
                 return BadRequest("[\"invalid search string\"]");
