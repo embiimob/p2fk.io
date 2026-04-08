@@ -202,11 +202,16 @@ namespace P2FK.IO.Services
                 }
             }
 
-            // Wildcard: walk the root folders directly — complete, Windows-Search-independent,
-            // and always returns exactly one row per transaction folder regardless of how many
-            // other files that folder contains.
+            // Wildcard user request with no warm cache available yet: return empty rather
+            // than blocking the request with a full filesystem scan.  The background
+            // CacheWarmingService will populate the cache shortly; forceRefresh=true
+            // (used only by the warm service) bypasses this guard to perform the scan.
+            if (isWildcard && !forceRefresh)
+                return new List<SearchResultRoot>();
+
             // Text search: use Windows Search so file content is matched; fall back to a
             // filesystem scan if the index is not yet ready.
+            // (Wildcard path only reached below when forceRefresh=true — i.e. warm service.)
             List<SearchRow> rows;
             if (isWildcard)
             {
@@ -350,21 +355,21 @@ namespace P2FK.IO.Services
         }
 
         public async Task<List<SearchResultObject>> SearchObjectsAsync(
-            string searchString, int qty, int skip, string? blockchain = null)
+            string searchString, int qty, int skip, string? blockchain = null, bool forceRefresh = false)
         {
             qty = Math.Clamp(qty, 1, 5000);
             skip = Math.Clamp(skip, 0, 4999);
             qty = Math.Min(qty, 5000 - skip);
 
             string cacheKey = $"objects:{searchString?.ToLowerInvariant() ?? ""}:{blockchain?.ToLowerInvariant() ?? ""}";
-            if (_cache.TryGetValue(cacheKey, out List<CachedObjectEntry>? cachedEntries) && cachedEntries != null)
+            if (!forceRefresh && _cache.TryGetValue(cacheKey, out List<CachedObjectEntry>? cachedEntries) && cachedEntries != null)
                 return SliceObjectResults(cachedEntries, skip, qty);
 
             // Detect wildcard "*" early — needed for the all-chains fallback below.
             bool isWildcard = (searchString ?? "").Trim() == "*";
 
             // Per-chain wildcard cache miss: derive from all-chains warm cache if available.
-            if (blockchain != null && isWildcard)
+            if (!forceRefresh && blockchain != null && isWildcard)
             {
                 string allChainsKey = $"objects:*:";
                 if (_cache.TryGetValue(allChainsKey, out List<CachedObjectEntry>? allCached) && allCached != null)
@@ -380,8 +385,11 @@ namespace P2FK.IO.Services
                 }
             }
 
-            // Wildcard: walk root folders directly for complete, index-independent enumeration.
-            // Text search: Windows Search with fallback.
+            // Wildcard user request with no warm cache available yet: return empty.
+            if (isWildcard && !forceRefresh)
+                return new List<SearchResultObject>();
+
+            // Wildcard warm path (forceRefresh=true) or text search path.
             List<SearchRow> rows;
             if (isWildcard)
             {
@@ -483,21 +491,21 @@ namespace P2FK.IO.Services
         }
 
         public async Task<List<SearchResultProfile>> SearchProfilesAsync(
-            string searchString, int qty, int skip, string? blockchain = null)
+            string searchString, int qty, int skip, string? blockchain = null, bool forceRefresh = false)
         {
             qty = Math.Clamp(qty, 1, 5000);
             skip = Math.Clamp(skip, 0, 4999);
             qty = Math.Min(qty, 5000 - skip);
 
             string cacheKey = $"profiles:{searchString?.ToLowerInvariant() ?? ""}:{blockchain?.ToLowerInvariant() ?? ""}";
-            if (_cache.TryGetValue(cacheKey, out List<CachedProfileEntry>? cachedEntries) && cachedEntries != null)
+            if (!forceRefresh && _cache.TryGetValue(cacheKey, out List<CachedProfileEntry>? cachedEntries) && cachedEntries != null)
                 return SliceProfileResults(cachedEntries, skip, qty);
 
             // Detect wildcard "*" early — needed for the all-chains fallback below.
             bool isWildcard = (searchString ?? "").Trim() == "*";
 
             // Per-chain wildcard cache miss: derive from all-chains warm cache if available.
-            if (blockchain != null && isWildcard)
+            if (!forceRefresh && blockchain != null && isWildcard)
             {
                 string allChainsKey = $"profiles:*:";
                 if (_cache.TryGetValue(allChainsKey, out List<CachedProfileEntry>? allCached) && allCached != null)
@@ -513,8 +521,11 @@ namespace P2FK.IO.Services
                 }
             }
 
-            // Wildcard: walk root folders directly for complete, index-independent enumeration.
-            // Text search: Windows Search with fallback.
+            // Wildcard user request with no warm cache available yet: return empty.
+            if (isWildcard && !forceRefresh)
+                return new List<SearchResultProfile>();
+
+            // Wildcard warm path (forceRefresh=true) or text search path.
             List<SearchRow> rows;
             if (isWildcard)
             {

@@ -108,7 +108,7 @@ namespace P2FK.IO.Services
             // Warm objects (blockchain = null → all-chains + per-chain partitions).
             try
             {
-                await _searchService.SearchObjectsAsync("*", WarmQty, 0, blockchain: null);
+                await _searchService.SearchObjectsAsync("*", WarmQty, 0, blockchain: null, forceRefresh: true);
                 _logger.LogDebug("Warm: objects * all-chains complete");
             }
             catch (Exception ex)
@@ -121,7 +121,7 @@ namespace P2FK.IO.Services
             // Warm profiles (blockchain = null → all-chains + per-chain partitions).
             try
             {
-                await _searchService.SearchProfilesAsync("*", WarmQty, 0, blockchain: null);
+                await _searchService.SearchProfilesAsync("*", WarmQty, 0, blockchain: null, forceRefresh: true);
                 _logger.LogDebug("Warm: profiles * all-chains complete");
             }
             catch (Exception ex)
