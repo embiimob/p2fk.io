@@ -12,16 +12,19 @@ namespace P2FK.IO.Services
     {
         private readonly string _rootPath;
         private readonly IMemoryCache _cache;
-        // Cache entries live for 5 minutes. CacheWarmingService refreshes 60 s before expiry,
-        // so the warm interval is 4 minutes — down from the previous 30 s churn.
+        private readonly CacheStatusService _cacheStatus;
+        // Cache entries live for 5 minutes.  CacheWarmingService now uses an adaptive
+        // interval (last scan duration + 60 s) so the TTL acts only as an eviction
+        // backstop rather than driving the refresh cadence.
         internal static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(300);
         private static readonly Regex TxIdRegex = new Regex(@"[0-9a-fA-F]{64}", RegexOptions.Compiled);
         private const int MaxSearchLength = 2048;
 
-        public WindowsSearchService(IMemoryCache cache, Wrapper wrapper)
+        public WindowsSearchService(IMemoryCache cache, Wrapper wrapper, CacheStatusService cacheStatus)
         {
             _cache = cache;
             _rootPath = wrapper.RootPath;
+            _cacheStatus = cacheStatus;
         }
 
         // ── Blockchain detection ───────────────────────────────────────────────
@@ -159,59 +162,89 @@ namespace P2FK.IO.Services
             // filtered list and slice it in memory, eliminating the (qty × skip) key
             // explosion that previously caused unbounded cache growth.
             // All key segments are lower-cased for case-insensitive consistency.
+
+            // Detect wildcard "*" early — needed both for the all-chains fallback below
+            // and for SQL query selection later.
+            bool isWildcard = (searchString ?? "").Trim() == "*";
+
             string cacheKey = $"roots:{searchString?.ToLowerInvariant() ?? ""}:{blockchain?.ToLowerInvariant() ?? ""}:{showSystemFiles}";
             if (!forceRefresh && _cache.TryGetValue(cacheKey, out List<CachedRootEntry>? cachedEntries) && cachedEntries != null)
                 return SliceRootResults(cachedEntries, skip, qty);
 
-            // Detect wildcard "*" before sanitisation strips the asterisk
-            bool isWildcard = (searchString ?? "").Trim() == "*";
-
-            string sanitized = isWildcard ? string.Empty : Sanitize(searchString ?? "");
-            bool hasSearch = !isWildcard && !string.IsNullOrWhiteSpace(sanitized);
-
-            // Use a forward-slash SCOPE URI as required by Windows Search; escape any single quotes
-            string scopeUri = "file:///" + _rootPath.Replace('\\', '/').Replace("'", "''");
-
-            // When a search string is present, search all files in the scope (not just ROOT.json)
-            // so that PDFs, HTML, and other files in root/{txId}/ folders are also matched.
-            // The transaction ID is then extracted from the matched file path to locate ROOT.json.
+            // Per-chain wildcard cache miss: derive from the all-chains warm cache if it
+            // is available rather than falling back to a live Windows Search scan.
             //
-            // When the wildcard "*" is used, return all files in scope ordered by newest
-            // modified date so the caller sees a stream of the latest built-to-disk files.
+            // The warm service always populates the all-chains key ("roots:*::…") with a
+            // complete filesystem scan.  A per-chain key ("roots:*:mzc:…") can be absent
+            // or stale because:
+            //   • A previous user-triggered live scan overwrote it with a partial result
+            //     (Windows Search may return fewer rows than the full file count when its
+            //     index is still building, and the fallback only fires when rows == 0).
+            //   • The per-chain key was evicted from the in-process memory cache while
+            //     the all-chains key survived (different access patterns → different LRU
+            //     priority under memory pressure).
             //
-            // TOP 10000 caps the number of raw index rows returned so that the entire
-            // 415 MB directory tree is never materialised into memory in one shot.
-            string sql = isWildcard
-                ? $"""
-                    SELECT TOP 10000 System.ItemPathDisplay, System.DateModified
-                    FROM SystemIndex
-                    WHERE SCOPE='{scopeUri}'
-                    ORDER BY System.DateModified DESC
-                    """
-                : hasSearch
-                ? $"""
-                    SELECT TOP 10000 System.ItemPathDisplay, System.DateModified
-                    FROM SystemIndex
-                    WHERE SCOPE='{scopeUri}'
-                      AND FREETEXT('{sanitized}')
-                    ORDER BY System.DateModified DESC
-                    """
-                : $"""
-                    SELECT TOP 10000 System.ItemPathDisplay, System.DateModified
-                    FROM SystemIndex
-                    WHERE SCOPE='{scopeUri}'
-                      AND System.FileName = 'ROOT.json'
-                    ORDER BY System.DateModified DESC
-                    """;
+            // By deriving from the all-chains key we guarantee consistent, complete counts
+            // without an extra filesystem scan.
+            if (!forceRefresh && blockchain != null && isWildcard)
+            {
+                string allChainsKey = $"roots:*::{showSystemFiles}";
+                if (_cache.TryGetValue(allChainsKey, out List<CachedRootEntry>? allCached) && allCached != null)
+                {
+                    var filtered = allCached
+                        .Where(e => e.Blockchain.Equals(blockchain, StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+                    _cache.Set(cacheKey, filtered, new MemoryCacheEntryOptions()
+                        .SetSize(1)
+                        .SetAbsoluteExpiration(CacheTtl));
+                    _cacheStatus.UpdateEntryCount(cacheKey, filtered.Count);
+                    return SliceRootResults(filtered, skip, qty);
+                }
+            }
 
-            var rows = await Task.Run(() => ExecuteSearchQuery(sql));
+            // Wildcard user request with no warm cache available yet: return empty rather
+            // than blocking the request with a full filesystem scan.  The background
+            // CacheWarmingService will populate the cache shortly; forceRefresh=true
+            // (used only by the warm service) bypasses this guard to perform the scan.
+            if (isWildcard && !forceRefresh)
+                return new List<SearchResultRoot>();
 
-            // If Windows Search returned nothing (index not ready or files not yet indexed),
-            // fall back to a direct filesystem scan so results are available immediately.
-            if (rows.Count == 0)
-                rows = await FallbackScanAsync(
-                    isWildcard || hasSearch ? "*" : "ROOT.json",
-                    isWildcard ? string.Empty : sanitized);
+            // Text search: use Windows Search so file content is matched; fall back to a
+            // filesystem scan if the index is not yet ready.
+            // (Wildcard path only reached below when forceRefresh=true — i.e. warm service.)
+            List<SearchRow> rows;
+            if (isWildcard)
+            {
+                rows = await DirectFolderScanAsync("ROOT.json");
+            }
+            else
+            {
+                string sanitized = Sanitize(searchString ?? "");
+                bool hasSearch = !string.IsNullOrWhiteSpace(sanitized);
+
+                string scopeUri = "file:///" + _rootPath.Replace('\\', '/').Replace("'", "''");
+
+                string sql = hasSearch
+                    ? $"""
+                        SELECT TOP 100000 System.ItemPathDisplay, System.DateModified
+                        FROM SystemIndex
+                        WHERE SCOPE='{scopeUri}'
+                          AND FREETEXT('{sanitized}')
+                        ORDER BY System.DateModified DESC
+                        """
+                    : $"""
+                        SELECT TOP 100000 System.ItemPathDisplay, System.DateModified
+                        FROM SystemIndex
+                        WHERE SCOPE='{scopeUri}'
+                          AND System.FileName = 'ROOT.json'
+                        ORDER BY System.DateModified DESC
+                        """;
+
+                rows = await Task.Run(() => ExecuteSearchQuery(sql));
+
+                if (rows.Count == 0)
+                    rows = await FallbackScanAsync(hasSearch ? "*" : "ROOT.json", sanitized);
+            }
 
             // When filtering system files, do one fast pass over the rows Windows Search already
             // returned to identify system transaction IDs purely from the on-disk file names —
@@ -300,6 +333,7 @@ namespace P2FK.IO.Services
             _cache.Set(cacheKey, entries, new MemoryCacheEntryOptions()
                 .SetSize(1)
                 .SetAbsoluteExpiration(CacheTtl));
+            _cacheStatus.UpdateEntryCount(cacheKey, entries.Count);
 
             // When this was an all-chains scan (blockchain == null), also populate the
             // per-chain partition caches so that chain-specific lookups benefit from this
@@ -309,9 +343,11 @@ namespace P2FK.IO.Services
                 foreach (var chainGroup in entries.GroupBy(e => e.Blockchain, StringComparer.OrdinalIgnoreCase))
                 {
                     string chainCacheKey = $"roots:{searchString?.ToLowerInvariant() ?? ""}:{chainGroup.Key.ToLowerInvariant()}:{showSystemFiles}";
-                    _cache.Set(chainCacheKey, chainGroup.ToList(), new MemoryCacheEntryOptions()
+                    var chainList = chainGroup.ToList();
+                    _cache.Set(chainCacheKey, chainList, new MemoryCacheEntryOptions()
                         .SetSize(1)
                         .SetAbsoluteExpiration(CacheTtl));
+                    _cacheStatus.UpdateEntryCount(chainCacheKey, chainList.Count);
                 }
             }
 
@@ -319,64 +355,74 @@ namespace P2FK.IO.Services
         }
 
         public async Task<List<SearchResultObject>> SearchObjectsAsync(
-            string searchString, int qty, int skip, string? blockchain = null)
+            string searchString, int qty, int skip, string? blockchain = null, bool forceRefresh = false)
         {
             qty = Math.Clamp(qty, 1, 5000);
             skip = Math.Clamp(skip, 0, 4999);
             qty = Math.Min(qty, 5000 - skip);
 
             string cacheKey = $"objects:{searchString?.ToLowerInvariant() ?? ""}:{blockchain?.ToLowerInvariant() ?? ""}";
-            if (_cache.TryGetValue(cacheKey, out List<CachedObjectEntry>? cachedEntries) && cachedEntries != null)
+            if (!forceRefresh && _cache.TryGetValue(cacheKey, out List<CachedObjectEntry>? cachedEntries) && cachedEntries != null)
                 return SliceObjectResults(cachedEntries, skip, qty);
 
-            // Detect wildcard "*" before sanitisation strips the asterisk
+            // Detect wildcard "*" early — needed for the all-chains fallback below.
             bool isWildcard = (searchString ?? "").Trim() == "*";
 
-            string sanitized = isWildcard ? string.Empty : Sanitize(searchString ?? "");
-            bool hasSearch = !isWildcard && !string.IsNullOrWhiteSpace(sanitized);
+            // Per-chain wildcard cache miss: derive from all-chains warm cache if available.
+            if (!forceRefresh && blockchain != null && isWildcard)
+            {
+                string allChainsKey = $"objects:*:";
+                if (_cache.TryGetValue(allChainsKey, out List<CachedObjectEntry>? allCached) && allCached != null)
+                {
+                    var filtered = allCached
+                        .Where(e => e.Blockchain.Equals(blockchain, StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+                    _cache.Set(cacheKey, filtered, new MemoryCacheEntryOptions()
+                        .SetSize(1)
+                        .SetAbsoluteExpiration(CacheTtl));
+                    _cacheStatus.UpdateEntryCount(cacheKey, filtered.Count);
+                    return SliceObjectResults(filtered, skip, qty);
+                }
+            }
 
-            string scopeUri = "file:///" + _rootPath.Replace('\\', '/').Replace("'", "''");
+            // Wildcard user request with no warm cache available yet: return empty.
+            if (isWildcard && !forceRefresh)
+                return new List<SearchResultObject>();
 
-            // When a search string is present, search all files in the scope (not just OBJ.json)
-            // so that PDFs, HTML, and other files in root/{address}/ folders are also matched.
-            // The address is extracted from the matched file path to locate OBJ.json.
-            //
-            // When the wildcard "*" is used, return all files in scope ordered by newest
-            // modified date so the caller sees a stream of the latest built-to-disk files.
-            //
-            // TOP 10000 caps the number of raw index rows returned so that the entire
-            // directory tree is never materialised into memory in one shot.
-            string sql = isWildcard
-                ? $"""
-                    SELECT TOP 10000 System.ItemPathDisplay, System.DateModified
-                    FROM SystemIndex
-                    WHERE SCOPE='{scopeUri}'
-                    ORDER BY System.DateModified DESC
-                    """
-                : hasSearch
-                ? $"""
-                    SELECT TOP 10000 System.ItemPathDisplay, System.DateModified
-                    FROM SystemIndex
-                    WHERE SCOPE='{scopeUri}'
-                      AND FREETEXT('{sanitized}')
-                    ORDER BY System.DateModified DESC
-                    """
-                : $"""
-                    SELECT TOP 10000 System.ItemPathDisplay, System.DateModified
-                    FROM SystemIndex
-                    WHERE SCOPE='{scopeUri}'
-                      AND System.FileName = 'OBJ.json'
-                    ORDER BY System.DateModified DESC
-                    """;
+            // Wildcard warm path (forceRefresh=true) or text search path.
+            List<SearchRow> rows;
+            if (isWildcard)
+            {
+                rows = await DirectFolderScanAsync("OBJ.json");
+            }
+            else
+            {
+                string sanitized = Sanitize(searchString ?? "");
+                bool hasSearch = !string.IsNullOrWhiteSpace(sanitized);
 
-            var rows = await Task.Run(() => ExecuteSearchQuery(sql));
+                string scopeUri = "file:///" + _rootPath.Replace('\\', '/').Replace("'", "''");
 
-            // If Windows Search returned nothing (index not ready or files not yet indexed),
-            // fall back to a direct filesystem scan so results are available immediately.
-            if (rows.Count == 0)
-                rows = await FallbackScanAsync(
-                    isWildcard || hasSearch ? "*" : "OBJ.json",
-                    isWildcard ? string.Empty : sanitized);
+                string sql = hasSearch
+                    ? $"""
+                        SELECT TOP 100000 System.ItemPathDisplay, System.DateModified
+                        FROM SystemIndex
+                        WHERE SCOPE='{scopeUri}'
+                          AND FREETEXT('{sanitized}')
+                        ORDER BY System.DateModified DESC
+                        """
+                    : $"""
+                        SELECT TOP 100000 System.ItemPathDisplay, System.DateModified
+                        FROM SystemIndex
+                        WHERE SCOPE='{scopeUri}'
+                          AND System.FileName = 'OBJ.json'
+                        ORDER BY System.DateModified DESC
+                        """;
+
+                rows = await Task.Run(() => ExecuteSearchQuery(sql));
+
+                if (rows.Count == 0)
+                    rows = await FallbackScanAsync(hasSearch ? "*" : "OBJ.json", sanitized);
+            }
 
             // Deduplicate by address (parent folder) so multiple file hits from the same
             // folder are collapsed to one entry, keeping the newest-modified file per address.
@@ -424,68 +470,95 @@ namespace P2FK.IO.Services
             _cache.Set(cacheKey, entries, new MemoryCacheEntryOptions()
                 .SetSize(1)
                 .SetAbsoluteExpiration(CacheTtl));
+            _cacheStatus.UpdateEntryCount(cacheKey, entries.Count);
+
+            // When this was an all-chains scan, populate per-chain partition caches
+            // so chain-specific lookups can be served from the same scan.
+            if (blockchain == null)
+            {
+                foreach (var chainGroup in entries.GroupBy(e => e.Blockchain, StringComparer.OrdinalIgnoreCase))
+                {
+                    string chainCacheKey = $"objects:{searchString?.ToLowerInvariant() ?? ""}:{chainGroup.Key.ToLowerInvariant()}";
+                    var chainList = chainGroup.ToList();
+                    _cache.Set(chainCacheKey, chainList, new MemoryCacheEntryOptions()
+                        .SetSize(1)
+                        .SetAbsoluteExpiration(CacheTtl));
+                    _cacheStatus.UpdateEntryCount(chainCacheKey, chainList.Count);
+                }
+            }
+
             return SliceObjectResults(entries, skip, qty);
         }
 
         public async Task<List<SearchResultProfile>> SearchProfilesAsync(
-            string searchString, int qty, int skip, string? blockchain = null)
+            string searchString, int qty, int skip, string? blockchain = null, bool forceRefresh = false)
         {
             qty = Math.Clamp(qty, 1, 5000);
             skip = Math.Clamp(skip, 0, 4999);
             qty = Math.Min(qty, 5000 - skip);
 
             string cacheKey = $"profiles:{searchString?.ToLowerInvariant() ?? ""}:{blockchain?.ToLowerInvariant() ?? ""}";
-            if (_cache.TryGetValue(cacheKey, out List<CachedProfileEntry>? cachedEntries) && cachedEntries != null)
+            if (!forceRefresh && _cache.TryGetValue(cacheKey, out List<CachedProfileEntry>? cachedEntries) && cachedEntries != null)
                 return SliceProfileResults(cachedEntries, skip, qty);
 
-            // Detect wildcard "*" before sanitisation strips the asterisk
+            // Detect wildcard "*" early — needed for the all-chains fallback below.
             bool isWildcard = (searchString ?? "").Trim() == "*";
 
-            string sanitized = isWildcard ? string.Empty : Sanitize(searchString ?? "");
-            bool hasSearch = !isWildcard && !string.IsNullOrWhiteSpace(sanitized);
+            // Per-chain wildcard cache miss: derive from all-chains warm cache if available.
+            if (!forceRefresh && blockchain != null && isWildcard)
+            {
+                string allChainsKey = $"profiles:*:";
+                if (_cache.TryGetValue(allChainsKey, out List<CachedProfileEntry>? allCached) && allCached != null)
+                {
+                    var filtered = allCached
+                        .Where(e => e.Blockchain.Equals(blockchain, StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+                    _cache.Set(cacheKey, filtered, new MemoryCacheEntryOptions()
+                        .SetSize(1)
+                        .SetAbsoluteExpiration(CacheTtl));
+                    _cacheStatus.UpdateEntryCount(cacheKey, filtered.Count);
+                    return SliceProfileResults(filtered, skip, qty);
+                }
+            }
 
-            string scopeUri = "file:///" + _rootPath.Replace('\\', '/').Replace("'", "''");
+            // Wildcard user request with no warm cache available yet: return empty.
+            if (isWildcard && !forceRefresh)
+                return new List<SearchResultProfile>();
 
-            // When a search string is present, search all files in the scope (not just GetProfileByAddress.json)
-            // so that PDFs, HTML, and other files in root/{address}/ folders are also matched.
-            // The address is extracted from the matched file path to locate GetProfileByAddress.json.
-            //
-            // When the wildcard "*" is used, return all files in scope ordered by newest
-            // modified date so the caller sees a stream of the latest built-to-disk files.
-            //
-            // TOP 10000 caps the number of raw index rows returned so that the entire
-            // directory tree is never materialised into memory in one shot.
-            string sql = isWildcard
-                ? $"""
-                    SELECT TOP 10000 System.ItemPathDisplay, System.DateModified
-                    FROM SystemIndex
-                    WHERE SCOPE='{scopeUri}'
-                    ORDER BY System.DateModified DESC
-                    """
-                : hasSearch
-                ? $"""
-                    SELECT TOP 10000 System.ItemPathDisplay, System.DateModified
-                    FROM SystemIndex
-                    WHERE SCOPE='{scopeUri}'
-                      AND FREETEXT('{sanitized}')
-                    ORDER BY System.DateModified DESC
-                    """
-                : $"""
-                    SELECT TOP 10000 System.ItemPathDisplay, System.DateModified
-                    FROM SystemIndex
-                    WHERE SCOPE='{scopeUri}'
-                      AND System.FileName = 'GetProfileByAddress.json'
-                    ORDER BY System.DateModified DESC
-                    """;
+            // Wildcard warm path (forceRefresh=true) or text search path.
+            List<SearchRow> rows;
+            if (isWildcard)
+            {
+                rows = await DirectFolderScanAsync("GetProfileByAddress.json");
+            }
+            else
+            {
+                string sanitized = Sanitize(searchString ?? "");
+                bool hasSearch = !string.IsNullOrWhiteSpace(sanitized);
 
-            var rows = await Task.Run(() => ExecuteSearchQuery(sql));
+                string scopeUri = "file:///" + _rootPath.Replace('\\', '/').Replace("'", "''");
 
-            // If Windows Search returned nothing (index not ready or files not yet indexed),
-            // fall back to a direct filesystem scan so results are available immediately.
-            if (rows.Count == 0)
-                rows = await FallbackScanAsync(
-                    isWildcard || hasSearch ? "*" : "GetProfileByAddress.json",
-                    isWildcard ? string.Empty : sanitized);
+                string sql = hasSearch
+                    ? $"""
+                        SELECT TOP 100000 System.ItemPathDisplay, System.DateModified
+                        FROM SystemIndex
+                        WHERE SCOPE='{scopeUri}'
+                          AND FREETEXT('{sanitized}')
+                        ORDER BY System.DateModified DESC
+                        """
+                    : $"""
+                        SELECT TOP 100000 System.ItemPathDisplay, System.DateModified
+                        FROM SystemIndex
+                        WHERE SCOPE='{scopeUri}'
+                          AND System.FileName = 'GetProfileByAddress.json'
+                        ORDER BY System.DateModified DESC
+                        """;
+
+                rows = await Task.Run(() => ExecuteSearchQuery(sql));
+
+                if (rows.Count == 0)
+                    rows = await FallbackScanAsync(hasSearch ? "*" : "GetProfileByAddress.json", sanitized);
+            }
 
             // Deduplicate by address (parent folder) so multiple file hits from the same
             // folder are collapsed to one entry, keeping the newest-modified file per address.
@@ -533,10 +606,69 @@ namespace P2FK.IO.Services
             _cache.Set(cacheKey, entries, new MemoryCacheEntryOptions()
                 .SetSize(1)
                 .SetAbsoluteExpiration(CacheTtl));
+            _cacheStatus.UpdateEntryCount(cacheKey, entries.Count);
+
+            // When this was an all-chains scan, populate per-chain partition caches.
+            if (blockchain == null)
+            {
+                foreach (var chainGroup in entries.GroupBy(e => e.Blockchain, StringComparer.OrdinalIgnoreCase))
+                {
+                    string chainCacheKey = $"profiles:{searchString?.ToLowerInvariant() ?? ""}:{chainGroup.Key.ToLowerInvariant()}";
+                    var chainList = chainGroup.ToList();
+                    _cache.Set(chainCacheKey, chainList, new MemoryCacheEntryOptions()
+                        .SetSize(1)
+                        .SetAbsoluteExpiration(CacheTtl));
+                    _cacheStatus.UpdateEntryCount(chainCacheKey, chainList.Count);
+                }
+            }
+
             return SliceProfileResults(entries, skip, qty);
         }
 
-        // ── Fallback filesystem scan ───────────────────────────────────────────
+        // ── Direct folder scan (wildcard) ──────────────────────────────────────
+
+        /// <summary>
+        /// Enumerates the top-level sub-directories of <see cref="_rootPath"/> and
+        /// returns one <see cref="SearchRow"/> per directory that contains
+        /// <paramref name="jsonFileName"/>.
+        ///
+        /// This is used for wildcard ("*") queries where no text filtering is needed.
+        /// Walking directories directly is:
+        /// <list type="bullet">
+        ///   <item>Complete — not limited by Windows Search index coverage.</item>
+        ///   <item>Exact — one row per folder, no multi-file-per-folder collisions.</item>
+        ///   <item>Fast — single <c>Directory.EnumerateDirectories</c> call; no OLE DB.</item>
+        /// </list>
+        /// Results are returned sorted newest-modified first.
+        /// </summary>
+        private Task<List<SearchRow>> DirectFolderScanAsync(string jsonFileName)
+        {
+            return Task.Run(() =>
+            {
+                var rows = new List<SearchRow>();
+
+                if (!Directory.Exists(_rootPath))
+                    return rows;
+
+                foreach (string dir in Directory.EnumerateDirectories(_rootPath))
+                {
+                    string jsonPath = Path.Combine(dir, jsonFileName);
+                    if (!File.Exists(jsonPath)) continue;
+
+                    try
+                    {
+                        DateTime modified = File.GetLastWriteTimeUtc(jsonPath);
+                        rows.Add(new SearchRow(jsonPath, modified));
+                    }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+                }
+
+                rows.Sort((a, b) => b.Modified.CompareTo(a.Modified));
+                return rows;
+            });
+        }
+
+        // ── Fallback filesystem scan (text queries when Windows Search unavailable) ──
 
         /// <summary>
         /// Scans the <c>root</c> directory tree for files matching
@@ -544,7 +676,7 @@ namespace P2FK.IO.Services
         /// whose content contains <paramref name="searchString"/> (case-insensitive).
         /// When <paramref name="searchString"/> is empty or whitespace all matching
         /// files are returned without a content check.
-        /// Used when Windows Search has not yet indexed the files.
+        /// Used for text searches when Windows Search has not yet indexed the files.
         /// </summary>
         private Task<List<SearchRow>> FallbackScanAsync(string fileName, string searchString)
         {
@@ -563,7 +695,7 @@ namespace P2FK.IO.Services
                 {
                     // Hard cap: prevent the in-memory list from growing without bound
                     // when the index is cold and the tree is large.
-                    if (rows.Count >= 10_000) break;
+                    if (rows.Count >= 100_000) break;
 
                     try
                     {

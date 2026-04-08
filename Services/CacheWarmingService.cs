@@ -1,46 +1,57 @@
+using System.Diagnostics;
 using System.Runtime.Versioning;
 
 namespace P2FK.IO.Services
 {
     /// <summary>
     /// Background service that proactively warms the search cache for the default
-    /// wildcard queries used by index.html, preventing the first real user request
-    /// from having to wait for the full index scan.
+    /// wildcard queries used by index.html.
     ///
-    /// One scan per cycle covers ALL blockchains at once. After the master list is
-    /// built and system files are filtered out, <see cref="WindowsSearchService"/>
-    /// automatically partitions the results by blockchain and stores each chain's
-    /// slice in its own cache key (e.g. roots:*:BTC-testnet:false, roots:*:LTC:false,
-    /// etc.).  This means a single filesystem scan is enough to pre-populate every
-    /// per-chain cache, making chain-specific wildcard lookups instantaneous.
+    /// <para>
+    /// One all-chains scan per cycle covers roots, objects, <em>and</em> profiles.
+    /// <see cref="WindowsSearchService"/> automatically partitions each result set by
+    /// blockchain and stores per-chain slices in their own cache keys (e.g.
+    /// <c>roots:*:btc-testnet:false</c>, <c>objects:*:ltc</c>, …) so chain-specific
+    /// wildcard lookups are served instantly.
+    /// </para>
     ///
-    /// The warm interval is set to <c>CacheTtl - WarmLeadSeconds</c> so the cache
-    /// is refreshed before it expires, ensuring any user who arrives after the
-    /// initial warm-up never experiences the cold-cache delay.
+    /// <para>
+    /// The warm interval is <em>adaptive</em>: after each cycle completes the service
+    /// waits for <c>scanDuration + 60 s</c> before running again.  This means a fast
+    /// index (seconds) refreshes frequently while a slow scan (several minutes) waits
+    /// longer, avoiding redundant back-to-back scans.  A floor of 65 s prevents
+    /// accidental spin-loops.
+    /// </para>
     /// </summary>
     [SupportedOSPlatform("windows")]
     public class CacheWarmingService : BackgroundService
     {
-        // Warm this many seconds before the cache entry would naturally expire.
-        // With CacheTtl = 300 s the warm interval is 300 - 60 = 240 s (4 minutes).
-        private const int WarmLeadSeconds = 60;
+        // Minimum wait between warm cycles regardless of scan speed (ms).
+        // Set to 65 s (5 s above the 60 s padding constant) so a very fast scan
+        // never produces a sub-60 s interval through rounding.
+        private const long MinRefreshIntervalMs = 65_000;
 
-        // Brief pause after host startup so routes and services are fully initialised
-        // before the first warm query hits the search index.
+        // Extra padding added on top of the measured scan duration (ms).
+        private const long ExtraPaddingMs = 60_000;
+
+        // Brief pause after host startup so routes and services are fully initialised.
         private const int StartupDelaySeconds = 5;
 
-        // One all-chains wildcard scan, system files excluded.  The service passes
-        // blockchain = null so that WindowsSearchService performs a single scan and
-        // automatically partitions the results into per-chain cache entries.
+        // One all-chains wildcard scan, system files excluded.
         private const int WarmQty = 5000;
         private const bool WarmShowSystemFiles = false;
 
         private readonly WindowsSearchService _searchService;
+        private readonly CacheStatusService _cacheStatus;
         private readonly ILogger<CacheWarmingService> _logger;
 
-        public CacheWarmingService(WindowsSearchService searchService, ILogger<CacheWarmingService> logger)
+        public CacheWarmingService(
+            WindowsSearchService searchService,
+            CacheStatusService cacheStatus,
+            ILogger<CacheWarmingService> logger)
         {
             _searchService = searchService;
+            _cacheStatus = cacheStatus;
             _logger = logger;
         }
 
@@ -48,40 +59,74 @@ namespace P2FK.IO.Services
         {
             try
             {
-                // Let the host finish starting up before the first warm.
                 await Task.Delay(TimeSpan.FromSeconds(StartupDelaySeconds), stoppingToken);
-
-                var interval = WindowsSearchService.CacheTtl - TimeSpan.FromSeconds(WarmLeadSeconds);
 
                 while (!stoppingToken.IsCancellationRequested)
                 {
+                    var sw = Stopwatch.StartNew();
+                    _cacheStatus.SetWarmStarted();
+
                     await WarmAsync(stoppingToken);
-                    await Task.Delay(interval, stoppingToken);
+
+                    sw.Stop();
+                    long durationMs = sw.ElapsedMilliseconds;
+                    long intervalMs = Math.Max(MinRefreshIntervalMs, durationMs + ExtraPaddingMs);
+
+                    _cacheStatus.SetWarmCompleted(durationMs, intervalMs);
+
+                    _logger.LogDebug(
+                        "Cache warm complete: durationMs={DurationMs} nextIntervalMs={IntervalMs}",
+                        durationMs, intervalMs);
+
+                    await Task.Delay(TimeSpan.FromMilliseconds(intervalMs), stoppingToken);
                 }
             }
             catch (OperationCanceledException)
             {
-                // Normal shutdown — suppress the exception so the host exits cleanly.
+                // Normal shutdown — suppress so the host exits cleanly.
             }
         }
 
         private async Task WarmAsync(CancellationToken ct)
         {
             if (ct.IsCancellationRequested) return;
+
+            // Warm roots (blockchain = null → single scan, populates all per-chain keys).
             try
             {
-                // blockchain = null → scan all chains in one pass; WindowsSearchService
-                // will partition by blockchain and populate every per-chain cache entry.
                 await _searchService.SearchRootsAsync(
                     "*", WarmQty, 0, blockchain: null, WarmShowSystemFiles, forceRefresh: true);
-
-                _logger.LogDebug(
-                    "Cache warmed: all chains * qty={Qty} showSystemFiles={Show}", WarmQty, WarmShowSystemFiles);
+                _logger.LogDebug("Warm: roots * all-chains complete");
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex,
-                    "Cache warming failed for all chains * qty={Qty} showSystemFiles={Show}", WarmQty, WarmShowSystemFiles);
+                _logger.LogWarning(ex, "Warm: roots * all-chains failed");
+            }
+
+            if (ct.IsCancellationRequested) return;
+
+            // Warm objects (blockchain = null → all-chains + per-chain partitions).
+            try
+            {
+                await _searchService.SearchObjectsAsync("*", WarmQty, 0, blockchain: null, forceRefresh: true);
+                _logger.LogDebug("Warm: objects * all-chains complete");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Warm: objects * all-chains failed");
+            }
+
+            if (ct.IsCancellationRequested) return;
+
+            // Warm profiles (blockchain = null → all-chains + per-chain partitions).
+            try
+            {
+                await _searchService.SearchProfilesAsync("*", WarmQty, 0, blockchain: null, forceRefresh: true);
+                _logger.LogDebug("Warm: profiles * all-chains complete");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Warm: profiles * all-chains failed");
             }
         }
     }
