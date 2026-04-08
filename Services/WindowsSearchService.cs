@@ -12,16 +12,19 @@ namespace P2FK.IO.Services
     {
         private readonly string _rootPath;
         private readonly IMemoryCache _cache;
-        // Cache entries live for 5 minutes. CacheWarmingService refreshes 60 s before expiry,
-        // so the warm interval is 4 minutes — down from the previous 30 s churn.
+        private readonly CacheStatusService _cacheStatus;
+        // Cache entries live for 5 minutes.  CacheWarmingService now uses an adaptive
+        // interval (last scan duration + 60 s) so the TTL acts only as an eviction
+        // backstop rather than driving the refresh cadence.
         internal static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(300);
         private static readonly Regex TxIdRegex = new Regex(@"[0-9a-fA-F]{64}", RegexOptions.Compiled);
         private const int MaxSearchLength = 2048;
 
-        public WindowsSearchService(IMemoryCache cache, Wrapper wrapper)
+        public WindowsSearchService(IMemoryCache cache, Wrapper wrapper, CacheStatusService cacheStatus)
         {
             _cache = cache;
             _rootPath = wrapper.RootPath;
+            _cacheStatus = cacheStatus;
         }
 
         // ── Blockchain detection ───────────────────────────────────────────────
@@ -300,6 +303,7 @@ namespace P2FK.IO.Services
             _cache.Set(cacheKey, entries, new MemoryCacheEntryOptions()
                 .SetSize(1)
                 .SetAbsoluteExpiration(CacheTtl));
+            _cacheStatus.UpdateEntryCount(cacheKey, entries.Count);
 
             // When this was an all-chains scan (blockchain == null), also populate the
             // per-chain partition caches so that chain-specific lookups benefit from this
@@ -309,9 +313,11 @@ namespace P2FK.IO.Services
                 foreach (var chainGroup in entries.GroupBy(e => e.Blockchain, StringComparer.OrdinalIgnoreCase))
                 {
                     string chainCacheKey = $"roots:{searchString?.ToLowerInvariant() ?? ""}:{chainGroup.Key.ToLowerInvariant()}:{showSystemFiles}";
-                    _cache.Set(chainCacheKey, chainGroup.ToList(), new MemoryCacheEntryOptions()
+                    var chainList = chainGroup.ToList();
+                    _cache.Set(chainCacheKey, chainList, new MemoryCacheEntryOptions()
                         .SetSize(1)
                         .SetAbsoluteExpiration(CacheTtl));
+                    _cacheStatus.UpdateEntryCount(chainCacheKey, chainList.Count);
                 }
             }
 
@@ -424,6 +430,23 @@ namespace P2FK.IO.Services
             _cache.Set(cacheKey, entries, new MemoryCacheEntryOptions()
                 .SetSize(1)
                 .SetAbsoluteExpiration(CacheTtl));
+            _cacheStatus.UpdateEntryCount(cacheKey, entries.Count);
+
+            // When this was an all-chains scan, populate per-chain partition caches
+            // so chain-specific lookups can be served from the same scan.
+            if (blockchain == null)
+            {
+                foreach (var chainGroup in entries.GroupBy(e => e.Blockchain, StringComparer.OrdinalIgnoreCase))
+                {
+                    string chainCacheKey = $"objects:{searchString?.ToLowerInvariant() ?? ""}:{chainGroup.Key.ToLowerInvariant()}";
+                    var chainList = chainGroup.ToList();
+                    _cache.Set(chainCacheKey, chainList, new MemoryCacheEntryOptions()
+                        .SetSize(1)
+                        .SetAbsoluteExpiration(CacheTtl));
+                    _cacheStatus.UpdateEntryCount(chainCacheKey, chainList.Count);
+                }
+            }
+
             return SliceObjectResults(entries, skip, qty);
         }
 
@@ -533,6 +556,22 @@ namespace P2FK.IO.Services
             _cache.Set(cacheKey, entries, new MemoryCacheEntryOptions()
                 .SetSize(1)
                 .SetAbsoluteExpiration(CacheTtl));
+            _cacheStatus.UpdateEntryCount(cacheKey, entries.Count);
+
+            // When this was an all-chains scan, populate per-chain partition caches.
+            if (blockchain == null)
+            {
+                foreach (var chainGroup in entries.GroupBy(e => e.Blockchain, StringComparer.OrdinalIgnoreCase))
+                {
+                    string chainCacheKey = $"profiles:{searchString?.ToLowerInvariant() ?? ""}:{chainGroup.Key.ToLowerInvariant()}";
+                    var chainList = chainGroup.ToList();
+                    _cache.Set(chainCacheKey, chainList, new MemoryCacheEntryOptions()
+                        .SetSize(1)
+                        .SetAbsoluteExpiration(CacheTtl));
+                    _cacheStatus.UpdateEntryCount(chainCacheKey, chainList.Count);
+                }
+            }
+
             return SliceProfileResults(entries, skip, qty);
         }
 

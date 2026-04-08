@@ -35,6 +35,8 @@ builder.Services.AddSwaggerGen(c =>
         var ctrl = api.ActionDescriptor.RouteValues["controller"] ?? "";
         if (ctrl.Contains("KnownRoots") || ctrl.Contains("KnownObjects") || ctrl.Contains("KnownProfiles"))
             return ["Search"];
+        if (ctrl.Contains("CacheStatus"))
+            return ["Cache"];
         if (ctrl.Contains("PublicMessages") || ctrl.Contains("PrivateMessages") ||
             ctrl.Contains("Root") || ctrl.Contains("Roots"))
             return ["Messages & Roots"];
@@ -51,6 +53,7 @@ builder.Services.AddSwaggerGen(c =>
     c.OrderActionsBy(a => a.ActionDescriptor.RouteValues["controller"]);
 });
 builder.Services.AddSingleton<P2FK.IO.Wrapper>();
+builder.Services.AddSingleton<P2FK.IO.Services.CacheStatusService>();
 builder.Services.AddMemoryCache(options =>
 {
     // Cap the total number of distinct cache entries at 1024.
