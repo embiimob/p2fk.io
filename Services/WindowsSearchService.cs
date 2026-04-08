@@ -208,32 +208,35 @@ namespace P2FK.IO.Services
             // Use a forward-slash SCOPE URI as required by Windows Search; escape any single quotes
             string scopeUri = "file:///" + _rootPath.Replace('\\', '/').Replace("'", "''");
 
-            // When a search string is present, search all files in the scope (not just ROOT.json)
-            // so that PDFs, HTML, and other files in root/{txId}/ folders are also matched.
-            // The transaction ID is then extracted from the matched file path to locate ROOT.json.
+            // For wildcard searches we only need one row per transaction folder.
+            // Querying ROOT.json directly yields exactly one row per folder, avoiding the
+            // multi-file-per-folder collision that caused a 10 000-row cap to cover far
+            // fewer than 10 000 unique transactions when each folder had several files.
             //
-            // When the wildcard "*" is used, return all files in scope ordered by newest
-            // modified date so the caller sees a stream of the latest built-to-disk files.
+            // For text searches we still scan all file types so that PDFs, HTML, and other
+            // files in root/{txId}/ folders are matched; the txId is then extracted from
+            // the matched path to locate ROOT.json.
             //
-            // TOP 10000 caps the number of raw index rows returned so that the entire
-            // 415 MB directory tree is never materialised into memory in one shot.
+            // TOP 100000 gives plenty of head-room (the directory tree currently has ~8 000
+            // root folders; 100 000 leaves room for 12× growth before the cap matters again).
             string sql = isWildcard
                 ? $"""
-                    SELECT TOP 10000 System.ItemPathDisplay, System.DateModified
+                    SELECT TOP 100000 System.ItemPathDisplay, System.DateModified
                     FROM SystemIndex
                     WHERE SCOPE='{scopeUri}'
+                      AND System.FileName = 'ROOT.json'
                     ORDER BY System.DateModified DESC
                     """
                 : hasSearch
                 ? $"""
-                    SELECT TOP 10000 System.ItemPathDisplay, System.DateModified
+                    SELECT TOP 100000 System.ItemPathDisplay, System.DateModified
                     FROM SystemIndex
                     WHERE SCOPE='{scopeUri}'
                       AND FREETEXT('{sanitized}')
                     ORDER BY System.DateModified DESC
                     """
                 : $"""
-                    SELECT TOP 10000 System.ItemPathDisplay, System.DateModified
+                    SELECT TOP 100000 System.ItemPathDisplay, System.DateModified
                     FROM SystemIndex
                     WHERE SCOPE='{scopeUri}'
                       AND System.FileName = 'ROOT.json'
@@ -244,9 +247,12 @@ namespace P2FK.IO.Services
 
             // If Windows Search returned nothing (index not ready or files not yet indexed),
             // fall back to a direct filesystem scan so results are available immediately.
+            // For wildcard, enumerate ROOT.json files directly so the fallback also returns
+            // exactly one entry per folder and doesn't waste the 100 000-file cap on
+            // non-root files.
             if (rows.Count == 0)
                 rows = await FallbackScanAsync(
-                    isWildcard || hasSearch ? "*" : "ROOT.json",
+                    hasSearch ? "*" : "ROOT.json",
                     isWildcard ? string.Empty : sanitized);
 
             // When filtering system files, do one fast pass over the rows Windows Search already
@@ -393,32 +399,27 @@ namespace P2FK.IO.Services
 
             string scopeUri = "file:///" + _rootPath.Replace('\\', '/').Replace("'", "''");
 
-            // When a search string is present, search all files in the scope (not just OBJ.json)
-            // so that PDFs, HTML, and other files in root/{address}/ folders are also matched.
-            // The address is extracted from the matched file path to locate OBJ.json.
-            //
-            // When the wildcard "*" is used, return all files in scope ordered by newest
-            // modified date so the caller sees a stream of the latest built-to-disk files.
-            //
-            // TOP 10000 caps the number of raw index rows returned so that the entire
-            // directory tree is never materialised into memory in one shot.
+            // For wildcard, enumerate OBJ.json directly: one row per address folder.
+            // For text searches, scan all file types so content in any folder file is matched.
+            // TOP 100000 gives ample head-room for growth.
             string sql = isWildcard
                 ? $"""
-                    SELECT TOP 10000 System.ItemPathDisplay, System.DateModified
+                    SELECT TOP 100000 System.ItemPathDisplay, System.DateModified
                     FROM SystemIndex
                     WHERE SCOPE='{scopeUri}'
+                      AND System.FileName = 'OBJ.json'
                     ORDER BY System.DateModified DESC
                     """
                 : hasSearch
                 ? $"""
-                    SELECT TOP 10000 System.ItemPathDisplay, System.DateModified
+                    SELECT TOP 100000 System.ItemPathDisplay, System.DateModified
                     FROM SystemIndex
                     WHERE SCOPE='{scopeUri}'
                       AND FREETEXT('{sanitized}')
                     ORDER BY System.DateModified DESC
                     """
                 : $"""
-                    SELECT TOP 10000 System.ItemPathDisplay, System.DateModified
+                    SELECT TOP 100000 System.ItemPathDisplay, System.DateModified
                     FROM SystemIndex
                     WHERE SCOPE='{scopeUri}'
                       AND System.FileName = 'OBJ.json'
@@ -431,7 +432,7 @@ namespace P2FK.IO.Services
             // fall back to a direct filesystem scan so results are available immediately.
             if (rows.Count == 0)
                 rows = await FallbackScanAsync(
-                    isWildcard || hasSearch ? "*" : "OBJ.json",
+                    hasSearch ? "*" : "OBJ.json",
                     isWildcard ? string.Empty : sanitized);
 
             // Deduplicate by address (parent folder) so multiple file hits from the same
@@ -536,32 +537,26 @@ namespace P2FK.IO.Services
 
             string scopeUri = "file:///" + _rootPath.Replace('\\', '/').Replace("'", "''");
 
-            // When a search string is present, search all files in the scope (not just GetProfileByAddress.json)
-            // so that PDFs, HTML, and other files in root/{address}/ folders are also matched.
-            // The address is extracted from the matched file path to locate GetProfileByAddress.json.
-            //
-            // When the wildcard "*" is used, return all files in scope ordered by newest
-            // modified date so the caller sees a stream of the latest built-to-disk files.
-            //
-            // TOP 10000 caps the number of raw index rows returned so that the entire
-            // directory tree is never materialised into memory in one shot.
+            // For wildcard, enumerate GetProfileByAddress.json directly: one row per address
+            // folder.  For text searches, scan all file types.  TOP 100000 for head-room.
             string sql = isWildcard
                 ? $"""
-                    SELECT TOP 10000 System.ItemPathDisplay, System.DateModified
+                    SELECT TOP 100000 System.ItemPathDisplay, System.DateModified
                     FROM SystemIndex
                     WHERE SCOPE='{scopeUri}'
+                      AND System.FileName = 'GetProfileByAddress.json'
                     ORDER BY System.DateModified DESC
                     """
                 : hasSearch
                 ? $"""
-                    SELECT TOP 10000 System.ItemPathDisplay, System.DateModified
+                    SELECT TOP 100000 System.ItemPathDisplay, System.DateModified
                     FROM SystemIndex
                     WHERE SCOPE='{scopeUri}'
                       AND FREETEXT('{sanitized}')
                     ORDER BY System.DateModified DESC
                     """
                 : $"""
-                    SELECT TOP 10000 System.ItemPathDisplay, System.DateModified
+                    SELECT TOP 100000 System.ItemPathDisplay, System.DateModified
                     FROM SystemIndex
                     WHERE SCOPE='{scopeUri}'
                       AND System.FileName = 'GetProfileByAddress.json'
@@ -574,7 +569,7 @@ namespace P2FK.IO.Services
             // fall back to a direct filesystem scan so results are available immediately.
             if (rows.Count == 0)
                 rows = await FallbackScanAsync(
-                    isWildcard || hasSearch ? "*" : "GetProfileByAddress.json",
+                    hasSearch ? "*" : "GetProfileByAddress.json",
                     isWildcard ? string.Empty : sanitized);
 
             // Deduplicate by address (parent folder) so multiple file hits from the same
