@@ -24,7 +24,7 @@ namespace P2FK.IO.Controllers
         /// Chain selection: pass <c>mainnet=false</c> for Bitcoin testnet; pass <c>blockchain=LTC|DOG|MZC</c> for sidechains.
         /// </remarks>
         /// <param name="searchString">Search query (max 2048 characters). Use <c>*</c> to return all results.</param>
-        /// <param name="qty">Number of results to return, 1–1000 (default 10).</param>
+        /// <param name="qty">Number of results to return, 1–5000 (default 10).</param>
         /// <param name="skip">Number of results to skip for pagination (default 0).</param>
         /// <param name="mainnet">true = Bitcoin mainnet; false = Bitcoin testnet. Ignored when blockchain ≠ BTC.</param>
         /// <param name="blockchain">Target blockchain: BTC (default), LTC, DOG, or MZC.</param>
@@ -38,9 +38,9 @@ namespace P2FK.IO.Controllers
             if (blockchain != "BTC" && blockchain != "LTC" && blockchain != "DOG" && blockchain != "MZC")
                 return Content("[\"invalid blockchain parameter, valid values are BTC, LTC, DOG, MZC\"]", "application/json");
 
-            qty = Math.Clamp(qty, 1, 1000);
-            skip = Math.Clamp(skip, 0, 999);
-            qty = Math.Min(qty, 1000 - skip);
+            qty = Math.Clamp(qty, 1, 5000);
+            skip = Math.Clamp(skip, 0, 4999);
+            qty = Math.Min(qty, 5000 - skip);
 
             // Translate public API params to the internal chain identifier used by the service.
             // mainnet=false with blockchain=BTC means Bitcoin testnet; all other combinations

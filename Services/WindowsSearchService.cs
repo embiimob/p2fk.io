@@ -151,9 +151,9 @@ namespace P2FK.IO.Services
             string searchString, int qty, int skip, string? blockchain = null, bool showSystemFiles = true,
             bool forceRefresh = false)
         {
-            qty = Math.Clamp(qty, 1, 1000);
-            skip = Math.Clamp(skip, 0, 999);
-            qty = Math.Min(qty, 1000 - skip);
+            qty = Math.Clamp(qty, 1, 5000);
+            skip = Math.Clamp(skip, 0, 4999);
+            qty = Math.Min(qty, 5000 - skip);
 
             // qty/skip are intentionally excluded from the cache key: we cache the full
             // filtered list and slice it in memory, eliminating the (qty × skip) key
@@ -305,9 +305,9 @@ namespace P2FK.IO.Services
         public async Task<List<SearchResultObject>> SearchObjectsAsync(
             string searchString, int qty, int skip, string? blockchain = null)
         {
-            qty = Math.Clamp(qty, 1, 1000);
-            skip = Math.Clamp(skip, 0, 999);
-            qty = Math.Min(qty, 1000 - skip);
+            qty = Math.Clamp(qty, 1, 5000);
+            skip = Math.Clamp(skip, 0, 4999);
+            qty = Math.Min(qty, 5000 - skip);
 
             string cacheKey = $"objects:{searchString?.ToLowerInvariant() ?? ""}:{blockchain ?? ""}";
             if (_cache.TryGetValue(cacheKey, out List<CachedObjectEntry>? cachedEntries) && cachedEntries != null)
@@ -414,9 +414,9 @@ namespace P2FK.IO.Services
         public async Task<List<SearchResultProfile>> SearchProfilesAsync(
             string searchString, int qty, int skip, string? blockchain = null)
         {
-            qty = Math.Clamp(qty, 1, 1000);
-            skip = Math.Clamp(skip, 0, 999);
-            qty = Math.Min(qty, 1000 - skip);
+            qty = Math.Clamp(qty, 1, 5000);
+            skip = Math.Clamp(skip, 0, 4999);
+            qty = Math.Min(qty, 5000 - skip);
 
             string cacheKey = $"profiles:{searchString?.ToLowerInvariant() ?? ""}:{blockchain ?? ""}";
             if (_cache.TryGetValue(cacheKey, out List<CachedProfileEntry>? cachedEntries) && cachedEntries != null)
