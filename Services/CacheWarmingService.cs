@@ -26,16 +26,17 @@ namespace P2FK.IO.Services
         // before the first warm query hits the search index.
         private const int StartupDelaySeconds = 5;
 
-        // index.html uses API_FETCH_BATCH_SIZE=200 with system files hidden by default.
-        // Each entry is (blockchain, qty, showSystemFiles).
-        // "BTC-testnet" maps to mainnet=false; the others use blockchain=<chain>.
+        // Warm up to 5000 results per chain so less-common chains have a deep cache
+        // ready before any user request arrives. The API still returns only what the
+        // caller requests (qty is clamped at the controller), so existing consumers
+        // are unaffected. "BTC-testnet" maps to mainnet=false; the others use blockchain=<chain>.
         private static readonly (string blockchain, int qty, bool showSystemFiles)[] DefaultBatches =
         [
-            ("BTC-testnet", 200, false),
-            ("BTC",         200, false),
-            ("LTC",         200, false),
-            ("DOG",         200, false),
-            ("MZC",         200, false),
+            ("BTC-testnet", 5000, false),
+            ("BTC",         5000, false),
+            ("LTC",         5000, false),
+            ("DOG",         5000, false),
+            ("MZC",         5000, false),
         ];
 
         private readonly WindowsSearchService _searchService;
