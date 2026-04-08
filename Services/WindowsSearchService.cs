@@ -158,7 +158,8 @@ namespace P2FK.IO.Services
             // qty/skip are intentionally excluded from the cache key: we cache the full
             // filtered list and slice it in memory, eliminating the (qty × skip) key
             // explosion that previously caused unbounded cache growth.
-            string cacheKey = $"roots:{searchString?.ToLowerInvariant() ?? ""}:{blockchain ?? ""}:{showSystemFiles}";
+            // All key segments are lower-cased for case-insensitive consistency.
+            string cacheKey = $"roots:{searchString?.ToLowerInvariant() ?? ""}:{blockchain?.ToLowerInvariant() ?? ""}:{showSystemFiles}";
             if (!forceRefresh && _cache.TryGetValue(cacheKey, out List<CachedRootEntry>? cachedEntries) && cachedEntries != null)
                 return SliceRootResults(cachedEntries, skip, qty);
 
@@ -299,6 +300,21 @@ namespace P2FK.IO.Services
             _cache.Set(cacheKey, entries, new MemoryCacheEntryOptions()
                 .SetSize(1)
                 .SetAbsoluteExpiration(CacheTtl));
+
+            // When this was an all-chains scan (blockchain == null), also populate the
+            // per-chain partition caches so that chain-specific lookups benefit from this
+            // single filesystem scan without needing their own separate full scan.
+            if (blockchain == null)
+            {
+                foreach (var chainGroup in entries.GroupBy(e => e.Blockchain, StringComparer.OrdinalIgnoreCase))
+                {
+                    string chainCacheKey = $"roots:{searchString?.ToLowerInvariant() ?? ""}:{chainGroup.Key.ToLowerInvariant()}:{showSystemFiles}";
+                    _cache.Set(chainCacheKey, chainGroup.ToList(), new MemoryCacheEntryOptions()
+                        .SetSize(1)
+                        .SetAbsoluteExpiration(CacheTtl));
+                }
+            }
+
             return SliceRootResults(entries, skip, qty);
         }
 
@@ -309,7 +325,7 @@ namespace P2FK.IO.Services
             skip = Math.Clamp(skip, 0, 4999);
             qty = Math.Min(qty, 5000 - skip);
 
-            string cacheKey = $"objects:{searchString?.ToLowerInvariant() ?? ""}:{blockchain ?? ""}";
+            string cacheKey = $"objects:{searchString?.ToLowerInvariant() ?? ""}:{blockchain?.ToLowerInvariant() ?? ""}";
             if (_cache.TryGetValue(cacheKey, out List<CachedObjectEntry>? cachedEntries) && cachedEntries != null)
                 return SliceObjectResults(cachedEntries, skip, qty);
 
@@ -418,7 +434,7 @@ namespace P2FK.IO.Services
             skip = Math.Clamp(skip, 0, 4999);
             qty = Math.Min(qty, 5000 - skip);
 
-            string cacheKey = $"profiles:{searchString?.ToLowerInvariant() ?? ""}:{blockchain ?? ""}";
+            string cacheKey = $"profiles:{searchString?.ToLowerInvariant() ?? ""}:{blockchain?.ToLowerInvariant() ?? ""}";
             if (_cache.TryGetValue(cacheKey, out List<CachedProfileEntry>? cachedEntries) && cachedEntries != null)
                 return SliceProfileResults(cachedEntries, skip, qty);
 
