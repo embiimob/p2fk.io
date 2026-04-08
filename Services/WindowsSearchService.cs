@@ -162,12 +162,45 @@ namespace P2FK.IO.Services
             // filtered list and slice it in memory, eliminating the (qty × skip) key
             // explosion that previously caused unbounded cache growth.
             // All key segments are lower-cased for case-insensitive consistency.
+
+            // Detect wildcard "*" early — needed both for the all-chains fallback below
+            // and for SQL query selection later.
+            bool isWildcard = (searchString ?? "").Trim() == "*";
+
             string cacheKey = $"roots:{searchString?.ToLowerInvariant() ?? ""}:{blockchain?.ToLowerInvariant() ?? ""}:{showSystemFiles}";
             if (!forceRefresh && _cache.TryGetValue(cacheKey, out List<CachedRootEntry>? cachedEntries) && cachedEntries != null)
                 return SliceRootResults(cachedEntries, skip, qty);
 
-            // Detect wildcard "*" before sanitisation strips the asterisk
-            bool isWildcard = (searchString ?? "").Trim() == "*";
+            // Per-chain wildcard cache miss: derive from the all-chains warm cache if it
+            // is available rather than falling back to a live Windows Search scan.
+            //
+            // The warm service always populates the all-chains key ("roots:*::…") with a
+            // complete filesystem scan.  A per-chain key ("roots:*:mzc:…") can be absent
+            // or stale because:
+            //   • A previous user-triggered live scan overwrote it with a partial result
+            //     (Windows Search may return fewer rows than the full file count when its
+            //     index is still building, and the fallback only fires when rows == 0).
+            //   • The per-chain key was evicted from the in-process memory cache while
+            //     the all-chains key survived (different access patterns → different LRU
+            //     priority under memory pressure).
+            //
+            // By deriving from the all-chains key we guarantee consistent, complete counts
+            // without an extra filesystem scan.
+            if (!forceRefresh && blockchain != null && isWildcard)
+            {
+                string allChainsKey = $"roots:*::{showSystemFiles}";
+                if (_cache.TryGetValue(allChainsKey, out List<CachedRootEntry>? allCached) && allCached != null)
+                {
+                    var filtered = allCached
+                        .Where(e => e.Blockchain.Equals(blockchain, StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+                    _cache.Set(cacheKey, filtered, new MemoryCacheEntryOptions()
+                        .SetSize(1)
+                        .SetAbsoluteExpiration(CacheTtl));
+                    _cacheStatus.UpdateEntryCount(cacheKey, filtered.Count);
+                    return SliceRootResults(filtered, skip, qty);
+                }
+            }
 
             string sanitized = isWildcard ? string.Empty : Sanitize(searchString ?? "");
             bool hasSearch = !isWildcard && !string.IsNullOrWhiteSpace(sanitized);
@@ -335,8 +368,25 @@ namespace P2FK.IO.Services
             if (_cache.TryGetValue(cacheKey, out List<CachedObjectEntry>? cachedEntries) && cachedEntries != null)
                 return SliceObjectResults(cachedEntries, skip, qty);
 
-            // Detect wildcard "*" before sanitisation strips the asterisk
+            // Detect wildcard "*" early — needed for the all-chains fallback below.
             bool isWildcard = (searchString ?? "").Trim() == "*";
+
+            // Per-chain wildcard cache miss: derive from all-chains warm cache if available.
+            if (blockchain != null && isWildcard)
+            {
+                string allChainsKey = $"objects:*:";
+                if (_cache.TryGetValue(allChainsKey, out List<CachedObjectEntry>? allCached) && allCached != null)
+                {
+                    var filtered = allCached
+                        .Where(e => e.Blockchain.Equals(blockchain, StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+                    _cache.Set(cacheKey, filtered, new MemoryCacheEntryOptions()
+                        .SetSize(1)
+                        .SetAbsoluteExpiration(CacheTtl));
+                    _cacheStatus.UpdateEntryCount(cacheKey, filtered.Count);
+                    return SliceObjectResults(filtered, skip, qty);
+                }
+            }
 
             string sanitized = isWildcard ? string.Empty : Sanitize(searchString ?? "");
             bool hasSearch = !isWildcard && !string.IsNullOrWhiteSpace(sanitized);
@@ -461,8 +511,25 @@ namespace P2FK.IO.Services
             if (_cache.TryGetValue(cacheKey, out List<CachedProfileEntry>? cachedEntries) && cachedEntries != null)
                 return SliceProfileResults(cachedEntries, skip, qty);
 
-            // Detect wildcard "*" before sanitisation strips the asterisk
+            // Detect wildcard "*" early — needed for the all-chains fallback below.
             bool isWildcard = (searchString ?? "").Trim() == "*";
+
+            // Per-chain wildcard cache miss: derive from all-chains warm cache if available.
+            if (blockchain != null && isWildcard)
+            {
+                string allChainsKey = $"profiles:*:";
+                if (_cache.TryGetValue(allChainsKey, out List<CachedProfileEntry>? allCached) && allCached != null)
+                {
+                    var filtered = allCached
+                        .Where(e => e.Blockchain.Equals(blockchain, StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+                    _cache.Set(cacheKey, filtered, new MemoryCacheEntryOptions()
+                        .SetSize(1)
+                        .SetAbsoluteExpiration(CacheTtl));
+                    _cacheStatus.UpdateEntryCount(cacheKey, filtered.Count);
+                    return SliceProfileResults(filtered, skip, qty);
+                }
+            }
 
             string sanitized = isWildcard ? string.Empty : Sanitize(searchString ?? "");
             bool hasSearch = !isWildcard && !string.IsNullOrWhiteSpace(sanitized);

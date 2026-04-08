@@ -2791,13 +2791,17 @@ const updateCacheIndicator=(data)=>{
   else dot.className='empty';
   // Build per-type summary from entryCounts (only keyed buckets with content)
   const counts=data.entryCounts||{};
-  // Aggregate by type (roots/objects/profiles) for display chains
+  // Aggregate by type (roots/objects/profiles) for display chains.
+  // Only include wildcard ('*') keys — these are the warm-cycle counts that
+  // represent the true total for each chain.  User-query keys (e.g.
+  // roots:bitcoin:mzc:false) are excluded to avoid inflating the display.
   const byType={roots:{},objects:{},profiles:{}};
   for(const[key,cnt] of Object.entries(counts)){
     const parts=key.split(':');
     const type=parts[0];  // roots | objects | profiles
+    const searchSeg=parts[1];  // search string segment
     const chain=parts[2]||'all';
-    if(byType[type]&&chain!=='all') byType[type][chain]=(byType[type][chain]||0)+cnt;
+    if(byType[type]&&chain!=='all'&&searchSeg==='*') byType[type][chain]=(byType[type][chain]||0)+cnt;
   }
   let html='';
   const chainLabel=(c)=>({''  :'All','btc':'BTC','btc-testnet':'TBTC','ltc':'LTC','dog':'DOG','mzc':'MZC'}[c.toLowerCase()]||c.toUpperCase());
