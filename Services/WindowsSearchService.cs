@@ -202,58 +202,44 @@ namespace P2FK.IO.Services
                 }
             }
 
-            string sanitized = isWildcard ? string.Empty : Sanitize(searchString ?? "");
-            bool hasSearch = !isWildcard && !string.IsNullOrWhiteSpace(sanitized);
+            // Wildcard: walk the root folders directly — complete, Windows-Search-independent,
+            // and always returns exactly one row per transaction folder regardless of how many
+            // other files that folder contains.
+            // Text search: use Windows Search so file content is matched; fall back to a
+            // filesystem scan if the index is not yet ready.
+            List<SearchRow> rows;
+            if (isWildcard)
+            {
+                rows = await DirectFolderScanAsync("ROOT.json");
+            }
+            else
+            {
+                string sanitized = Sanitize(searchString ?? "");
+                bool hasSearch = !string.IsNullOrWhiteSpace(sanitized);
 
-            // Use a forward-slash SCOPE URI as required by Windows Search; escape any single quotes
-            string scopeUri = "file:///" + _rootPath.Replace('\\', '/').Replace("'", "''");
+                string scopeUri = "file:///" + _rootPath.Replace('\\', '/').Replace("'", "''");
 
-            // For wildcard searches we only need one row per transaction folder.
-            // Querying ROOT.json directly yields exactly one row per folder, avoiding the
-            // multi-file-per-folder collision that caused a 10 000-row cap to cover far
-            // fewer than 10 000 unique transactions when each folder had several files.
-            //
-            // For text searches we still scan all file types so that PDFs, HTML, and other
-            // files in root/{txId}/ folders are matched; the txId is then extracted from
-            // the matched path to locate ROOT.json.
-            //
-            // TOP 100000 gives plenty of head-room (the directory tree currently has ~8 000
-            // root folders; 100 000 leaves room for 12× growth before the cap matters again).
-            string sql = isWildcard
-                ? $"""
-                    SELECT TOP 100000 System.ItemPathDisplay, System.DateModified
-                    FROM SystemIndex
-                    WHERE SCOPE='{scopeUri}'
-                      AND System.FileName = 'ROOT.json'
-                    ORDER BY System.DateModified DESC
-                    """
-                : hasSearch
-                ? $"""
-                    SELECT TOP 100000 System.ItemPathDisplay, System.DateModified
-                    FROM SystemIndex
-                    WHERE SCOPE='{scopeUri}'
-                      AND FREETEXT('{sanitized}')
-                    ORDER BY System.DateModified DESC
-                    """
-                : $"""
-                    SELECT TOP 100000 System.ItemPathDisplay, System.DateModified
-                    FROM SystemIndex
-                    WHERE SCOPE='{scopeUri}'
-                      AND System.FileName = 'ROOT.json'
-                    ORDER BY System.DateModified DESC
-                    """;
+                string sql = hasSearch
+                    ? $"""
+                        SELECT TOP 100000 System.ItemPathDisplay, System.DateModified
+                        FROM SystemIndex
+                        WHERE SCOPE='{scopeUri}'
+                          AND FREETEXT('{sanitized}')
+                        ORDER BY System.DateModified DESC
+                        """
+                    : $"""
+                        SELECT TOP 100000 System.ItemPathDisplay, System.DateModified
+                        FROM SystemIndex
+                        WHERE SCOPE='{scopeUri}'
+                          AND System.FileName = 'ROOT.json'
+                        ORDER BY System.DateModified DESC
+                        """;
 
-            var rows = await Task.Run(() => ExecuteSearchQuery(sql));
+                rows = await Task.Run(() => ExecuteSearchQuery(sql));
 
-            // If Windows Search returned nothing (index not ready or files not yet indexed),
-            // fall back to a direct filesystem scan so results are available immediately.
-            // For wildcard, enumerate ROOT.json files directly so the fallback also returns
-            // exactly one entry per folder and doesn't waste the 100 000-file cap on
-            // non-root files.
-            if (rows.Count == 0)
-                rows = await FallbackScanAsync(
-                    hasSearch ? "*" : "ROOT.json",
-                    isWildcard ? string.Empty : sanitized);
+                if (rows.Count == 0)
+                    rows = await FallbackScanAsync(hasSearch ? "*" : "ROOT.json", sanitized);
+            }
 
             // When filtering system files, do one fast pass over the rows Windows Search already
             // returned to identify system transaction IDs purely from the on-disk file names —
@@ -394,46 +380,41 @@ namespace P2FK.IO.Services
                 }
             }
 
-            string sanitized = isWildcard ? string.Empty : Sanitize(searchString ?? "");
-            bool hasSearch = !isWildcard && !string.IsNullOrWhiteSpace(sanitized);
+            // Wildcard: walk root folders directly for complete, index-independent enumeration.
+            // Text search: Windows Search with fallback.
+            List<SearchRow> rows;
+            if (isWildcard)
+            {
+                rows = await DirectFolderScanAsync("OBJ.json");
+            }
+            else
+            {
+                string sanitized = Sanitize(searchString ?? "");
+                bool hasSearch = !string.IsNullOrWhiteSpace(sanitized);
 
-            string scopeUri = "file:///" + _rootPath.Replace('\\', '/').Replace("'", "''");
+                string scopeUri = "file:///" + _rootPath.Replace('\\', '/').Replace("'", "''");
 
-            // For wildcard, enumerate OBJ.json directly: one row per address folder.
-            // For text searches, scan all file types so content in any folder file is matched.
-            // TOP 100000 gives ample head-room for growth.
-            string sql = isWildcard
-                ? $"""
-                    SELECT TOP 100000 System.ItemPathDisplay, System.DateModified
-                    FROM SystemIndex
-                    WHERE SCOPE='{scopeUri}'
-                      AND System.FileName = 'OBJ.json'
-                    ORDER BY System.DateModified DESC
-                    """
-                : hasSearch
-                ? $"""
-                    SELECT TOP 100000 System.ItemPathDisplay, System.DateModified
-                    FROM SystemIndex
-                    WHERE SCOPE='{scopeUri}'
-                      AND FREETEXT('{sanitized}')
-                    ORDER BY System.DateModified DESC
-                    """
-                : $"""
-                    SELECT TOP 100000 System.ItemPathDisplay, System.DateModified
-                    FROM SystemIndex
-                    WHERE SCOPE='{scopeUri}'
-                      AND System.FileName = 'OBJ.json'
-                    ORDER BY System.DateModified DESC
-                    """;
+                string sql = hasSearch
+                    ? $"""
+                        SELECT TOP 100000 System.ItemPathDisplay, System.DateModified
+                        FROM SystemIndex
+                        WHERE SCOPE='{scopeUri}'
+                          AND FREETEXT('{sanitized}')
+                        ORDER BY System.DateModified DESC
+                        """
+                    : $"""
+                        SELECT TOP 100000 System.ItemPathDisplay, System.DateModified
+                        FROM SystemIndex
+                        WHERE SCOPE='{scopeUri}'
+                          AND System.FileName = 'OBJ.json'
+                        ORDER BY System.DateModified DESC
+                        """;
 
-            var rows = await Task.Run(() => ExecuteSearchQuery(sql));
+                rows = await Task.Run(() => ExecuteSearchQuery(sql));
 
-            // If Windows Search returned nothing (index not ready or files not yet indexed),
-            // fall back to a direct filesystem scan so results are available immediately.
-            if (rows.Count == 0)
-                rows = await FallbackScanAsync(
-                    hasSearch ? "*" : "OBJ.json",
-                    isWildcard ? string.Empty : sanitized);
+                if (rows.Count == 0)
+                    rows = await FallbackScanAsync(hasSearch ? "*" : "OBJ.json", sanitized);
+            }
 
             // Deduplicate by address (parent folder) so multiple file hits from the same
             // folder are collapsed to one entry, keeping the newest-modified file per address.
@@ -532,45 +513,41 @@ namespace P2FK.IO.Services
                 }
             }
 
-            string sanitized = isWildcard ? string.Empty : Sanitize(searchString ?? "");
-            bool hasSearch = !isWildcard && !string.IsNullOrWhiteSpace(sanitized);
+            // Wildcard: walk root folders directly for complete, index-independent enumeration.
+            // Text search: Windows Search with fallback.
+            List<SearchRow> rows;
+            if (isWildcard)
+            {
+                rows = await DirectFolderScanAsync("GetProfileByAddress.json");
+            }
+            else
+            {
+                string sanitized = Sanitize(searchString ?? "");
+                bool hasSearch = !string.IsNullOrWhiteSpace(sanitized);
 
-            string scopeUri = "file:///" + _rootPath.Replace('\\', '/').Replace("'", "''");
+                string scopeUri = "file:///" + _rootPath.Replace('\\', '/').Replace("'", "''");
 
-            // For wildcard, enumerate GetProfileByAddress.json directly: one row per address
-            // folder.  For text searches, scan all file types.  TOP 100000 for head-room.
-            string sql = isWildcard
-                ? $"""
-                    SELECT TOP 100000 System.ItemPathDisplay, System.DateModified
-                    FROM SystemIndex
-                    WHERE SCOPE='{scopeUri}'
-                      AND System.FileName = 'GetProfileByAddress.json'
-                    ORDER BY System.DateModified DESC
-                    """
-                : hasSearch
-                ? $"""
-                    SELECT TOP 100000 System.ItemPathDisplay, System.DateModified
-                    FROM SystemIndex
-                    WHERE SCOPE='{scopeUri}'
-                      AND FREETEXT('{sanitized}')
-                    ORDER BY System.DateModified DESC
-                    """
-                : $"""
-                    SELECT TOP 100000 System.ItemPathDisplay, System.DateModified
-                    FROM SystemIndex
-                    WHERE SCOPE='{scopeUri}'
-                      AND System.FileName = 'GetProfileByAddress.json'
-                    ORDER BY System.DateModified DESC
-                    """;
+                string sql = hasSearch
+                    ? $"""
+                        SELECT TOP 100000 System.ItemPathDisplay, System.DateModified
+                        FROM SystemIndex
+                        WHERE SCOPE='{scopeUri}'
+                          AND FREETEXT('{sanitized}')
+                        ORDER BY System.DateModified DESC
+                        """
+                    : $"""
+                        SELECT TOP 100000 System.ItemPathDisplay, System.DateModified
+                        FROM SystemIndex
+                        WHERE SCOPE='{scopeUri}'
+                          AND System.FileName = 'GetProfileByAddress.json'
+                        ORDER BY System.DateModified DESC
+                        """;
 
-            var rows = await Task.Run(() => ExecuteSearchQuery(sql));
+                rows = await Task.Run(() => ExecuteSearchQuery(sql));
 
-            // If Windows Search returned nothing (index not ready or files not yet indexed),
-            // fall back to a direct filesystem scan so results are available immediately.
-            if (rows.Count == 0)
-                rows = await FallbackScanAsync(
-                    hasSearch ? "*" : "GetProfileByAddress.json",
-                    isWildcard ? string.Empty : sanitized);
+                if (rows.Count == 0)
+                    rows = await FallbackScanAsync(hasSearch ? "*" : "GetProfileByAddress.json", sanitized);
+            }
 
             // Deduplicate by address (parent folder) so multiple file hits from the same
             // folder are collapsed to one entry, keeping the newest-modified file per address.
@@ -637,7 +614,50 @@ namespace P2FK.IO.Services
             return SliceProfileResults(entries, skip, qty);
         }
 
-        // ── Fallback filesystem scan ───────────────────────────────────────────
+        // ── Direct folder scan (wildcard) ──────────────────────────────────────
+
+        /// <summary>
+        /// Enumerates the top-level sub-directories of <see cref="_rootPath"/> and
+        /// returns one <see cref="SearchRow"/> per directory that contains
+        /// <paramref name="jsonFileName"/>.
+        ///
+        /// This is used for wildcard ("*") queries where no text filtering is needed.
+        /// Walking directories directly is:
+        /// <list type="bullet">
+        ///   <item>Complete — not limited by Windows Search index coverage.</item>
+        ///   <item>Exact — one row per folder, no multi-file-per-folder collisions.</item>
+        ///   <item>Fast — single <c>Directory.EnumerateDirectories</c> call; no OLE DB.</item>
+        /// </list>
+        /// Results are returned sorted newest-modified first.
+        /// </summary>
+        private Task<List<SearchRow>> DirectFolderScanAsync(string jsonFileName)
+        {
+            return Task.Run(() =>
+            {
+                var rows = new List<SearchRow>();
+
+                if (!Directory.Exists(_rootPath))
+                    return rows;
+
+                foreach (string dir in Directory.EnumerateDirectories(_rootPath))
+                {
+                    string jsonPath = Path.Combine(dir, jsonFileName);
+                    if (!File.Exists(jsonPath)) continue;
+
+                    try
+                    {
+                        DateTime modified = File.GetLastWriteTimeUtc(jsonPath);
+                        rows.Add(new SearchRow(jsonPath, modified));
+                    }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+                }
+
+                rows.Sort((a, b) => b.Modified.CompareTo(a.Modified));
+                return rows;
+            });
+        }
+
+        // ── Fallback filesystem scan (text queries when Windows Search unavailable) ──
 
         /// <summary>
         /// Scans the <c>root</c> directory tree for files matching
@@ -645,7 +665,7 @@ namespace P2FK.IO.Services
         /// whose content contains <paramref name="searchString"/> (case-insensitive).
         /// When <paramref name="searchString"/> is empty or whitespace all matching
         /// files are returned without a content check.
-        /// Used when Windows Search has not yet indexed the files.
+        /// Used for text searches when Windows Search has not yet indexed the files.
         /// </summary>
         private Task<List<SearchRow>> FallbackScanAsync(string fileName, string searchString)
         {
@@ -664,7 +684,7 @@ namespace P2FK.IO.Services
                 {
                     // Hard cap: prevent the in-memory list from growing without bound
                     // when the index is cold and the tree is large.
-                    if (rows.Count >= 10_000) break;
+                    if (rows.Count >= 100_000) break;
 
                     try
                     {
