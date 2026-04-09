@@ -65,7 +65,7 @@
       align-items: center;
       gap: 6px;
       flex: 1;
-      max-width: 680px;
+      min-width: 0;
     }
     #navbar-search-input {
       flex: 1;
@@ -98,7 +98,6 @@
       align-items: center;
       gap: 12px;
       flex-shrink: 0;
-      margin-left: auto;
     }
     .nav-links a {
       color: #b0b0b0;
@@ -601,7 +600,7 @@
     @media (max-width: 600px) {
       #navbar .brand span { display: none; }
       .nav-links { gap: 6px; }
-      #search-form { max-width: 220px; }
+      #search-form { flex: 1; }
       .nav-links a { font-size: 0.72em; padding: 3px 5px; }
       #filter-bar { font-size: 0.72em; gap: 3px 8px; }
       .profile-panel { flex-direction: column; }
@@ -630,10 +629,10 @@
   </form>
   <div class="nav-links">
     <span id="cache-status" title="Cache status">
-      <span id="cache-dot" class="unknown">●</span> Cache
+      <span id="cache-dot" class="unknown">●</span>
       <span id="cache-tooltip"><span class="ct-title">Cache Status</span><div id="cache-tooltip-body"></div></span>
     </span>
-    <a href="/API" target="_blank" rel="noopener">API Docs</a>
+    <a href="/API" target="_blank" rel="noopener">API</a>
   </div>
 </nav>
 
