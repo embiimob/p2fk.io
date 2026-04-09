@@ -967,7 +967,7 @@ const parseMessage=async(messageText,mainnet,signal)=>{
   const attachments=[],links=[];
   const urnRegex=/@([A-Za-z0-9]+(?:\/[A-Za-z0-9]+)?)/g;
   const keywordRegex=/#([\w]+)/g;
-  let clean=messageText.replace(/<<[^>]+>>/g,'').trim();
+  let clean=escapeHtml(messageText.replace(/<<[^>]+>>/g,'').trim());
   const attMatches=messageText.match(/<<[^>]+>>/g)||[];
   attMatches.forEach(m=>{
     const c=m.slice(2,-2).replace(/\s+/g,'').trim();
