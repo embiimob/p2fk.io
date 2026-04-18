@@ -369,6 +369,11 @@
     .message-thread-item-body { font-size: 0.8em; color: #cfcfcf; white-space: pre-wrap; word-break: break-word; }
     .message-thread-note { font-size: 0.7em; color: #666; }
     .message-attachments { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+    .message-thread-retweet-ref { margin-top: 4px; font-size: 0.82em; color: #7fdccf; }
+    .message-thread-retweet-ref .txid-copy { cursor: pointer; }
+    .msg-engagement-item { cursor: default; }
+    .msg-engagement-item[data-has-users="1"] { cursor: pointer; }
+    .thread-user-tip { position: fixed; z-index: 9999; background: #1e1e1e; border: 1px solid #444; border-radius: 6px; padding: 6px 10px; font-size: 0.72em; color: #ddd; pointer-events: none; max-width: 240px; box-shadow: 0 4px 12px rgba(0,0,0,0.6); white-space: pre; display: none; }
     .message-attachments img { max-width: 100%; max-height: 280px; object-fit: cover; border-radius: 5px; background: #333; }
     .message-attachments audio { width: 100%; }
     .message-attachments video { max-width: 100%; max-height: 280px; border-radius: 5px; }
@@ -1020,7 +1025,7 @@ const parseMessage=async(messageText,mainnet,signal)=>{
   attMatches.forEach(m=>{
     const c=m.slice(2,-2).replace(/\s+/g,'').trim();
     if(c.match(/^-?\d+$/)||c.match(/#[\w\s#]+/)||c.match(/^#[\w\s]+$/)) return;
-    if(!/^IPFS:/i.test(c)&&!/^[0-9a-f]{64}(?:[/\\]|$)/i.test(c)&&!/^https?:\/\//i.test(c)) return;
+    if(!/^IPFS:/i.test(c)&&!/^[0-9a-f]{64}[/\\]/i.test(c)&&!/^https?:\/\//i.test(c)) return;
     if(/^https?:\/\//i.test(c)) links.push(c);
     else attachments.push(c);
   });
@@ -1241,7 +1246,7 @@ const normalizeRoot=(root)=>{
   return{message:msg,fromAddress:signedBy,toAddresses,blockDate,txId,files,confirmations};
 };
 
-const emptyThreadData=()=>({address:'',entries:[],totals:{comments:0,retweets:0,likes:0},truncated:false});
+const emptyThreadData=()=>({address:'',entries:[],totals:{comments:0,retweets:0,likes:0},users:{comments:[],retweets:[],likes:[]},truncated:false});
 // Classifies a thread message into one or more action labels.
 //
 // Rules (all embedded content uses << >> double angle brackets):
@@ -1321,13 +1326,14 @@ const getMessageThreadDataByTxid=async(txid,mainnet,signal)=>{
         entries.push({ normalized:n, actions:classifyThreadActions(n.message) });
       }
       const totals={comments:0,retweets:0,likes:0};
+      const users={comments:[],retweets:[],likes:[]};
       for(const e of entries){
         // An entry can contribute to multiple totals (e.g. like + comment)
-        if(e.actions.includes('like')) totals.likes+=1;
-        if(e.actions.includes('retweet')) totals.retweets+=1;
-        if(e.actions.includes('comment')) totals.comments+=1;
+        if(e.actions.includes('like')){ totals.likes+=1; users.likes.push(e.normalized.fromAddress); }
+        if(e.actions.includes('retweet')){ totals.retweets+=1; users.retweets.push(e.normalized.fromAddress); }
+        if(e.actions.includes('comment')){ totals.comments+=1; users.comments.push(e.normalized.fromAddress); }
       }
-      const out={address,entries,totals,truncated:!!fetched.truncated};
+      const out={address,entries,totals,users,truncated:!!fetched.truncated};
       threadDataCache.set(key,out);
       return out;
     }catch(e){
@@ -1381,6 +1387,10 @@ const renderThreadEntryItem=async(entry,mainnet,blockchain,signal)=>{
   const body=document.createElement('div');
   body.className='message-thread-item-body';
 
+  // Extract retweeted txid(s) embedded as <<64-char-hex>> markers
+  const decodedMsg=String(n.message??'').replace(/&lt;/g,'<').replace(/&gt;/g,'>');
+  const retweetTxids=isRetweet?[...decodedMsg.matchAll(/<<([0-9a-fA-F]{64})>>/g)].map(m=>m[1].toLowerCase()):[];
+
   if(isComment){
     // Full message rendering: text + inline files + media/link attachments
     const parsed=await parseMessage(n.message,mainnet,signal);
@@ -1396,14 +1406,26 @@ const renderThreadEntryItem=async(entry,mainnet,blockchain,signal)=>{
       renderAttachments(attDiv,parsed.attachments,parsed.links,blockchain||'BTC');
       body.appendChild(attDiv);
     }
-    if(!parsed.cleanMessage&&!parsed.attachments.length&&!parsed.links.length){
+    if(!parsed.cleanMessage&&!parsed.attachments.length&&!parsed.links.length&&!isRetweet){
       body.textContent='(no content)';
     }
-  } else if(isLike&&isRetweet){
-    body.textContent='Liked and retweeted this message';
-  } else if(isLike){
-    body.textContent='Liked this message';
-  } else if(isRetweet){
+  }
+
+  // Show retweeted message reference(s) as clickable txid links
+  if(isRetweet&&retweetTxids.length){
+    const rtDiv=document.createElement('div');
+    rtDiv.className='message-thread-retweet-ref';
+    retweetTxids.forEach(rtxid=>{
+      const link=document.createElement('span');
+      link.className='txid-copy';
+      link.dataset.txid=rtxid;
+      link.title='Copy txid of retweeted message';
+      link.textContent=`↩️ ${rtxid.slice(0,8)}…`;
+      rtDiv.appendChild(link);
+    });
+    body.appendChild(rtDiv);
+  } else if(isRetweet&&!retweetTxids.length){
+    // Retweet ref present but txid not parseable
     body.textContent='Retweeted this message';
   }
 
@@ -1420,16 +1442,35 @@ const loadMessageThreadUI=async(txid,mainnet,engagementEl,threadEl,signal,blockc
   if(commentsCountEl) commentsCountEl.textContent=String(data.totals.comments||0);
   if(retweetsCountEl) retweetsCountEl.textContent=String(data.totals.retweets||0);
   if(likesCountEl) likesCountEl.textContent=String(data.totals.likes||0);
+
+  // ── Hover tooltip: show abbreviated user list per engagement category ──
+  const abbr=a=>a?(a.length>16?a.slice(0,8)+'…'+a.slice(-4):a):'?';
+  let tip=document.querySelector('.thread-user-tip');
+  if(!tip){tip=document.createElement('div');tip.className='thread-user-tip';document.body.appendChild(tip);}
+  const addTip=(parentEl,addresses)=>{
+    if(!parentEl||!addresses||!addresses.length) return;
+    parentEl.dataset.hasUsers='1';
+    parentEl.addEventListener('mouseenter',ev=>{tip.textContent=addresses.map(abbr).join('\n');tip.style.display='';tip.style.left=(ev.clientX+14)+'px';tip.style.top=(ev.clientY+14)+'px';});
+    parentEl.addEventListener('mousemove',ev=>{tip.style.left=(ev.clientX+14)+'px';tip.style.top=(ev.clientY+14)+'px';});
+    parentEl.addEventListener('mouseleave',()=>{tip.style.display='none';});
+  };
+  const users=data.users||{comments:[],retweets:[],likes:[]};
+  addTip(commentsCountEl?.closest('.msg-engagement-item'),users.comments);
+  addTip(retweetsCountEl?.closest('.msg-engagement-item'),users.retweets);
+  addTip(likesCountEl?.closest('.msg-engagement-item'),users.likes);
+
   if(!data.address){
     threadEl.innerHTML='<div class="message-thread-empty">No thread found yet for this message.</div>';
     return;
   }
-  if(!Array.isArray(data.entries)||!data.entries.length){
+  // Only render entries that have at least a comment or retweet — pure likes are counted but not shown
+  const visibleEntries=(data.entries||[]).filter(e=>e.actions.includes('comment')||e.actions.includes('retweet'));
+  if(!visibleEntries.length){
     threadEl.innerHTML='<div class="message-thread-empty">Thread found, but no replies yet.</div>';
     return;
   }
   threadEl.innerHTML='<div class="message-thread-loading">Loading replies…</div>';
-  const nodes=await Promise.all(data.entries.map(e=>renderThreadEntryItem(e,mainnet,blockchain,signal)));
+  const nodes=await Promise.all(visibleEntries.map(e=>renderThreadEntryItem(e,mainnet,blockchain,signal)));
   threadEl.innerHTML='';
   nodes.forEach(n=>threadEl.appendChild(n));
   if(data.truncated){
