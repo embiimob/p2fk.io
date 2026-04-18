@@ -1340,6 +1340,15 @@ const getMessageThreadDataByTxid=async(txid,mainnet,signal)=>{
         if(String(n.txId).toLowerCase()===txidLower) continue;
         entries.push({ normalized:n, actions:classifyThreadActions(n.message) });
       }
+      // The public-messages CLI omits "Signed By" → resolve sender for each entry via GetRootByTransactionID
+      await Promise.all(entries.map(async e=>{
+        if(e.normalized.fromAddress||!e.normalized.txId) return;
+        try{
+          const raw=await fetchAPI(`${BASE_URL}/GetRootByTransactionID/${encodeURIComponent(e.normalized.txId)}?mainnet=${mainnet}&verbose=false`,'',signal,10000);
+          const full=normalizeRoot(raw);
+          if(full&&full.fromAddress) e.normalized.fromAddress=full.fromAddress;
+        }catch{}
+      }));
       const totals={comments:0,retweets:0,likes:0};
       const users={comments:[],retweets:[],likes:[]};
       for(const e of entries){
