@@ -1243,7 +1243,6 @@ const normalizeRoot=(root)=>{
 
 const emptyThreadData=()=>({address:'',entries:[],totals:{comments:0,retweets:0,likes:0},truncated:false});
 // Classifies a thread message into one or more action labels.
-// parentTxid is the txid of the message whose thread this is (the "salt").
 //
 // Rules (all embedded content uses << >> double angle brackets):
 //   <<salt>>                           → like
@@ -1251,32 +1250,31 @@ const emptyThreadData=()=>({address:'',entries:[],totals:{comments:0,retweets:0,
 //   message<<salt>>                    → comment
 //   message<<txid>>message<<salt>>     → comment, retweet, like
 //
-// Where "salt"  = the parent message's txid (marks a like)
-//       "txid"  = any other embedded txid         (marks a retweet)
-//       text outside << >>                         (marks a comment)
+// Where "salt"  = any <<ref>> whose content is NOT a 64-char hex txid (like marker)
+//       "txid"  = any <<ref>> whose content IS  a 64-char hex txid    (retweet reference)
+//       text outside << >>                                              (comment)
 //
-// Like rule: parent txid is embedded AND (no surrounding text OR a retweet ref is also present).
-const classifyThreadActions=(msg,parentTxid)=>{
-  // Decode HTML entities first so <<...>> matching works regardless of CLI encoding
+// Like: salt is present AND (no text OR a txid ref is also present).
+const TXID_RE=/^[a-fA-F0-9]{64}$/;
+const classifyThreadActions=(msg)=>{
+  // Decode HTML entities so <<...>> matching works regardless of CLI encoding
   const decoded=String(msg??'').replace(/&lt;/g,'<').replace(/&gt;/g,'>');
-  const parentLower=String(parentTxid||'').toLowerCase();
 
   // Extract all embedded references from <<content>> markers
-  const fileRefs=[...decoded.matchAll(/<<([^>]+)>>/g)].map(m=>m[1].trim().toLowerCase());
+  const fileRefs=[...decoded.matchAll(/<<([^>]+)>>/g)].map(m=>m[1].trim());
   // Text remaining after stripping all <<...>> markers
   const remainingText=decoded.replace(/<<[^>]+>>/g,'').trim();
 
-  const hasParentRef=parentLower&&fileRefs.some(r=>r===parentLower);
-  const hasOtherRef =fileRefs.some(r=>r!==parentLower);
-  const hasText     =remainingText.length>0;
+  const hasTxidRef=fileRefs.some(r=>TXID_RE.test(r));  // <<64-char-hex>> = retweet ref
+  const hasSalt   =fileRefs.some(r=>!TXID_RE.test(r)); // <<anything-else>> = salt = like marker
+  const hasText   =remainingText.length>0;
 
   const actions=[];
-  if(hasText)      actions.push('comment');
-  if(hasOtherRef)  actions.push('retweet');
-  // Like: parent txid referenced AND (no text, OR a retweet ref is also present)
-  if(hasParentRef&&(!hasText||hasOtherRef)) actions.push('like');
+  if(hasText)                          actions.push('comment');
+  if(hasTxidRef)                       actions.push('retweet');
+  if(hasSalt&&(!hasText||hasTxidRef))  actions.push('like');
 
-  // Fallback: treat as comment if nothing else matched
+  // Fallback: treat as comment if nothing matched (e.g. empty message)
   if(!actions.length) actions.push('comment');
   return actions;
 };
@@ -1320,7 +1318,7 @@ const getMessageThreadDataByTxid=async(txid,mainnet,signal)=>{
         const n=normalizeRoot(root);
         if(!n||!n.txId) continue;
         if(String(n.txId).toLowerCase()===txidLower) continue;
-        entries.push({ normalized:n, actions:classifyThreadActions(n.message, txidLower) });
+        entries.push({ normalized:n, actions:classifyThreadActions(n.message) });
       }
       const totals={comments:0,retweets:0,likes:0};
       for(const e of entries){
