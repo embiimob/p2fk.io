@@ -1032,11 +1032,13 @@ const createUrnLink=(text,address)=>{
 
 // ── Message parsing ────────────────────────────────────────────────────
 const parseMessage=async(messageText,mainnet,signal)=>{
+  // Decode HTML entities (CLI encodes < > as &lt; &gt;) before matching <<...>> patterns
+  const decoded=String(messageText??'').replace(/&lt;/g,'<').replace(/&gt;/g,'>');
   const attachments=[],links=[];
   const urnRegex=/@([A-Za-z0-9]+(?:\/[A-Za-z0-9]+)?)/g;
   const keywordRegex=/#([\w]+)/g;
-  let clean=escapeHtml(messageText.replace(/<<[^>]+>>/g,'').trim());
-  const attMatches=messageText.match(/<<[^>]+>>/g)||[];
+  let clean=escapeHtml(decoded.replace(/<<[^>]+>>/g,'').trim());
+  const attMatches=decoded.match(/<<[^>]+>>/g)||[];
   attMatches.forEach(m=>{
     const c=m.slice(2,-2).replace(/\s+/g,'').trim();
     if(c.match(/^-?\d+$/)||c.match(/#[\w\s#]+/)||c.match(/^#[\w\s]+$/)) return;
@@ -1613,7 +1615,14 @@ const renderMessageCard=async(normalized,signal,blockchain,shareParams)=>{
   const chainUpper=(blockchain||'').toUpperCase();
   const mainnet=(chainUpper==='BTC-TESTNET'||chainUpper==='TBTC')?false:true;
   const{cleanMessage,attachments,links}=await parseMessage(normalized.message,mainnet,signal);
-  if(normalized.txId&&normalized.files?.length){for(const f of normalized.files)if(f)attachments.push({hash:normalized.txId,filename:f});}
+  if(normalized.txId&&normalized.files?.length){
+    // Only add files not already extracted from the message text (avoids duplicate poll cards)
+    const existingFilenames=new Set(attachments.map(a=>(a.filename||'').toLowerCase()));
+    for(const f of normalized.files)if(f&&!existingFilenames.has(f.toLowerCase()))attachments.push({hash:normalized.txId,filename:f});
+  }
+  // Collect standalone <<txid>> references for inline retweet embedding
+  const decodedMsg=String(normalized.message??'').replace(/&lt;/g,'<').replace(/&gt;/g,'>');
+  const inlineRtTxids=[...decodedMsg.matchAll(/<<([0-9a-fA-F]{64})>>/g)].map(m=>m[1].toLowerCase());
 
   const fromProfile=await fetchProfileByAddress(normalized.fromAddress,mainnet,signal);
   const fromName=fromProfile?(fromProfile.DisplayName||fromProfile.URN||abbreviateAddress(normalized.fromAddress)):abbreviateAddress(normalized.fromAddress);
@@ -1652,6 +1661,12 @@ const renderMessageCard=async(normalized,signal,blockchain,shareParams)=>{
   // Attachments
   const ad=document.createElement('div');ad.className='message-attachments';
   renderAttachments(ad,attachments,links,blockchain);card.appendChild(ad);
+
+  // Inline retweet embeds (standalone <<txid>> references in the message body)
+  if(inlineRtTxids.length){
+    const rtCards=await Promise.all(inlineRtTxids.map(rtxid=>renderRetweetEmbed(rtxid,mainnet,blockchain,signal)));
+    rtCards.forEach(rc=>card.appendChild(rc));
+  }
 
   // Meta
   const meta=document.createElement('div');meta.className='message-meta';
