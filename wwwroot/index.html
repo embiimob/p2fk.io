@@ -789,8 +789,6 @@ const CHAINS = {
 const CHAIN_UPPER_TO_API = { 'BTC':'BTC','TBTC':'BTC','LTC':'LTC','DOG':'DOG','MZC':'MZC' };
 const threadDataCache = new Map();
 const threadDataInflight = new Map();
-const THREAD_RETWEET_PATTERN = /^(retweet|repost|rt)(?:\s|$|[!.,])/i;
-const THREAD_LIKE_PATTERN = /^(like|fav|favorite)(?:\s|$)/i;
 
 
 
@@ -1244,19 +1242,43 @@ const normalizeRoot=(root)=>{
 };
 
 const emptyThreadData=()=>({address:'',entries:[],totals:{comments:0,retweets:0,likes:0},truncated:false});
-const stripInlineFiles=(msg)=>{
-  // Strip embedded file markers like <<IPFS:...>> or <<txid/file>>,
-  // but keep standalone shorthand symbols "<" and "<<" used for like/retweet actions.
-  return String(msg??'').replace(/<<[^>]+>>/g,'').trim();
-};
-const classifyThreadAction=(msg)=>{
-  const clean=stripInlineFiles(msg);
-  // Sup!? social thread shorthand:
-  // "<"  = like
-  // "<<" = retweet
-  if(/^<<$/.test(clean)||THREAD_RETWEET_PATTERN.test(clean)||/^🔁(?:\s|$)/.test(clean)) return 'retweet';
-  if(/^<$/.test(clean)||THREAD_LIKE_PATTERN.test(clean)||/^(❤️|❤|♥)(?:\s|$|[!.,])/.test(clean)) return 'like';
-  return 'comment';
+// Classifies a thread message into one or more action labels.
+// parentTxid is the txid of the message whose thread this is (the "salt").
+//
+// Rules (all embedded content uses << >> double angle brackets):
+//   <<salt>>                           → like
+//   <<txid>><<salt>>                   → like, retweet
+//   message<<salt>>                    → comment
+//   message<<txid>>message<<salt>>     → comment, retweet, like
+//
+// Where "salt"  = the parent message's txid (marks a like)
+//       "txid"  = any other embedded txid         (marks a retweet)
+//       text outside << >>                         (marks a comment)
+//
+// Like rule: parent txid is embedded AND (no surrounding text OR a retweet ref is also present).
+const classifyThreadActions=(msg,parentTxid)=>{
+  // Decode HTML entities first so <<...>> matching works regardless of CLI encoding
+  const decoded=String(msg??'').replace(/&lt;/g,'<').replace(/&gt;/g,'>');
+  const parentLower=String(parentTxid||'').toLowerCase();
+
+  // Extract all embedded references from <<content>> markers
+  const fileRefs=[...decoded.matchAll(/<<([^>]+)>>/g)].map(m=>m[1].trim().toLowerCase());
+  // Text remaining after stripping all <<...>> markers
+  const remainingText=decoded.replace(/<<[^>]+>>/g,'').trim();
+
+  const hasParentRef=parentLower&&fileRefs.some(r=>r===parentLower);
+  const hasOtherRef =fileRefs.some(r=>r!==parentLower);
+  const hasText     =remainingText.length>0;
+
+  const actions=[];
+  if(hasText)      actions.push('comment');
+  if(hasOtherRef)  actions.push('retweet');
+  // Like: parent txid referenced AND (no text, OR a retweet ref is also present)
+  if(hasParentRef&&(!hasText||hasOtherRef)) actions.push('like');
+
+  // Fallback: treat as comment if nothing else matched
+  if(!actions.length) actions.push('comment');
+  return actions;
 };
 
 const fetchAllPublicMessagesByAddress=async(address,mainnet,signal,maxScan=THREAD_MESSAGE_LIMIT)=>{
@@ -1298,13 +1320,14 @@ const getMessageThreadDataByTxid=async(txid,mainnet,signal)=>{
         const n=normalizeRoot(root);
         if(!n||!n.txId) continue;
         if(String(n.txId).toLowerCase()===txidLower) continue;
-        entries.push({ normalized:n, action:classifyThreadAction(n.message) });
+        entries.push({ normalized:n, actions:classifyThreadActions(n.message, txidLower) });
       }
       const totals={comments:0,retweets:0,likes:0};
       for(const e of entries){
-        if(e.action==='like') totals.likes+=1;
-        else if(e.action==='retweet') totals.retweets+=1;
-        else totals.comments+=1;
+        // An entry can contribute to multiple totals (e.g. like + comment)
+        if(e.actions.includes('like')) totals.likes+=1;
+        if(e.actions.includes('retweet')) totals.retweets+=1;
+        if(e.actions.includes('comment')) totals.comments+=1;
       }
       const out={address,entries,totals,truncated:!!fetched.truncated};
       threadDataCache.set(key,out);
@@ -1322,27 +1345,75 @@ const getMessageThreadDataByTxid=async(txid,mainnet,signal)=>{
   return run;
 };
 
-const renderThreadEntryItem=async(entry,mainnet,signal)=>{
+const renderThreadEntryItem=async(entry,mainnet,blockchain,signal)=>{
   const n=entry.normalized;
-  const action=entry.action||'comment';
+  const actions=entry.actions||['comment'];
+  const isLike=actions.includes('like');
+  const isRetweet=actions.includes('retweet');
+  const isComment=actions.includes('comment');
+
   const item=document.createElement('div');
   item.className='message-thread-item';
+
+  // ── Head: action badge(s) + sender + date ──
+  const head=document.createElement('div');
+  head.className='message-thread-item-head';
+  // Build badge(s) — an entry can have multiple (e.g. like + comment)
+  if(isLike)    head.innerHTML+=`<span class="message-thread-item-kind like">❤️ Like</span>`;
+  if(isRetweet) head.innerHTML+=`<span class="message-thread-item-kind retweet">🔁 Retweet</span>`;
+  if(isComment) head.innerHTML+=`<span class="message-thread-item-kind comment">💬 Comment</span>`;
+
   const p=await fetchProfileByAddress(n.fromAddress,mainnet,signal);
   const senderName=p?(p.DisplayName||p.URN||abbreviateAddress(n.fromAddress)):abbreviateAddress(n.fromAddress);
   const formattedDate=formatDate(n.blockDate);
   const dateText=(formattedDate!==null&&formattedDate!==undefined&&formattedDate!=='')?formattedDate:(n.blockDate||'');
-  let bodyHtml='Comment';
-  if(action==='like') bodyHtml='Liked this message';
-  else if(action==='retweet') bodyHtml='Retweeted this message';
-  else{
-    const parsed=await parseMessage(n.message,mainnet,signal);
-    bodyHtml=parsed.cleanMessage||'Comment';
+
+  const senderSpan=document.createElement('span');
+  senderSpan.innerHTML=createUrnLink(senderName,n.fromAddress);
+  head.appendChild(senderSpan);
+  if(dateText){
+    const dateSpan=document.createElement('span');
+    dateSpan.className='message-thread-item-date';
+    dateSpan.textContent=dateText;
+    head.appendChild(dateSpan);
   }
-  item.innerHTML=`<div class="message-thread-item-head"><span class="message-thread-item-kind ${action}">${action==='like'?'❤️ Like':action==='retweet'?'🔁 Retweet':'💬 Comment'}</span>${createUrnLink(senderName,n.fromAddress)}${dateText?`<span class="message-thread-item-date">${escapeHtml(dateText)}</span>`:''}</div><div class="message-thread-item-body">${bodyHtml}</div>`;
+  item.appendChild(head);
+
+  // ── Body ──
+  const body=document.createElement('div');
+  body.className='message-thread-item-body';
+
+  if(isComment){
+    // Full message rendering: text + inline files + media/link attachments
+    const parsed=await parseMessage(n.message,mainnet,signal);
+    if(n.txId&&n.files?.length){for(const f of n.files)if(f) parsed.attachments.push({hash:n.txId,filename:f});}
+    if(parsed.cleanMessage){
+      const textEl=document.createElement('p');
+      textEl.innerHTML=parsed.cleanMessage;
+      body.appendChild(textEl);
+    }
+    if(parsed.attachments.length||parsed.links.length){
+      const attDiv=document.createElement('div');
+      attDiv.className='message-attachments';
+      renderAttachments(attDiv,parsed.attachments,parsed.links,blockchain||'BTC');
+      body.appendChild(attDiv);
+    }
+    if(!parsed.cleanMessage&&!parsed.attachments.length&&!parsed.links.length){
+      body.textContent='(no content)';
+    }
+  } else if(isLike&&isRetweet){
+    body.textContent='Liked and retweeted this message';
+  } else if(isLike){
+    body.textContent='Liked this message';
+  } else if(isRetweet){
+    body.textContent='Retweeted this message';
+  }
+
+  item.appendChild(body);
   return item;
 };
 
-const loadMessageThreadUI=async(txid,mainnet,engagementEl,threadEl,signal)=>{
+const loadMessageThreadUI=async(txid,mainnet,engagementEl,threadEl,signal,blockchain)=>{
   if(!txid||!engagementEl||!threadEl) return;
   const commentsCountEl=engagementEl.querySelector('[data-count="comments"]');
   const retweetsCountEl=engagementEl.querySelector('[data-count="retweets"]');
@@ -1360,7 +1431,7 @@ const loadMessageThreadUI=async(txid,mainnet,engagementEl,threadEl,signal)=>{
     return;
   }
   threadEl.innerHTML='<div class="message-thread-loading">Loading replies…</div>';
-  const nodes=await Promise.all(data.entries.map(e=>renderThreadEntryItem(e,mainnet,signal)));
+  const nodes=await Promise.all(data.entries.map(e=>renderThreadEntryItem(e,mainnet,blockchain,signal)));
   threadEl.innerHTML='';
   nodes.forEach(n=>threadEl.appendChild(n));
   if(data.truncated){
@@ -1444,7 +1515,7 @@ const renderMessageCard=async(normalized,signal,blockchain,shareParams)=>{
   threadEl.innerHTML='<div class="message-thread-loading">Loading thread…</div>';
   card.appendChild(threadEl);
   if(normalized.txId){
-    loadMessageThreadUI(normalized.txId,mainnet,engagement,threadEl,signal).catch(()=>{
+    loadMessageThreadUI(normalized.txId,mainnet,engagement,threadEl,signal,blockchain).catch(()=>{
       threadEl.innerHTML='<div class="message-thread-empty">Thread failed to load.</div>';
       resetEngagementCounts(engagement);
     });
