@@ -374,7 +374,16 @@
     .message-thread-retweet-ref .txid-copy { cursor: pointer; }
     .msg-engagement-item { cursor: default; }
     .msg-engagement-item[data-has-users="1"] { cursor: pointer; }
-    .thread-user-tip { position: fixed; z-index: 9999; background: #1e1e1e; border: 1px solid #444; border-radius: 6px; padding: 6px 10px; font-size: 0.72em; color: #ddd; max-width: 240px; box-shadow: 0 4px 12px rgba(0,0,0,0.6); white-space: pre; display: none; }
+    .eng-panel { position: absolute; z-index: 9999; background: #1e1e1e; border: 1px solid #444; border-radius: 8px; padding: 8px 0; min-width: 220px; max-width: 280px; box-shadow: 0 6px 20px rgba(0,0,0,0.65); }
+    .eng-panel-title { font-size: 0.78em; font-weight: bold; color: #bb86fc; padding: 0 12px 6px; border-bottom: 1px solid #333; margin-bottom: 4px; }
+    .eng-panel-list { max-height: 340px; overflow-y: auto; }
+    .eng-panel-row { display: flex; justify-content: space-between; gap: 10px; padding: 4px 12px; font-size: 0.74em; color: #ccc; }
+    .eng-panel-row:hover { background: #2a2a2a; }
+    .eng-panel-name { color: #7fdccf; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 150px; }
+    .eng-panel-date { color: #888; white-space: nowrap; font-family: monospace; font-size: 0.92em; }
+    .eng-panel-empty { font-size: 0.74em; color: #666; padding: 6px 12px; font-style: italic; }
+    .eng-panel-more { display: block; width: calc(100% - 24px); margin: 6px 12px 2px; background: #2a2a2a; border: 1px solid #444; border-radius: 5px; color: #aaa; font-size: 0.74em; cursor: pointer; padding: 4px 0; }
+    .eng-panel-more:hover { background: #333; color: #e0e0e0; }
     .retweet-embed-card { background: #111; border: 1px solid #2b4a45; border-left: 3px solid #2d7d70; border-radius: 6px; padding: 7px 10px; margin-top: 6px; }
     .retweet-embed-card .rt-sender { font-weight: bold; color: #7fdccf; margin-bottom: 3px; font-size: 0.82em; }
     .retweet-embed-card .rt-body { font-size: 0.85em; color: #cfcfcf; white-space: pre-wrap; word-break: break-word; }
@@ -1335,9 +1344,9 @@ const getMessageThreadDataByTxid=async(txid,mainnet,signal)=>{
       const users={comments:[],retweets:[],likes:[]};
       for(const e of entries){
         // An entry can contribute to multiple totals (e.g. like + comment)
-        if(e.actions.includes('like')){ totals.likes+=1; users.likes.push(e.normalized.fromAddress); }
-        if(e.actions.includes('retweet')){ totals.retweets+=1; users.retweets.push(e.normalized.fromAddress); }
-        if(e.actions.includes('comment')){ totals.comments+=1; users.comments.push(e.normalized.fromAddress); }
+        if(e.actions.includes('like')){ totals.likes+=1; users.likes.push({address:e.normalized.fromAddress,date:e.normalized.blockDate}); }
+        if(e.actions.includes('retweet')){ totals.retweets+=1; users.retweets.push({address:e.normalized.fromAddress,date:e.normalized.blockDate}); }
+        if(e.actions.includes('comment')){ totals.comments+=1; users.comments.push({address:e.normalized.fromAddress,date:e.normalized.blockDate}); }
       }
       const out={address,entries,totals,users,truncated:!!fetched.truncated};
       threadDataCache.set(key,out);
@@ -1419,8 +1428,7 @@ const renderThreadEntryItem=async(entry,mainnet,blockchain,signal)=>{
   // ── Head: action badge(s) + sender + date ──
   const head=document.createElement('div');
   head.className='message-thread-item-head';
-  // Build badge(s) — an entry can have multiple (e.g. like + comment)
-  if(isLike)    head.innerHTML+=`<span class="message-thread-item-kind like">❤️ Like</span>`;
+  // Build badge(s) — only show Retweet and Comment labels (Like is shown in the engagement row only)
   if(isRetweet) head.innerHTML+=`<span class="message-thread-item-kind retweet">🔁 Retweet</span>`;
   if(isComment) head.innerHTML+=`<span class="message-thread-item-kind comment">💬 Comment</span>`;
 
@@ -1493,38 +1501,77 @@ const loadMessageThreadUI=async(txid,mainnet,engagementEl,threadEl,signal,blockc
   if(retweetsCountEl) retweetsCountEl.textContent=String(data.totals.retweets||0);
   if(likesCountEl) likesCountEl.textContent=String(data.totals.likes||0);
 
-  // ── Tooltip: show user list per engagement category on hover AND click/tap ──
-  const abbr=a=>a?(a.length>16?a.slice(0,8)+'…'+a.slice(-4):a):'?';
-  let tip=document.querySelector('.thread-user-tip');
-  if(!tip){tip=document.createElement('div');tip.className='thread-user-tip';document.body.appendChild(tip);}
-  const hideTip=()=>{tip.style.display='none';};
-  const showTip=(addresses,x,y)=>{tip.textContent=addresses.map(abbr).join('\n');tip.style.left=(x+14)+'px';tip.style.top=(y+14)+'px';tip.style.display='';};
-  const addTip=(parentEl,addresses)=>{
-    if(!parentEl||!addresses||!addresses.length) return;
-    parentEl.dataset.hasUsers='1';
-    parentEl.addEventListener('mouseenter',ev=>{showTip(addresses,ev.clientX,ev.clientY);});
-    parentEl.addEventListener('mousemove',ev=>{tip.style.left=(ev.clientX+14)+'px';tip.style.top=(ev.clientY+14)+'px';});
-    parentEl.addEventListener('mouseleave',hideTip);
-    parentEl.addEventListener('click',ev=>{
-      ev.stopPropagation();
-      if(tip.style.display==='none'||!tip.style.display){
-        const r=parentEl.getBoundingClientRect();
-        showTip(addresses,r.left,r.bottom+4);
-      }else{hideTip();}
-    });
-    parentEl.addEventListener('touchstart',ev=>{
-      ev.preventDefault();
-      if(tip.style.display==='none'||!tip.style.display){
-        const t=ev.touches[0];
-        showTip(addresses,t.clientX,t.clientY+24);
-      }else{hideTip();}
-    },{passive:false});
+  // ── Engagement panel: click/hover shows user+date list (top 20 + load-more) ──
+  const ENG_PAGE=20;
+  let engPanel=document.getElementById('eng-panel');
+  if(!engPanel){
+    engPanel=document.createElement('div');engPanel.id='eng-panel';engPanel.className='eng-panel';
+    engPanel.style.display='none';document.body.appendChild(engPanel);
+    // One-time global dismiss handler
+    if(!window._engPanelClickBound){
+      window._engPanelClickBound=true;
+      document.addEventListener('click',ev=>{
+        if(!ev.target.closest('#eng-panel')&&!ev.target.closest('.msg-engagement-item[data-has-users]'))
+          engPanel.style.display='none';
+      });
+    }
+  }
+  const hideEngPanel=()=>{engPanel.style.display='none';engPanel._anchor=null;};
+  const buildEngPanel=(title,entries,anchorEl)=>{
+    engPanel._anchor=anchorEl;
+    engPanel.innerHTML='';
+    const titleEl=document.createElement('div');titleEl.className='eng-panel-title';titleEl.textContent=title;engPanel.appendChild(titleEl);
+    if(!entries.length){
+      const empty=document.createElement('div');empty.className='eng-panel-empty';empty.textContent='(none yet)';engPanel.appendChild(empty);
+    } else {
+      const listEl=document.createElement('div');listEl.className='eng-panel-list';engPanel.appendChild(listEl);
+      let offset=0;
+      const addRows=(batch)=>{
+        batch.forEach(entry=>{
+          const row=document.createElement('div');row.className='eng-panel-row';
+          const nameEl=document.createElement('span');nameEl.className='eng-panel-name';
+          const shortAddr=entry.address?(entry.address.length>16?entry.address.slice(0,8)+'…'+entry.address.slice(-4):entry.address):'?';
+          nameEl.textContent=shortAddr;
+          const dateEl=document.createElement('span');dateEl.className='eng-panel-date';
+          const fd=entry.date?formatDate(entry.date):'';dateEl.textContent=fd||(entry.date||'');
+          row.appendChild(nameEl);row.appendChild(dateEl);listEl.appendChild(row);
+          if(entry.address) fetchProfileByAddress(entry.address,mainnet,signal).then(p=>{if(p&&(p.DisplayName||p.URN)) nameEl.textContent=p.DisplayName||p.URN;}).catch(()=>{});
+        });
+      };
+      addRows(entries.slice(0,ENG_PAGE));
+      offset=ENG_PAGE;
+      if(entries.length>ENG_PAGE){
+        const moreBtn=document.createElement('button');moreBtn.className='eng-panel-more';
+        const updateBtn=()=>{const r=entries.length-offset;moreBtn.textContent=`Show ${r} more…`;if(r<=0) moreBtn.remove();};
+        updateBtn();
+        moreBtn.addEventListener('click',ev=>{ev.stopPropagation();const batch=entries.slice(offset,offset+ENG_PAGE);addRows(batch);offset+=ENG_PAGE;updateBtn();});
+        engPanel.appendChild(moreBtn);
+      }
+    }
+    // Position below anchor
+    const rect=anchorEl.getBoundingClientRect();
+    let px=rect.left,py=rect.bottom+window.scrollY+6;
+    if(px+250>window.innerWidth) px=Math.max(4,window.innerWidth-254);
+    engPanel.style.left=px+'px';engPanel.style.top=py+'px';engPanel.style.display='block';
   };
-  document.addEventListener('click',ev=>{if(!ev.target.closest('.msg-engagement-item'))hideTip();},{capture:true,once:false});
+  const wireEngagement=(itemEl,title,entries)=>{
+    if(!itemEl) return;
+    if(entries&&entries.length) itemEl.dataset.hasUsers='1';
+    const toggle=(ev)=>{if(ev)ev.stopPropagation();if(engPanel.style.display!=='none'&&engPanel._anchor===itemEl){hideEngPanel();}else{buildEngPanel(title,entries||[],itemEl);}};
+    itemEl.addEventListener('click',toggle);
+    itemEl.addEventListener('touchstart',ev=>{ev.preventDefault();toggle(ev);},{passive:false});
+    itemEl.addEventListener('mouseenter',()=>{buildEngPanel(title,entries||[],itemEl);});
+    itemEl.addEventListener('mouseleave',ev=>{
+      const related=ev.relatedTarget;
+      if(!related||(!related.closest('#eng-panel')&&!related.closest('.msg-engagement-item'))) setTimeout(()=>{if(engPanel._anchor===itemEl&&!engPanel.matches(':hover')) hideEngPanel();},120);
+    });
+  };
+  engPanel.addEventListener('mouseleave',hideEngPanel);
+
   const users=data.users||{comments:[],retweets:[],likes:[]};
-  addTip(commentsCountEl?.closest('.msg-engagement-item'),users.comments);
-  addTip(retweetsCountEl?.closest('.msg-engagement-item'),users.retweets);
-  addTip(likesCountEl?.closest('.msg-engagement-item'),users.likes);
+  wireEngagement(commentsCountEl?.closest('.msg-engagement-item'),'💬 Comments',users.comments);
+  wireEngagement(retweetsCountEl?.closest('.msg-engagement-item'),'🔁 Retweets',users.retweets);
+  wireEngagement(likesCountEl?.closest('.msg-engagement-item'),'❤️ Likes',users.likes);
 
   if(!data.address){
     threadEl.innerHTML='<div class="message-thread-empty">No thread found yet for this message.</div>';
