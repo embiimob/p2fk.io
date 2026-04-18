@@ -324,6 +324,50 @@
     }
     .msg-sender-name { font-size: 0.9em; font-weight: bold; color: #bb86fc; }
     .message-meta { color: #888; font-size: 0.72em; margin-top: 8px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+    .msg-engagement-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; font-size: 0.76em; color: #888; }
+    .msg-engagement-item { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border: 1px solid #333; border-radius: 12px; background: #171717; }
+    .msg-engagement-count { color: #e0e0e0; font-family: monospace; min-width: 10px; text-align: right; }
+    .message-thread-wrap {
+      margin-top: 8px;
+      margin-left: 18px;
+      padding-left: 10px;
+      border-left: 2px solid #2f2f2f;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .message-thread-loading { font-size: 0.74em; color: #777; }
+    .message-thread-empty { font-size: 0.74em; color: #666; }
+    .message-thread-item {
+      background: #171717;
+      border: 1px solid #2b2b2b;
+      border-radius: 6px;
+      padding: 7px 8px;
+    }
+    .message-thread-item-head {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.74em;
+      color: #9a9a9a;
+      margin-bottom: 3px;
+      flex-wrap: wrap;
+    }
+    .message-thread-item-date { color: #666; }
+    .message-thread-item-kind {
+      display: inline-block;
+      font-size: 0.66em;
+      border-radius: 3px;
+      padding: 1px 5px;
+      border: 1px solid #333;
+      background: #1f1f1f;
+      color: #aaa;
+    }
+    .message-thread-item-kind.like { color: #ff8aa8; border-color: #5a2c38; background: #2a1a1f; }
+    .message-thread-item-kind.retweet { color: #7fdccf; border-color: #24584f; background: #162523; }
+    .message-thread-item-kind.comment { color: #bb86fc; border-color: #4c356b; background: #221a2f; }
+    .message-thread-item-body { font-size: 0.8em; color: #cfcfcf; white-space: pre-wrap; word-break: break-word; }
+    .message-thread-note { font-size: 0.7em; color: #666; }
     .message-attachments { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
     .message-attachments img { max-width: 100%; max-height: 280px; object-fit: cover; border-radius: 5px; background: #333; }
     .message-attachments audio { width: 100%; }
@@ -731,6 +775,8 @@ const MAX_PER_CHAIN = 1000;
 const MSG_PAGE_SIZE = 20;
 const GAVE_UP_ROUNDS = 4;
 const MAX_INITIAL_ROUNDS = 3;
+const THREAD_PAGE_SIZE = 200;
+const THREAD_MAX_SCAN = 1000;
 
 const CHAINS = {
   chkBitcoin:  { key: 'BTC',  params: 'blockchain=BTC'  },
@@ -741,6 +787,8 @@ const CHAINS = {
 };
 
 const CHAIN_UPPER_TO_API = { 'BTC':'BTC','TBTC':'BTC','LTC':'LTC','DOG':'DOG','MZC':'MZC' };
+const threadDataCache = new Map();
+const threadDataInflight = new Map();
 
 
 
@@ -1193,6 +1241,124 @@ const normalizeRoot=(root)=>{
   return{message:msg,fromAddress:signedBy,toAddresses,blockDate,txId,files,confirmations};
 };
 
+const stripInlineFiles=(msg)=>String(msg??'').replace(/<<[^>]+>>/g,'').trim();
+const classifyThreadAction=(msg)=>{
+  const clean=stripInlineFiles(msg);
+  if(/^<<$/.test(clean)||/^(retweet|repost|rt)\b/i.test(clean)||/^🔁/.test(clean)) return 'retweet';
+  if(/^<$/.test(clean)||/^(like|fav|favorite)\b/i.test(clean)||/^[❤️❤♥]/.test(clean)) return 'like';
+  return 'comment';
+};
+
+const fetchAllPublicMessagesByAddress=async(address,mainnet,signal,maxScan=THREAD_MAX_SCAN)=>{
+  const all=[];
+  let skip=0;
+  let truncated=false;
+  while(skip<maxScan){
+    const qty=Math.min(THREAD_PAGE_SIZE,maxScan-skip);
+    const data=await fetchAPI(`${BASE_URL}/GetPublicMessagesByAddress/${encodeURIComponent(address)}?mainnet=${mainnet}&skip=${skip}&qty=${qty}`,'',signal,30000);
+    const arr=Array.isArray(data)?data:[];
+    if(!arr.length) break;
+    all.push(...arr);
+    skip+=arr.length;
+    if(arr.length<qty) break;
+    if(skip>=maxScan) truncated=true;
+  }
+  return { roots: all, truncated };
+};
+
+const getMessageThreadDataByTxid=async(txid,mainnet,signal)=>{
+  const key=`${txid}_${mainnet}`;
+  if(threadDataCache.has(key)) return threadDataCache.get(key);
+  if(threadDataInflight.has(key)) return threadDataInflight.get(key);
+  const run=(async()=>{
+    let address='';
+    try{
+      const addr=await fetchAPI(`${BASE_URL}/GetPublicAddressByKeyword/${encodeURIComponent(txid)}?mainnet=${mainnet}`,'',signal,15000);
+      address=typeof addr==='string'?addr.trim():'';
+      if(!address||!isAddress(address)){
+        const empty={address:'',entries:[],totals:{comments:0,retweets:0,likes:0},truncated:false};
+        threadDataCache.set(key,empty);
+        return empty;
+      }
+      const fetched=await fetchAllPublicMessagesByAddress(address,mainnet,signal,THREAD_MAX_SCAN);
+      const txidLower=String(txid||'').toLowerCase();
+      const entries=[];
+      for(const item of(fetched.roots||[])){
+        const root=item.Root||item.root||item;
+        const n=normalizeRoot(root);
+        if(!n||!n.txId) continue;
+        if(String(n.txId).toLowerCase()===txidLower) continue;
+        entries.push({ normalized:n, action:classifyThreadAction(n.message) });
+      }
+      const totals={comments:0,retweets:0,likes:0};
+      for(const e of entries){
+        if(e.action==='like') totals.likes+=1;
+        else if(e.action==='retweet') totals.retweets+=1;
+        else totals.comments+=1;
+      }
+      const out={address,entries,totals,truncated:!!fetched.truncated};
+      threadDataCache.set(key,out);
+      return out;
+    }catch{
+      const empty={address:'',entries:[],totals:{comments:0,retweets:0,likes:0},truncated:false};
+      threadDataCache.set(key,empty);
+      return empty;
+    }finally{
+      threadDataInflight.delete(key);
+    }
+  })();
+  threadDataInflight.set(key,run);
+  return run;
+};
+
+const renderThreadEntryItem=async(entry,mainnet,signal)=>{
+  const n=entry.normalized;
+  const action=entry.action||'comment';
+  const item=document.createElement('div');
+  item.className='message-thread-item';
+  const p=await fetchProfileByAddress(n.fromAddress,mainnet,signal);
+  const senderName=p?(p.DisplayName||p.URN||abbreviateAddress(n.fromAddress)):abbreviateAddress(n.fromAddress);
+  const dateText=formatDate(n.blockDate)||n.blockDate||'';
+  let bodyHtml='Comment';
+  if(action==='like') bodyHtml='Liked this message';
+  else if(action==='retweet') bodyHtml='Retweeted this message';
+  else{
+    const parsed=await parseMessage(n.message,mainnet,signal);
+    bodyHtml=parsed.cleanMessage||'Comment';
+  }
+  item.innerHTML=`<div class="message-thread-item-head"><span class="message-thread-item-kind ${action}">${action==='like'?'❤️ Like':action==='retweet'?'🔁 Retweet':'💬 Comment'}</span>${createUrnLink(senderName,n.fromAddress)}${dateText?`<span class="message-thread-item-date">${escapeHtml(dateText)}</span>`:''}</div><div class="message-thread-item-body">${bodyHtml}</div>`;
+  return item;
+};
+
+const loadMessageThreadUI=async(txid,mainnet,engagementEl,threadEl,signal)=>{
+  if(!txid||!engagementEl||!threadEl) return;
+  const commentsCountEl=engagementEl.querySelector('[data-count="comments"]');
+  const retweetsCountEl=engagementEl.querySelector('[data-count="retweets"]');
+  const likesCountEl=engagementEl.querySelector('[data-count="likes"]');
+  const data=await getMessageThreadDataByTxid(txid,mainnet,signal);
+  if(commentsCountEl) commentsCountEl.textContent=String(data.totals.comments||0);
+  if(retweetsCountEl) retweetsCountEl.textContent=String(data.totals.retweets||0);
+  if(likesCountEl) likesCountEl.textContent=String(data.totals.likes||0);
+  if(!data.address){
+    threadEl.innerHTML='<div class="message-thread-empty">No thread found yet for this message.</div>';
+    return;
+  }
+  if(!Array.isArray(data.entries)||!data.entries.length){
+    threadEl.innerHTML='<div class="message-thread-empty">Thread found, but no replies yet.</div>';
+    return;
+  }
+  threadEl.innerHTML='<div class="message-thread-loading">Loading replies…</div>';
+  const nodes=await Promise.all(data.entries.map(e=>renderThreadEntryItem(e,mainnet,signal)));
+  threadEl.innerHTML='';
+  nodes.forEach(n=>threadEl.appendChild(n));
+  if(data.truncated){
+    const note=document.createElement('div');
+    note.className='message-thread-note';
+    note.textContent=`Only the first ${THREAD_MAX_SCAN} thread messages were scanned.`;
+    threadEl.appendChild(note);
+  }
+};
+
 // ── Message card renderer ──────────────────────────────────────────────
 const renderMessageCard=async(normalized,signal,blockchain,shareParams)=>{
   const chainUpper=(blockchain||'').toUpperCase();
@@ -1250,6 +1416,26 @@ const renderMessageCard=async(normalized,signal,blockchain,shareParams)=>{
   const txidHtml=normalized.txId?` <span class="txid-copy" data-txid="${escapeHtml(normalized.txId)}" title="Copy TX ID">📋 ${escapeHtml(normalized.txId.slice(0,8))}…</span>`:'';
   meta.innerHTML=`From: ${createUrnLink(fromName,normalized.fromAddress)}${toLinks.length?` | To: ${toLinks.join(', ')}`:''}${normalized.txId?' |':''} ${dateHtml}${txidHtml}`;
   card.appendChild(meta);
+
+  // Engagement summary + threaded replies (loaded asynchronously per message)
+  const engagement=document.createElement('div');
+  engagement.className='msg-engagement-row';
+  engagement.innerHTML='<span class="msg-engagement-item">💬 <span data-count="comments" class="msg-engagement-count">…</span></span><span class="msg-engagement-item">🔁 <span data-count="retweets" class="msg-engagement-count">…</span></span><span class="msg-engagement-item">❤️ <span data-count="likes" class="msg-engagement-count">…</span></span>';
+  card.appendChild(engagement);
+
+  const threadEl=document.createElement('div');
+  threadEl.className='message-thread-wrap';
+  threadEl.innerHTML='<div class="message-thread-loading">Loading thread…</div>';
+  card.appendChild(threadEl);
+  if(normalized.txId){
+    Promise.resolve().then(()=>loadMessageThreadUI(normalized.txId,mainnet,engagement,threadEl,signal)).catch(()=>{
+      threadEl.innerHTML='<div class="message-thread-empty">Thread failed to load.</div>';
+      engagement.querySelectorAll('.msg-engagement-count').forEach(el=>{el.textContent='0';});
+    });
+  }else{
+    threadEl.innerHTML='<div class="message-thread-empty">No transaction id available for thread lookup.</div>';
+    engagement.querySelectorAll('.msg-engagement-count').forEach(el=>{el.textContent='0';});
+  }
 
   // Click handler
   card.addEventListener('click',async(e)=>{
