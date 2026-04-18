@@ -152,7 +152,8 @@
       box-shadow: 0 4px 16px rgba(0,0,0,0.5);
       pointer-events: none;
     }
-    #cache-status:hover #cache-tooltip { display: block; }
+    #cache-status:hover #cache-tooltip,
+    #cache-status.open #cache-tooltip { display: block; }
     #cache-tooltip hr { border: none; border-top: 1px solid #333; margin: 6px 0; }
     #cache-tooltip .ct-row { display: flex; justify-content: space-between; gap: 20px; margin: 2px 0; color: #b0b0b0; }
     #cache-tooltip .ct-row span:last-child { color: #03dac6; font-family: monospace; }
@@ -373,7 +374,12 @@
     .message-thread-retweet-ref .txid-copy { cursor: pointer; }
     .msg-engagement-item { cursor: default; }
     .msg-engagement-item[data-has-users="1"] { cursor: pointer; }
-    .thread-user-tip { position: fixed; z-index: 9999; background: #1e1e1e; border: 1px solid #444; border-radius: 6px; padding: 6px 10px; font-size: 0.72em; color: #ddd; pointer-events: none; max-width: 240px; box-shadow: 0 4px 12px rgba(0,0,0,0.6); white-space: pre; display: none; }
+    .thread-user-tip { position: fixed; z-index: 9999; background: #1e1e1e; border: 1px solid #444; border-radius: 6px; padding: 6px 10px; font-size: 0.72em; color: #ddd; max-width: 240px; box-shadow: 0 4px 12px rgba(0,0,0,0.6); white-space: pre; display: none; }
+    .retweet-embed-card { background: #111; border: 1px solid #2b4a45; border-left: 3px solid #2d7d70; border-radius: 6px; padding: 7px 10px; margin-top: 6px; }
+    .retweet-embed-card .rt-sender { font-weight: bold; color: #7fdccf; margin-bottom: 3px; font-size: 0.82em; }
+    .retweet-embed-card .rt-body { font-size: 0.85em; color: #cfcfcf; white-space: pre-wrap; word-break: break-word; }
+    .retweet-embed-card .rt-loading { color: #666; font-size: 0.8em; font-style: italic; }
+    .retweet-embed-card .rt-err { color: #888; font-size: 0.78em; font-style: italic; }
     .message-attachments img { max-width: 100%; max-height: 280px; object-fit: cover; border-radius: 5px; background: #333; }
     .message-attachments audio { width: 100%; }
     .message-attachments video { max-width: 100%; max-height: 280px; border-radius: 5px; }
@@ -1349,6 +1355,57 @@ const getMessageThreadDataByTxid=async(txid,mainnet,signal)=>{
   return run;
 };
 
+const renderRetweetEmbed=async(rtxid,mainnet,blockchain,signal)=>{
+  const card=document.createElement('div');
+  card.className='retweet-embed-card';
+  const loadEl=document.createElement('div');
+  loadEl.className='rt-loading';loadEl.textContent='Loading retweeted message…';card.appendChild(loadEl);
+  (async()=>{
+    try{
+      const chain=(blockchain||'BTC').toUpperCase();
+      let raw=getCachedTransaction(rtxid,mainnet,chain);
+      if(!raw){
+        const url=(chain!=='BTC'&&chain!=='BTC-TESTNET'&&chain!=='TBTC')
+          ?`${BASE_URL}/GetRootByTransactionID/${encodeURIComponent(rtxid)}?blockchain=${encodeURIComponent(chain)}&verbose=false`
+          :`${BASE_URL}/GetRootByTransactionID/${encodeURIComponent(rtxid)}?mainnet=${!!mainnet}&verbose=false`;
+        const data=await fetchAPI(url,'',signal,15000);
+        raw=Array.isArray(data)?data[0]:data;
+        if(raw){const bd=raw['Block Date']??raw.BlockDate??'';if(bd&&!isNullDate(bd)) cacheTransaction(rtxid,mainnet,chain,raw);}
+      }
+      card.innerHTML='';
+      if(!raw){card.innerHTML='<div class="rt-err">Referenced message not found.</div>';return;}
+      const n=normalizeRoot(raw);
+      if(!n){card.innerHTML='<div class="rt-err">Could not parse referenced message.</div>';return;}
+      // Sender line
+      const prof=await fetchProfileByAddress(n.fromAddress,mainnet,signal);
+      const senderName=prof?(prof.DisplayName||prof.URN||abbreviateAddress(n.fromAddress)):abbreviateAddress(n.fromAddress);
+      const senderEl=document.createElement('div');
+      senderEl.className='rt-sender';
+      senderEl.innerHTML=`🔁 ${createUrnLink(senderName,n.fromAddress)}`;
+      card.appendChild(senderEl);
+      // Body: parse text + attachments (no nested engagement row)
+      const parsed=await parseMessage(n.message,mainnet,signal);
+      if(n.txId&&n.files?.length){for(const f of n.files)if(f) parsed.attachments.push({hash:n.txId,filename:f});}
+      if(parsed.cleanMessage){
+        const bodyEl=document.createElement('div');
+        bodyEl.className='rt-body';bodyEl.innerHTML=parsed.cleanMessage;card.appendChild(bodyEl);
+      }
+      if(parsed.attachments.length||parsed.links.length){
+        const attDiv=document.createElement('div');
+        attDiv.className='message-attachments';
+        renderAttachments(attDiv,parsed.attachments,parsed.links,blockchain||'BTC');
+        card.appendChild(attDiv);
+      }
+      if(!parsed.cleanMessage&&!parsed.attachments.length&&!parsed.links.length){
+        const emptyEl=document.createElement('div');emptyEl.className='rt-err';emptyEl.textContent='(no content)';card.appendChild(emptyEl);
+      }
+    }catch(e){
+      card.innerHTML=`<div class="rt-err">Could not load referenced message.</div>`;
+    }
+  })();
+  return card;
+};
+
 const renderThreadEntryItem=async(entry,mainnet,blockchain,signal)=>{
   const n=entry.normalized;
   const actions=entry.actions||['comment'];
@@ -1411,19 +1468,12 @@ const renderThreadEntryItem=async(entry,mainnet,blockchain,signal)=>{
     }
   }
 
-  // Show retweeted message reference(s) as clickable txid links
+  // Show retweeted message reference(s) as embedded mini-cards
   if(isRetweet&&retweetTxids.length){
-    const rtDiv=document.createElement('div');
-    rtDiv.className='message-thread-retweet-ref';
-    retweetTxids.forEach(rtxid=>{
-      const link=document.createElement('span');
-      link.className='txid-copy';
-      link.dataset.txid=rtxid;
-      link.title='Copy txid of retweeted message';
-      link.textContent=`↩️ ${rtxid.slice(0,8)}…`;
-      rtDiv.appendChild(link);
-    });
-    body.appendChild(rtDiv);
+    for(const rtxid of retweetTxids){
+      const embedCard=await renderRetweetEmbed(rtxid,mainnet,blockchain,signal);
+      body.appendChild(embedCard);
+    }
   } else if(isRetweet&&!retweetTxids.length){
     // Retweet ref present but txid not parseable
     body.textContent='Retweeted this message';
@@ -1443,17 +1493,34 @@ const loadMessageThreadUI=async(txid,mainnet,engagementEl,threadEl,signal,blockc
   if(retweetsCountEl) retweetsCountEl.textContent=String(data.totals.retweets||0);
   if(likesCountEl) likesCountEl.textContent=String(data.totals.likes||0);
 
-  // ── Hover tooltip: show abbreviated user list per engagement category ──
+  // ── Tooltip: show user list per engagement category on hover AND click/tap ──
   const abbr=a=>a?(a.length>16?a.slice(0,8)+'…'+a.slice(-4):a):'?';
   let tip=document.querySelector('.thread-user-tip');
   if(!tip){tip=document.createElement('div');tip.className='thread-user-tip';document.body.appendChild(tip);}
+  const hideTip=()=>{tip.style.display='none';};
+  const showTip=(addresses,x,y)=>{tip.textContent=addresses.map(abbr).join('\n');tip.style.left=(x+14)+'px';tip.style.top=(y+14)+'px';tip.style.display='';};
   const addTip=(parentEl,addresses)=>{
     if(!parentEl||!addresses||!addresses.length) return;
     parentEl.dataset.hasUsers='1';
-    parentEl.addEventListener('mouseenter',ev=>{tip.textContent=addresses.map(abbr).join('\n');tip.style.display='';tip.style.left=(ev.clientX+14)+'px';tip.style.top=(ev.clientY+14)+'px';});
+    parentEl.addEventListener('mouseenter',ev=>{showTip(addresses,ev.clientX,ev.clientY);});
     parentEl.addEventListener('mousemove',ev=>{tip.style.left=(ev.clientX+14)+'px';tip.style.top=(ev.clientY+14)+'px';});
-    parentEl.addEventListener('mouseleave',()=>{tip.style.display='none';});
+    parentEl.addEventListener('mouseleave',hideTip);
+    parentEl.addEventListener('click',ev=>{
+      ev.stopPropagation();
+      if(tip.style.display==='none'||!tip.style.display){
+        const r=parentEl.getBoundingClientRect();
+        showTip(addresses,r.left,r.bottom+4);
+      }else{hideTip();}
+    });
+    parentEl.addEventListener('touchstart',ev=>{
+      ev.preventDefault();
+      if(tip.style.display==='none'||!tip.style.display){
+        const t=ev.touches[0];
+        showTip(addresses,t.clientX,t.clientY+24);
+      }else{hideTip();}
+    },{passive:false});
   };
+  document.addEventListener('click',ev=>{if(!ev.target.closest('.msg-engagement-item'))hideTip();},{capture:true,once:false});
   const users=data.users||{comments:[],retweets:[],likes:[]};
   addTip(commentsCountEl?.closest('.msg-engagement-item'),users.comments);
   addTip(retweetsCountEl?.closest('.msg-engagement-item'),users.retweets);
@@ -3150,6 +3217,19 @@ const pollCacheStatus=async()=>{
 
 // ── Profile load more ──────────────────────────────────────────────────
 document.getElementById('profileMsgLoadMore').addEventListener('click',()=>loadProfileMessages());
+
+// ── Cache dot: toggle tooltip on click/tap (mobile support) ───────────
+(()=>{
+  const cs=document.getElementById('cache-status');
+  if(!cs) return;
+  cs.addEventListener('click',ev=>{
+    ev.stopPropagation();
+    cs.classList.toggle('open');
+  });
+  document.addEventListener('click',ev=>{
+    if(!ev.target.closest('#cache-status')) cs.classList.remove('open');
+  });
+})();
 
 // ── Initial load ───────────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded',()=>{
