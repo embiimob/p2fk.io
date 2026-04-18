@@ -776,7 +776,7 @@ const MSG_PAGE_SIZE = 20;
 const GAVE_UP_ROUNDS = 4;
 const MAX_INITIAL_ROUNDS = 3;
 const THREAD_PAGE_SIZE = 200;
-const THREAD_MAX_SCAN = 1000;
+const THREAD_MESSAGE_LIMIT = 1000;
 
 const CHAINS = {
   chkBitcoin:  { key: 'BTC',  params: 'blockchain=BTC'  },
@@ -789,6 +789,8 @@ const CHAINS = {
 const CHAIN_UPPER_TO_API = { 'BTC':'BTC','TBTC':'BTC','LTC':'LTC','DOG':'DOG','MZC':'MZC' };
 const threadDataCache = new Map();
 const threadDataInflight = new Map();
+const THREAD_RETWEET_PATTERN = /^(retweet|repost|rt)(?:\s|$|[!.,])/i;
+const THREAD_LIKE_PATTERN = /^(like|fav|favorite)(?:\s|$)/i;
 
 
 
@@ -1241,15 +1243,23 @@ const normalizeRoot=(root)=>{
   return{message:msg,fromAddress:signedBy,toAddresses,blockDate,txId,files,confirmations};
 };
 
-const stripInlineFiles=(msg)=>String(msg??'').replace(/<<[^>]+>>/g,'').trim();
+const emptyThreadData=()=>({address:'',entries:[],totals:{comments:0,retweets:0,likes:0},truncated:false});
+const stripInlineFiles=(msg)=>{
+  // Strip embedded file markers like <<IPFS:...>> or <<txid/file>>,
+  // but keep standalone shorthand symbols "<" and "<<" used for like/retweet actions.
+  return String(msg??'').replace(/<<[^>]+>>/g,'').trim();
+};
 const classifyThreadAction=(msg)=>{
   const clean=stripInlineFiles(msg);
-  if(/^<<$/.test(clean)||/^(retweet|repost|rt)\b/i.test(clean)||/^🔁/.test(clean)) return 'retweet';
-  if(/^<$/.test(clean)||/^(like|fav|favorite)\b/i.test(clean)||/^[❤️❤♥]/.test(clean)) return 'like';
+  // Sup!? social thread shorthand:
+  // "<"  = like
+  // "<<" = retweet
+  if(/^<<$/.test(clean)||THREAD_RETWEET_PATTERN.test(clean)||/^🔁(?:\s|$)/.test(clean)) return 'retweet';
+  if(/^<$/.test(clean)||THREAD_LIKE_PATTERN.test(clean)||/^(❤️|❤|♥)(?:\s|$|[!.,])/.test(clean)) return 'like';
   return 'comment';
 };
 
-const fetchAllPublicMessagesByAddress=async(address,mainnet,signal,maxScan=THREAD_MAX_SCAN)=>{
+const fetchAllPublicMessagesByAddress=async(address,mainnet,signal,maxScan=THREAD_MESSAGE_LIMIT)=>{
   const all=[];
   let skip=0;
   let truncated=false;
@@ -1276,11 +1286,11 @@ const getMessageThreadDataByTxid=async(txid,mainnet,signal)=>{
       const addr=await fetchAPI(`${BASE_URL}/GetPublicAddressByKeyword/${encodeURIComponent(txid)}?mainnet=${mainnet}`,'',signal,15000);
       address=typeof addr==='string'?addr.trim():'';
       if(!address||!isAddress(address)){
-        const empty={address:'',entries:[],totals:{comments:0,retweets:0,likes:0},truncated:false};
+        const empty=emptyThreadData();
         threadDataCache.set(key,empty);
         return empty;
       }
-      const fetched=await fetchAllPublicMessagesByAddress(address,mainnet,signal,THREAD_MAX_SCAN);
+      const fetched=await fetchAllPublicMessagesByAddress(address,mainnet,signal,THREAD_MESSAGE_LIMIT);
       const txidLower=String(txid||'').toLowerCase();
       const entries=[];
       for(const item of(fetched.roots||[])){
@@ -1299,8 +1309,9 @@ const getMessageThreadDataByTxid=async(txid,mainnet,signal)=>{
       const out={address,entries,totals,truncated:!!fetched.truncated};
       threadDataCache.set(key,out);
       return out;
-    }catch{
-      const empty={address:'',entries:[],totals:{comments:0,retweets:0,likes:0},truncated:false};
+    }catch(e){
+      console.warn('[thread] Failed to load thread data for txid',txid,e);
+      const empty=emptyThreadData();
       threadDataCache.set(key,empty);
       return empty;
     }finally{
@@ -1318,7 +1329,8 @@ const renderThreadEntryItem=async(entry,mainnet,signal)=>{
   item.className='message-thread-item';
   const p=await fetchProfileByAddress(n.fromAddress,mainnet,signal);
   const senderName=p?(p.DisplayName||p.URN||abbreviateAddress(n.fromAddress)):abbreviateAddress(n.fromAddress);
-  const dateText=formatDate(n.blockDate)||n.blockDate||'';
+  const formattedDate=formatDate(n.blockDate);
+  const dateText=(formattedDate!==null&&formattedDate!==undefined&&formattedDate!=='')?formattedDate:(n.blockDate||'');
   let bodyHtml='Comment';
   if(action==='like') bodyHtml='Liked this message';
   else if(action==='retweet') bodyHtml='Retweeted this message';
@@ -1354,9 +1366,13 @@ const loadMessageThreadUI=async(txid,mainnet,engagementEl,threadEl,signal)=>{
   if(data.truncated){
     const note=document.createElement('div');
     note.className='message-thread-note';
-    note.textContent=`Only the first ${THREAD_MAX_SCAN} thread messages were scanned.`;
+    note.textContent=`Showing up to the first ${THREAD_MESSAGE_LIMIT} thread messages (additional messages not displayed).`;
     threadEl.appendChild(note);
   }
+};
+
+const resetEngagementCounts=(engagementEl)=>{
+  engagementEl?.querySelectorAll('.msg-engagement-count').forEach(el=>{el.textContent='0';});
 };
 
 // ── Message card renderer ──────────────────────────────────────────────
@@ -1420,7 +1436,7 @@ const renderMessageCard=async(normalized,signal,blockchain,shareParams)=>{
   // Engagement summary + threaded replies (loaded asynchronously per message)
   const engagement=document.createElement('div');
   engagement.className='msg-engagement-row';
-  engagement.innerHTML='<span class="msg-engagement-item">💬 <span data-count="comments" class="msg-engagement-count">…</span></span><span class="msg-engagement-item">🔁 <span data-count="retweets" class="msg-engagement-count">…</span></span><span class="msg-engagement-item">❤️ <span data-count="likes" class="msg-engagement-count">…</span></span>';
+  engagement.innerHTML='<span class="msg-engagement-item" aria-label="Comments" title="Comments">💬 <span data-count="comments" class="msg-engagement-count">…</span></span><span class="msg-engagement-item" aria-label="Retweets" title="Retweets">🔁 <span data-count="retweets" class="msg-engagement-count">…</span></span><span class="msg-engagement-item" aria-label="Likes" title="Likes">❤️ <span data-count="likes" class="msg-engagement-count">…</span></span>';
   card.appendChild(engagement);
 
   const threadEl=document.createElement('div');
@@ -1428,13 +1444,13 @@ const renderMessageCard=async(normalized,signal,blockchain,shareParams)=>{
   threadEl.innerHTML='<div class="message-thread-loading">Loading thread…</div>';
   card.appendChild(threadEl);
   if(normalized.txId){
-    Promise.resolve().then(()=>loadMessageThreadUI(normalized.txId,mainnet,engagement,threadEl,signal)).catch(()=>{
+    loadMessageThreadUI(normalized.txId,mainnet,engagement,threadEl,signal).catch(()=>{
       threadEl.innerHTML='<div class="message-thread-empty">Thread failed to load.</div>';
-      engagement.querySelectorAll('.msg-engagement-count').forEach(el=>{el.textContent='0';});
+      resetEngagementCounts(engagement);
     });
   }else{
     threadEl.innerHTML='<div class="message-thread-empty">No transaction id available for thread lookup.</div>';
-    engagement.querySelectorAll('.msg-engagement-count').forEach(el=>{el.textContent='0';});
+    resetEngagementCounts(engagement);
   }
 
   // Click handler
