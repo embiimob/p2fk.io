@@ -2758,26 +2758,53 @@ const loadProfileMessages=async()=>{
   if(state.profileMsgExhausted||state.profileMsgLoading) return;
   state.profileMsgLoading=true;
   const feedEl=document.getElementById('profileMsgFeed');
+  const bc=state.profileMsgMainnet?'BTC':'BTC-TESTNET';
+  const mainnet=state.profileMsgMainnet;
 
   try{
-    const data=await fetchAPI(`${BASE_URL}/GetPublicMessagesByAddress/${encodeURIComponent(state.profileMsgAddress)}?mainnet=${state.profileMsgMainnet}&skip=${state.profileMsgSkip}&qty=${MSG_PAGE_SIZE}`,'',null);
+    const data=await fetchAPI(`${BASE_URL}/GetPublicMessagesByAddress/${encodeURIComponent(state.profileMsgAddress)}?mainnet=${mainnet}&skip=${state.profileMsgSkip}&qty=${MSG_PAGE_SIZE}`,'',null);
     const roots=Array.isArray(data)?data:[];
-    const bc=state.profileMsgMainnet?'BTC':'BTC-TESTNET';
-    for(const item of roots){
-      const root=item.Root||item.root||item;
-      const n=normalizeRoot(root);
-      if(!n) continue;
-      const card=await renderMessageCard(n,null,bc,{id:n.txId,mainnet:state.profileMsgMainnet,blockchain:state.profileMsgMainnet?'BTC':'BTC'});
-      feedEl.appendChild(card);
-    }
+
+    // Normalize all items in this batch
+    const items=roots.map(item=>normalizeRoot(item.Root||item.root||item)).filter(Boolean);
+
+    // Resolve missing fromAddress AND files for each item in parallel via GetRootByTransactionID.
+    // GetPublicMessagesByAddress (CLI) omits "Signed By" (→ no sender image) and may omit
+    // the "File" field (→ INQ poll cards can't render for poll-creator transactions).
+    await Promise.all(items.map(async n=>{
+      if(!n.txId) return;
+      if(n.fromAddress&&n.files.length) return; // already complete
+      try{
+        const raw=await fetchAPI(`${BASE_URL}/GetRootByTransactionID/${encodeURIComponent(n.txId)}?mainnet=${mainnet}&verbose=false`,'',null,10000);
+        const full=normalizeRoot(Array.isArray(raw)?raw[0]:raw);
+        if(!full) return;
+        if(!n.fromAddress&&full.fromAddress) n.fromAddress=full.fromAddress;
+        if(!n.files.length&&full.files.length) n.files=full.files;
+      }catch{}
+    }));
+
+    // Render all cards in parallel (avoids serialising slow retweet-embed network calls)
+    // then append in document order.
+    const cards=await Promise.all(items.map(n=>renderMessageCard(n,null,bc,{id:n.txId,mainnet,blockchain:mainnet?'BTC':'BTC'})));
+    cards.forEach(card=>feedEl.appendChild(card));
+
     state.profileMsgSkip+=roots.length;
     if(roots.length<MSG_PAGE_SIZE) state.profileMsgExhausted=true;
     const msgsTabBtn=document.getElementById('tabMessages');if(msgsTabBtn) msgsTabBtn.textContent=`Messages (${state.profileMsgSkip})`;
   }catch(e){
-    document.getElementById('profileError').textContent='Failed to load messages: '+e.message;
-    document.getElementById('profileError').style.display='block';
+    const errEl=document.getElementById('profileError');
+    if(errEl){errEl.textContent='Failed to load messages: '+e.message;errEl.style.display='block';}
   }finally{
     state.profileMsgLoading=false;
+    // After loading completes the IntersectionObserver may have fired while
+    // profileMsgLoading was true and been ignored.  Re-check the sentinel
+    // position now so the feed continues loading if the user can still see it.
+    if(!state.profileMsgExhausted){
+      requestAnimationFrame(()=>{
+        const s=document.getElementById('profileMsgSentinel');
+        if(s){const r=s.getBoundingClientRect();if(r.top<window.innerHeight+400) loadProfileMessages();}
+      });
+    }
   }
 };
 
