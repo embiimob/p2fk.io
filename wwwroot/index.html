@@ -1514,7 +1514,8 @@ const loadMessageThreadUI=async(txid,mainnet,engagementEl,threadEl,signal,blockc
   if(commentsCountEl) commentsCountEl.textContent=String(commentsTotal);
   if(retweetsCountEl) retweetsCountEl.textContent=String(retweetsTotal);
   if(likesCountEl) likesCountEl.textContent=String(likesTotal);
-  if((commentsTotal+retweetsTotal+likesTotal)===0){
+  const hasEngagement=(commentsTotal+retweetsTotal+likesTotal)>0;
+  if(!hasEngagement){
     engagementEl.style.display='none';
     threadEl.style.display='none';
     return;
