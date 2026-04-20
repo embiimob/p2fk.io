@@ -1517,7 +1517,6 @@ const loadMessageThreadUI=async(txid,mainnet,engagementEl,threadEl,signal,blockc
   if((commentsTotal+retweetsTotal+likesTotal)<=0){
     engagementEl.style.display='none';
     threadEl.style.display='none';
-    threadEl.innerHTML='';
     return;
   }
   engagementEl.style.display='';
@@ -1594,10 +1593,16 @@ const loadMessageThreadUI=async(txid,mainnet,engagementEl,threadEl,signal,blockc
   wireEngagement(retweetsCountEl?.closest('.msg-engagement-item'),'🔁 Retweets',users.retweets);
   wireEngagement(likesCountEl?.closest('.msg-engagement-item'),'❤️ Likes',users.likes);
 
-  if(!data.address){threadEl.style.display='none';threadEl.innerHTML='';return;}
+  if(!data.address){
+    threadEl.style.display='none';
+    return;
+  }
   // Only render entries that have at least a comment or retweet — pure likes are counted but not shown
   const visibleEntries=(data.entries||[]).filter(e=>e.actions.includes('comment')||e.actions.includes('retweet'));
-  if(!visibleEntries.length){threadEl.style.display='none';threadEl.innerHTML='';return;}
+  if(!visibleEntries.length){
+    threadEl.style.display='none';
+    return;
+  }
   threadEl.style.display='';
   threadEl.innerHTML='<div class="message-thread-loading">Loading replies…</div>';
   const nodes=await Promise.all(visibleEntries.map(e=>renderThreadEntryItem(e,mainnet,blockchain,signal)));
@@ -1700,13 +1705,11 @@ const renderMessageCard=async(normalized,signal,blockchain,shareParams)=>{
   if(normalized.txId){
     loadMessageThreadUI(normalized.txId,mainnet,engagement,threadEl,signal,blockchain).catch(()=>{
       threadEl.style.display='none';
-      threadEl.innerHTML='';
       engagement.style.display='none';
       resetEngagementCounts(engagement);
     });
   }else{
     threadEl.style.display='none';
-    threadEl.innerHTML='';
     engagement.style.display='none';
     resetEngagementCounts(engagement);
   }
