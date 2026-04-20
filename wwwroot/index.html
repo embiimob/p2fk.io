@@ -1508,9 +1508,19 @@ const loadMessageThreadUI=async(txid,mainnet,engagementEl,threadEl,signal,blockc
   const retweetsCountEl=engagementEl.querySelector('[data-count="retweets"]');
   const likesCountEl=engagementEl.querySelector('[data-count="likes"]');
   const data=await getMessageThreadDataByTxid(txid,mainnet,signal);
-  if(commentsCountEl) commentsCountEl.textContent=String(data.totals.comments||0);
-  if(retweetsCountEl) retweetsCountEl.textContent=String(data.totals.retweets||0);
-  if(likesCountEl) likesCountEl.textContent=String(data.totals.likes||0);
+  const commentsTotal=data.totals.comments||0;
+  const retweetsTotal=data.totals.retweets||0;
+  const likesTotal=data.totals.likes||0;
+  if(commentsCountEl) commentsCountEl.textContent=String(commentsTotal);
+  if(retweetsCountEl) retweetsCountEl.textContent=String(retweetsTotal);
+  if(likesCountEl) likesCountEl.textContent=String(likesTotal);
+  const hasEngagement=(commentsTotal+retweetsTotal+likesTotal)>0;
+  if(!hasEngagement){
+    engagementEl.style.display='none';
+    threadEl.style.display='none';
+    return;
+  }
+  engagementEl.style.display='flex';
 
   // ── Engagement panel: click/hover shows user+date list (top 20 + load-more) ──
   const ENG_PAGE=20;
@@ -1585,15 +1595,16 @@ const loadMessageThreadUI=async(txid,mainnet,engagementEl,threadEl,signal,blockc
   wireEngagement(likesCountEl?.closest('.msg-engagement-item'),'❤️ Likes',users.likes);
 
   if(!data.address){
-    threadEl.innerHTML='<div class="message-thread-empty">No thread found yet for this message.</div>';
+    threadEl.style.display='none';
     return;
   }
   // Only render entries that have at least a comment or retweet — pure likes are counted but not shown
   const visibleEntries=(data.entries||[]).filter(e=>e.actions.includes('comment')||e.actions.includes('retweet'));
   if(!visibleEntries.length){
-    threadEl.innerHTML='<div class="message-thread-empty">Thread found, but no replies yet.</div>';
+    threadEl.style.display='none';
     return;
   }
+  threadEl.style.display='block';
   threadEl.innerHTML='<div class="message-thread-loading">Loading replies…</div>';
   const nodes=await Promise.all(visibleEntries.map(e=>renderThreadEntryItem(e,mainnet,blockchain,signal)));
   threadEl.innerHTML='';
@@ -1685,19 +1696,22 @@ const renderMessageCard=async(normalized,signal,blockchain,shareParams)=>{
   const engagement=document.createElement('div');
   engagement.className='msg-engagement-row';
   engagement.innerHTML='<span class="msg-engagement-item" aria-label="Comments" title="Comments">💬 <span data-count="comments" class="msg-engagement-count">…</span></span><span class="msg-engagement-item" aria-label="Retweets" title="Retweets">🔁 <span data-count="retweets" class="msg-engagement-count">…</span></span><span class="msg-engagement-item" aria-label="Likes" title="Likes">❤️ <span data-count="likes" class="msg-engagement-count">…</span></span>';
+  engagement.style.display='none';
   card.appendChild(engagement);
 
   const threadEl=document.createElement('div');
   threadEl.className='message-thread-wrap';
-  threadEl.innerHTML='<div class="message-thread-loading">Loading thread…</div>';
+  threadEl.style.display='none';
   card.appendChild(threadEl);
   if(normalized.txId){
     loadMessageThreadUI(normalized.txId,mainnet,engagement,threadEl,signal,blockchain).catch(()=>{
-      threadEl.innerHTML='<div class="message-thread-empty">Thread failed to load.</div>';
+      threadEl.style.display='none';
+      engagement.style.display='none';
       resetEngagementCounts(engagement);
     });
   }else{
-    threadEl.innerHTML='<div class="message-thread-empty">No transaction id available for thread lookup.</div>';
+    threadEl.style.display='none';
+    engagement.style.display='none';
     resetEngagementCounts(engagement);
   }
 
