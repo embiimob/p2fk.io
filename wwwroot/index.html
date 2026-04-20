@@ -1514,12 +1514,12 @@ const loadMessageThreadUI=async(txid,mainnet,engagementEl,threadEl,signal,blockc
   if(commentsCountEl) commentsCountEl.textContent=String(commentsTotal);
   if(retweetsCountEl) retweetsCountEl.textContent=String(retweetsTotal);
   if(likesCountEl) likesCountEl.textContent=String(likesTotal);
-  if((commentsTotal+retweetsTotal+likesTotal)<=0){
+  if((commentsTotal+retweetsTotal+likesTotal)===0){
     engagementEl.style.display='none';
     threadEl.style.display='none';
     return;
   }
-  engagementEl.style.display='';
+  engagementEl.style.display='flex';
 
   // ── Engagement panel: click/hover shows user+date list (top 20 + load-more) ──
   const ENG_PAGE=20;
@@ -1603,7 +1603,7 @@ const loadMessageThreadUI=async(txid,mainnet,engagementEl,threadEl,signal,blockc
     threadEl.style.display='none';
     return;
   }
-  threadEl.style.display='';
+  threadEl.style.display='block';
   threadEl.innerHTML='<div class="message-thread-loading">Loading replies…</div>';
   const nodes=await Promise.all(visibleEntries.map(e=>renderThreadEntryItem(e,mainnet,blockchain,signal)));
   threadEl.innerHTML='';
