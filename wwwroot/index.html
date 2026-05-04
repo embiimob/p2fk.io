@@ -2413,9 +2413,16 @@ const updateMetaTags=(title,description,image,url)=>{
 // ── Sort helper (objects) ─────────────────────────────────────────────
 const sortObjects=(objects,sortBy)=>{
   const comparePrice=(a,b,dir)=>{
-    const la=a.Listings?Math.min(...Object.values(a.Listings).map(l=>l.Value||Infinity)):Infinity;
-    const lb=b.Listings?Math.min(...Object.values(b.Listings).map(l=>l.Value||Infinity)):Infinity;
-    return dir==='asc'?la-lb:lb-la;
+    const getPrice=obj=>{
+      if(!obj.Listings||!Object.keys(obj.Listings).length) return null;
+      const vals=Object.values(obj.Listings).map(l=>l.Value).filter(v=>v!==null&&v!==undefined&&!isNaN(v));
+      return vals.length?Math.min(...vals):null;
+    };
+    const pa=getPrice(a),pb=getPrice(b);
+    if(pa===null&&pb===null) return 0;
+    if(pa===null) return 1;
+    if(pb===null) return -1;
+    return dir==='asc'?pa-pb:pb-pa;
   };
   return [...objects].sort((a,b)=>{
     if(sortBy==='newest') return new Date(b.CreatedDate)-new Date(a.CreatedDate);
