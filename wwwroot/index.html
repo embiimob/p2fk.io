@@ -1278,6 +1278,10 @@ const emptyThreadData=()=>({address:'',entries:[],totals:{comments:0,retweets:0,
 //
 // Like: salt is present AND (no text OR a txid ref is also present).
 const TXID_RE=/^[a-fA-F0-9]{64}$/;
+const ATTACHMENT_REF_RE=/^IPFS:/i;
+const TXID_PATH_RE=/^[0-9a-fA-F]{64}[/\\]/;
+const URL_REF_RE=/^https?:\/\//i;
+const isAttachmentRef=r=>ATTACHMENT_REF_RE.test(r)||TXID_PATH_RE.test(r)||URL_REF_RE.test(r);
 const classifyThreadActions=(msg)=>{
   // Decode HTML entities so <<...>> matching works regardless of CLI encoding
   const decoded=String(msg??'').replace(/&lt;/g,'<').replace(/&gt;/g,'>');
@@ -1287,14 +1291,15 @@ const classifyThreadActions=(msg)=>{
   // Text remaining after stripping all <<...>> markers
   const remainingText=decoded.replace(/<<[^>]+>>/g,'').trim();
 
-  const hasTxidRef=fileRefs.some(r=>TXID_RE.test(r));  // <<64-char-hex>> = retweet ref
-  const hasSalt   =fileRefs.some(r=>!TXID_RE.test(r)); // <<anything-else>> = salt = like marker
-  const hasText   =remainingText.length>0;
+  const hasTxidRef   =fileRefs.some(r=>TXID_RE.test(r));                            // <<64-char-hex>>      = retweet ref
+  const hasAttachment=fileRefs.some(r=>!TXID_RE.test(r)&&isAttachmentRef(r));       // <<IPFS:…>> / <<txid/file>> / <<https://…>> = attachment
+  const hasSalt      =fileRefs.some(r=>!TXID_RE.test(r)&&!isAttachmentRef(r));      // <<anything-else>>    = salt = like marker
+  const hasText      =remainingText.length>0;
 
   const actions=[];
-  if(hasText)                          actions.push('comment');
-  if(hasTxidRef)                       actions.push('retweet');
-  if(hasSalt&&(!hasText||hasTxidRef))  actions.push('like');
+  if(hasText||hasAttachment)                          actions.push('comment');
+  if(hasTxidRef)                                      actions.push('retweet');
+  if(hasSalt&&((!hasText&&!hasAttachment)||hasTxidRef)) actions.push('like');
 
   // Fallback: treat as comment if nothing matched (e.g. empty message)
   if(!actions.length) actions.push('comment');
