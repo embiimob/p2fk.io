@@ -1893,7 +1893,23 @@ const appendResultItems=async(objectResults,profileResults,rootResults,searchId,
   // Normalize newly fetched items and add them to the shared buffer
   for(const r of(objectResults||[])){const o=r.Object||r.object;if(!o||!o.Name) continue;state.buffer.push({type:'object',raw:o,blockchain:r.Blockchain||r.blockchain||''});}
   for(const r of(profileResults||[])){const p=r.Profile||r.profile;if(!p) continue;if(!p.DisplayName&&!p.URN) continue;if(r.Address||r.address) p._address=r.Address||r.address;state.buffer.push({type:'profile',raw:p,blockchain:r.Blockchain||r.blockchain||''});}
-  for(const r of(rootResults||[])){const root=r.Root||r.root;if(!root) continue;const n=normalizeRoot(root);if(!n) continue;state.buffer.push({type:'message',data:n,blockchain:r.Blockchain||r.blockchain||''});}
+  const msgItems=[];
+  for(const r of(rootResults||[])){const root=r.Root||r.root;if(!root) continue;const n=normalizeRoot(root);if(!n) continue;msgItems.push({n,blockchain:r.Blockchain||r.blockchain||''});}
+  // Keyword mode uses GetPublicMessagesByAddress which omits "Signed By" and "File".
+  // Enrich each item via GetRootByTransactionID (same pattern used in the profile view).
+  if(state.keywordMode&&msgItems.length){
+    await Promise.all(msgItems.map(async({n})=>{
+      if(!n.txId||(n.fromAddress&&n.files.length)) return;
+      try{
+        const raw=await fetchAPI(`${BASE_URL}/GetRootByTransactionID/${encodeURIComponent(n.txId)}?mainnet=${state.keywordMainnet}&verbose=false`,'',signal,10000);
+        const full=normalizeRoot(Array.isArray(raw)?raw[0]:raw);
+        if(!full) return;
+        if(!n.fromAddress&&full.fromAddress) n.fromAddress=full.fromAddress;
+        if(!n.files.length&&full.files.length) n.files=full.files;
+      }catch{}
+    }));
+  }
+  for(const{n,blockchain}of msgItems) state.buffer.push({type:'message',data:n,blockchain});
   // Keep buffer sorted by date descending so we always display the newest first
   state.buffer.sort((a,b)=>{
     const getD=item=>{
