@@ -183,17 +183,6 @@
       white-space: nowrap;
     }
     #filter-bar label:hover { color: #e0e0e0; }
-    .sr-only {
-      position: absolute;
-      width: 1px;
-      height: 1px;
-      padding: 0;
-      margin: -1px;
-      overflow: hidden;
-      clip: rect(0,0,0,0);
-      white-space: nowrap;
-      border: 0;
-    }
     #trendingSearchBtn {
       border: 1px solid #333;
       background: #1a1a1a;
@@ -740,7 +729,7 @@
   <label title="Dogecoin"><input type="checkbox" id="chkDOG"> DOG</label>
   <label title="Mazacoin"><input type="checkbox" id="chkMZC"> MZC</label>
   <span class="sep"></span>
-  <button type="button" id="trendingSearchBtn" title="Show trending results" aria-label="Show trending results"><span aria-hidden="true">📈</span><span class="sr-only">Trending</span></button>
+  <button type="button" id="trendingSearchBtn" title="Show trending results" aria-label="Show trending results">📈</button>
   <label title="System transactions (SEC/OBJ/LST/BRN/PRO/BUY/GIV)"><input type="checkbox" id="chkSystem"> ⚙️</label>
 </div>
 
