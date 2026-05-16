@@ -2172,7 +2172,8 @@ const performTrendingSearch=async()=>{
   document.getElementById('searchGaveUp').style.display='none';
   document.getElementById('searchLoading').style.display='block';
   document.getElementById('searchLoading').textContent='Loading trending searches…';
-  scrollObserver.unobserve(document.getElementById('loadSentinel'));
+  const trendingSentinel=document.getElementById('loadSentinel');
+  if(trendingSentinel) scrollObserver.unobserve(trendingSentinel);
   state.pagination={};state.buffer=[];state.totalDisplayed=0;state.chainCounts={};state.consecutiveEmptyRounds=0;state.initialLoadRounds=0;
   const TRENDING_EMPTY_HTML='<div style="text-align:center;padding:30px;color:#666;">nothing\'s trending so far..</div>';
 
