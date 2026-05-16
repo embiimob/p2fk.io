@@ -183,6 +183,22 @@
       white-space: nowrap;
     }
     #filter-bar label:hover { color: #e0e0e0; }
+    #trendingSearchBtn {
+      border: 1px solid #333;
+      background: #1a1a1a;
+      color: #b0b0b0;
+      border-radius: 4px;
+      height: 24px;
+      min-width: 24px;
+      padding: 0 6px;
+      cursor: pointer;
+      line-height: 1;
+      font-size: 0.95em;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #trendingSearchBtn:hover { color: #e0e0e0; border-color: #bb86fc; }
     #filter-bar .sep {
       width: 1px;
       height: 16px;
@@ -713,6 +729,7 @@
   <label title="Dogecoin"><input type="checkbox" id="chkDOG"> DOG</label>
   <label title="Mazacoin"><input type="checkbox" id="chkMZC"> MZC</label>
   <span class="sep"></span>
+  <button type="button" id="trendingSearchBtn" title="Show trending results" aria-label="Show trending results">📈</button>
   <label title="System transactions (SEC/OBJ/LST/BRN/PRO/BUY/GIV)"><input type="checkbox" id="chkSystem"> ⚙️</label>
 </div>
 
@@ -792,6 +809,11 @@ const BASE_URL = window.location.origin;
 const API_FETCH_BATCH_SIZE = 200;
 const DISPLAY_BATCH_SIZE = 20;
 const MAX_PER_CHAIN = 1000;
+const TRENDING_TERMS_LIMIT = 100;
+const TRENDING_INITIAL_TERM_COUNT = 5;
+const TRENDING_RESULTS_PER_TERM = 20;
+const TRENDING_RESULTS_LIMIT = 100;
+const TRENDING_API_TIMEOUT = 30000;
 const MSG_PAGE_SIZE = 20;
 const GAVE_UP_ROUNDS = 4;
 const MAX_INITIAL_ROUNDS = 3;
@@ -2132,6 +2154,111 @@ const performSearch=async(searchText)=>{
   }
 };
 
+// ── Trending search (top searches → combined top results) ───────────────
+const performTrendingSearch=async()=>{
+  if(state.isSearching) return;
+  state.isSearching=true;state.keywordMode=false;
+  if(state.abortController) state.abortController.abort();
+  state.abortController=new AbortController();
+  const searchId=Date.now()+Math.random().toString(36).slice(2);
+  state.currentSearchId=searchId;
+  const signal=state.abortController.signal;
+
+  setView('search');
+  setCancelMode(true);
+  document.getElementById('feed').innerHTML='';
+  document.getElementById('resultCount').style.display='none';
+  document.getElementById('searchError').style.display='none';
+  document.getElementById('searchGaveUp').style.display='none';
+  document.getElementById('searchLoading').style.display='block';
+  document.getElementById('searchLoading').textContent='Loading trending searches…';
+  const trendingSentinel=document.getElementById('loadSentinel');
+  if(trendingSentinel) scrollObserver.unobserve(trendingSentinel);
+  state.pagination={};state.buffer=[];state.totalDisplayed=0;state.chainCounts={};state.consecutiveEmptyRounds=0;state.initialLoadRounds=0;
+  const TRENDING_EMPTY_HTML='<div style="text-align:center;padding:30px;color:#666;">nothing\'s trending so far..</div>';
+
+  try{
+    const trending=await fetchAPI(`${BASE_URL}/GetTrendingRootSearches?qty=${TRENDING_TERMS_LIMIT}`,'',signal,TRENDING_API_TIMEOUT);
+    if(state.currentSearchId!==searchId) return;
+    const searchTerms=(Array.isArray(trending)?trending:[])
+      .map(t=>String(t?.SearchString??t?.searchString??'').trim())
+      .filter(Boolean);
+    if(!searchTerms.length){
+      document.getElementById('feed').innerHTML=TRENDING_EMPTY_HTML;
+      return;
+    }
+
+    const activeChains=Object.entries(CHAINS).filter(([id])=>document.getElementById(id).checked).map(([,c])=>c);
+    if(!activeChains.length){
+      document.getElementById('feed').innerHTML='<div style="text-align:center;padding:30px;color:#666;">Select at least one chain.</div>';
+      return;
+    }
+
+    const combinedRootResults=[];
+    const topTrendingTerms=searchTerms.slice(0,TRENDING_INITIAL_TERM_COUNT);
+    const overflowTrendingTerms=searchTerms.slice(TRENDING_INITIAL_TERM_COUNT);
+    const collectTrendingRootsForTerms=async(terms)=>{
+      for(const term of terms){
+        if(state.currentSearchId!==searchId) return;
+        if(combinedRootResults.length>=TRENDING_RESULTS_LIMIT) break;
+        const perTermResults=[];
+        for(const chain of activeChains){
+          if(perTermResults.length>=TRENDING_RESULTS_PER_TERM) break;
+          const qty=TRENDING_RESULTS_PER_TERM-perTermResults.length;
+          const qs=new URLSearchParams({
+            searchString: term,
+            qty: String(qty),
+            skip: '0',
+            showSystemFiles: String(document.getElementById('chkSystem')?.checked??false),
+          });
+          const chainQs=new URLSearchParams(chain.params);
+          for(const [k,v] of chainQs.entries()) qs.set(k,v);
+          const found=await fetchAPI(
+            `${BASE_URL}/GetKnownRootsBySearchString?${qs.toString()}`,
+            '',
+            signal,
+            TRENDING_API_TIMEOUT
+          ).catch(()=>[]);
+          const arr=Array.isArray(found)?found:[];
+          perTermResults.push(...arr);
+        }
+        if(perTermResults.length){
+          combinedRootResults.push(...perTermResults.slice(0,TRENDING_RESULTS_PER_TERM));
+        }
+      }
+    };
+    await collectTrendingRootsForTerms(topTrendingTerms);
+    if(state.currentSearchId!==searchId) return;
+    if(combinedRootResults.length<TRENDING_RESULTS_LIMIT){
+      await collectTrendingRootsForTerms(overflowTrendingTerms);
+      if(state.currentSearchId!==searchId) return;
+    }
+
+    if(!combinedRootResults.length){
+      document.getElementById('feed').innerHTML=TRENDING_EMPTY_HTML;
+      return;
+    }
+
+    document.getElementById('searchLoading').style.display='none';
+    const limited=combinedRootResults.slice(0,TRENDING_RESULTS_LIMIT);
+    const added=await appendResultItems([],[],limited,searchId,signal);
+    if(state.currentSearchId!==searchId) return;
+    state.totalDisplayed=added;
+    updateResultCount();
+  }catch(e){
+    if(e.name!=='AbortError'){
+      showSearchError('Trending search failed: '+e.message);
+    }
+  }finally{
+    if(state.currentSearchId===searchId){
+      state.isSearching=false;
+      setCancelMode(false);
+      document.getElementById('searchLoading').style.display='none';
+      document.getElementById('searchLoading').textContent='Loading…';
+    }
+  }
+};
+
 const showSearchError=(msg)=>{const el=document.getElementById('searchError');el.textContent=msg;el.style.display='block';setTimeout(()=>{el.style.display='none';},6000);};
 
 // ── URN media type detection ──────────────────────────────────────────
@@ -3241,6 +3368,12 @@ document.getElementById('navbar-search-btn').addEventListener('click',(e)=>{
   // If idle: start a new search.
   if(state.isSearching||state.isLoadingMore){cancelSearch();}
   else{handleNavSearch();}
+});
+
+document.getElementById('trendingSearchBtn').addEventListener('click',(e)=>{
+  e.preventDefault();
+  if(state.isSearching||state.isLoadingMore) cancelSearch();
+  performTrendingSearch();
 });
 
 document.getElementById('searchContinueBtn').addEventListener('click',()=>{
