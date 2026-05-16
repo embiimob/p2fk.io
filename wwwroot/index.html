@@ -2205,8 +2205,16 @@ const performTrendingSearch=async()=>{
         for(const chain of activeChains){
           if(perTermResults.length>=TRENDING_RESULTS_PER_TERM) break;
           const qty=TRENDING_RESULTS_PER_TERM-perTermResults.length;
+          const qs=new URLSearchParams({
+            searchString: term,
+            qty: String(qty),
+            skip: '0',
+            showSystemFiles: String(document.getElementById('chkSystem')?.checked??false),
+          });
+          const chainQs=new URLSearchParams(chain.params);
+          for(const [k,v] of chainQs.entries()) qs.set(k,v);
           const found=await fetchAPI(
-            `${BASE_URL}/GetKnownRootsBySearchString?searchString=${encodeURIComponent(term)}&qty=${qty}&skip=0&${chain.params}&showSystemFiles=${document.getElementById('chkSystem')?.checked??false}`,
+            `${BASE_URL}/GetKnownRootsBySearchString?${qs.toString()}`,
             '',
             signal,
             TRENDING_API_TIMEOUT
