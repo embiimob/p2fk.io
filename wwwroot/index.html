@@ -2192,8 +2192,29 @@ const performTrendingSearch=async()=>{
     }
 
     const combinedRootResults=[];
-    const termsQueue=[...searchTerms.slice(0,TRENDING_INITIAL_TERM_COUNT),...searchTerms.slice(TRENDING_INITIAL_TERM_COUNT)];
-    for(const term of termsQueue){
+    const topTrendingTerms=searchTerms.slice(0,TRENDING_INITIAL_TERM_COUNT);
+    const overflowTrendingTerms=searchTerms.slice(TRENDING_INITIAL_TERM_COUNT);
+    for(const term of topTrendingTerms){
+      if(state.currentSearchId!==searchId) return;
+      if(combinedRootResults.length>=TRENDING_RESULTS_LIMIT) break;
+      const perTermResults=[];
+      for(const chain of activeChains){
+        if(perTermResults.length>=TRENDING_RESULTS_PER_TERM) break;
+        const qty=TRENDING_RESULTS_PER_TERM-perTermResults.length;
+        const found=await fetchAPI(
+          `${BASE_URL}/GetKnownRootsBySearchString?searchString=${encodeURIComponent(term)}&qty=${qty}&skip=0&${chain.params}&showSystemFiles=${document.getElementById('chkSystem')?.checked??false}`,
+          '',
+          signal,
+          30000
+        ).catch(()=>[]);
+        const arr=Array.isArray(found)?found:[];
+        perTermResults.push(...arr);
+      }
+      if(perTermResults.length){
+        combinedRootResults.push(...perTermResults.slice(0,TRENDING_RESULTS_PER_TERM));
+      }
+    }
+    for(const term of overflowTrendingTerms){
       if(state.currentSearchId!==searchId) return;
       if(combinedRootResults.length>=TRENDING_RESULTS_LIMIT) break;
       const perTermResults=[];
