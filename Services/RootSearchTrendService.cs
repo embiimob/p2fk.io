@@ -10,6 +10,10 @@ namespace P2FK.IO.Services
     public class RootSearchTrendService
     {
         private const int MaxEntries = 100;
+        private const double MaxResultWeight = 0.65;
+        private const double AverageResultWeight = 0.35;
+        private const double ResultSignalWeight = 1.6;
+        private const double SearchSignalWeight = 0.85;
         private static readonly TimeSpan EntryTtl = TimeSpan.FromHours(24);
         private static readonly Regex WhitespaceRegex = new(@"\s+", RegexOptions.Compiled);
 
@@ -29,6 +33,8 @@ namespace P2FK.IO.Services
 
         public void RecordSuccessfulSearch(string searchString, int resultCount)
         {
+            // Only successful searches are tracked; zero-result lookups do not enter or
+            // refresh the trending list.
             if (resultCount <= 0) return;
 
             string normalized = NormalizeSearchString(searchString);
@@ -152,12 +158,16 @@ namespace P2FK.IO.Services
             double freshness = 1d - (ageHours / EntryTtl.TotalHours);
             double averageResultCount = GetAverageResultCount(entry);
 
-            // Weight result volume more heavily than raw repeat count and dampen both
-            // signals with logarithms so repeated spam has sharply diminishing returns.
-            double resultSignal = Math.Log(1d + (entry.MaxResultCount * 0.65) + (averageResultCount * 0.35));
+            // Result volume matters more than repeat count, so the score leans toward
+            // broad/high-yield searches.  MaxResultCount gets the larger share because a
+            // query that can return many rows should outrank one that only becomes popular
+            // via repetition, while AverageResultCount keeps the score anchored to typical
+            // successful calls.  Both signals are logarithmic so repeated spam has sharply
+            // diminishing returns.
+            double resultSignal = Math.Log(1d + (entry.MaxResultCount * MaxResultWeight) + (averageResultCount * AverageResultWeight));
             double searchSignal = Math.Log(1d + entry.SuccessfulSearchCount);
 
-            return freshness * ((resultSignal * 1.6) + (searchSignal * 0.85));
+            return freshness * ((resultSignal * ResultSignalWeight) + (searchSignal * SearchSignalWeight));
         }
 
         private static string NormalizeSearchString(string searchString)
