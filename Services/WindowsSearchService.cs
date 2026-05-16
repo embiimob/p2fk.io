@@ -371,6 +371,42 @@ namespace P2FK.IO.Services
                 }
             }
 
+            // When this scan included system files (showSystemFiles=true), also derive and
+            // store the showSystemFiles=false variants so both cache keys are populated from
+            // a single filesystem scan.  This prevents the wildcard guard from returning an
+            // empty list for requests that use the opposite showSystemFiles value.
+            if (showSystemFiles)
+            {
+                var filteredEntries = new List<CachedRootEntry>(entries.Count);
+                foreach (var e in entries)
+                {
+                    JsonElement el;
+                    try { el = JsonSerializer.Deserialize<JsonElement>(e.RawJson); }
+                    catch (JsonException) { continue; }
+                    if (!IsSystemRoot(el))
+                        filteredEntries.Add(e);
+                }
+
+                string filteredKey = $"roots:{searchString?.ToLowerInvariant() ?? ""}:{blockchain?.ToLowerInvariant() ?? ""}:False";
+                _cache.Set(filteredKey, filteredEntries, new MemoryCacheEntryOptions()
+                    .SetSize(1)
+                    .SetAbsoluteExpiration(CacheTtl));
+                _cacheStatus.UpdateEntryCount(filteredKey, filteredEntries.Count);
+
+                if (blockchain == null)
+                {
+                    foreach (var chainGroup in filteredEntries.GroupBy(e => e.Blockchain, StringComparer.OrdinalIgnoreCase))
+                    {
+                        string chainCacheKey = $"roots:{searchString?.ToLowerInvariant() ?? ""}:{chainGroup.Key.ToLowerInvariant()}:False";
+                        var chainList = chainGroup.ToList();
+                        _cache.Set(chainCacheKey, chainList, new MemoryCacheEntryOptions()
+                            .SetSize(1)
+                            .SetAbsoluteExpiration(CacheTtl));
+                        _cacheStatus.UpdateEntryCount(chainCacheKey, chainList.Count);
+                    }
+                }
+            }
+
             return SliceRootResults(entries, skip, qty);
         }
 

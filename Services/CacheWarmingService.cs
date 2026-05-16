@@ -37,9 +37,11 @@ namespace P2FK.IO.Services
         // Brief pause after host startup so routes and services are fully initialised.
         private const int StartupDelaySeconds = 5;
 
-        // One all-chains wildcard scan, system files excluded.
+        // One all-chains wildcard scan, all files included (showSystemFiles=true).
+        // SearchRootsAsync automatically derives and stores the showSystemFiles=false
+        // variant from the same scan so both cache keys are populated in one pass.
         private const int WarmQty = 5000;
-        private const bool WarmShowSystemFiles = false;
+        private const bool WarmShowSystemFiles = true;
 
         private readonly WindowsSearchService _searchService;
         private readonly CacheStatusService _cacheStatus;

@@ -10,10 +10,12 @@ namespace P2FK.IO.Controllers
     public class GetKnownRootsBySearchStringController : ControllerBase
     {
         private readonly WindowsSearchService _searchService;
+        private readonly RootSearchTrendService _trendService;
 
-        public GetKnownRootsBySearchStringController(WindowsSearchService searchService)
+        public GetKnownRootsBySearchStringController(WindowsSearchService searchService, RootSearchTrendService trendService)
         {
             _searchService = searchService;
+            _trendService = trendService;
         }
 
         /// <summary>Full-text search for on-chain messages (roots) across the indexed blockchain.</summary>
@@ -48,6 +50,9 @@ namespace P2FK.IO.Controllers
             string effectiveChain = (blockchain == "BTC" && !mainnet) ? "BTC-testnet" : blockchain;
 
             var results = await _searchService.SearchRootsAsync(searchString, qty, skip, effectiveChain, showSystemFiles);
+            if (results.Count > 0)
+                _trendService.RecordSuccessfulSearch(searchString, results.Count);
+
             return new JsonResult(results);
         }
     }
