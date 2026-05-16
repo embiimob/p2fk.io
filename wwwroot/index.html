@@ -183,6 +183,17 @@
       white-space: nowrap;
     }
     #filter-bar label:hover { color: #e0e0e0; }
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0,0,0,0);
+      white-space: nowrap;
+      border: 0;
+    }
     #trendingSearchBtn {
       border: 1px solid #333;
       background: #1a1a1a;
@@ -729,7 +740,7 @@
   <label title="Dogecoin"><input type="checkbox" id="chkDOG"> DOG</label>
   <label title="Mazacoin"><input type="checkbox" id="chkMZC"> MZC</label>
   <span class="sep"></span>
-  <button type="button" id="trendingSearchBtn" title="Show trending results" aria-label="Show trending results">📈</button>
+  <button type="button" id="trendingSearchBtn" title="Show trending results" aria-label="Show trending results"><span aria-hidden="true">📈</span><span class="sr-only">Trending</span></button>
   <label title="System transactions (SEC/OBJ/LST/BRN/PRO/BUY/GIV)"><input type="checkbox" id="chkSystem"> ⚙️</label>
 </div>
 
@@ -813,6 +824,7 @@ const TRENDING_TERMS_LIMIT = 100;
 const TRENDING_INITIAL_TERM_COUNT = 5;
 const TRENDING_RESULTS_PER_TERM = 20;
 const TRENDING_RESULTS_LIMIT = 100;
+const TRENDING_API_TIMEOUT = 30000;
 const MSG_PAGE_SIZE = 20;
 const GAVE_UP_ROUNDS = 4;
 const MAX_INITIAL_ROUNDS = 3;
@@ -2173,15 +2185,16 @@ const performTrendingSearch=async()=>{
   document.getElementById('searchLoading').textContent='Loading trending searches…';
   scrollObserver.unobserve(document.getElementById('loadSentinel'));
   state.pagination={};state.buffer=[];state.totalDisplayed=0;state.chainCounts={};state.consecutiveEmptyRounds=0;state.initialLoadRounds=0;
+  const TRENDING_EMPTY_HTML='<div style="text-align:center;padding:30px;color:#666;">nothing\'s trending so far..</div>';
 
   try{
-    const trending=await fetchAPI(`${BASE_URL}/GetTrendingRootSearches?qty=${TRENDING_TERMS_LIMIT}`,'',signal,30000);
+    const trending=await fetchAPI(`${BASE_URL}/GetTrendingRootSearches?qty=${TRENDING_TERMS_LIMIT}`,'',signal,TRENDING_API_TIMEOUT);
     if(state.currentSearchId!==searchId) return;
     const searchTerms=(Array.isArray(trending)?trending:[])
       .map(t=>String(t?.SearchString??t?.searchString??'').trim())
       .filter(Boolean);
     if(!searchTerms.length){
-      document.getElementById('feed').innerHTML='<div style="text-align:center;padding:30px;color:#666;">nothing\'s trending so far..</div>';
+      document.getElementById('feed').innerHTML=TRENDING_EMPTY_HTML;
       return;
     }
 
@@ -2206,7 +2219,7 @@ const performTrendingSearch=async()=>{
             `${BASE_URL}/GetKnownRootsBySearchString?searchString=${encodeURIComponent(term)}&qty=${qty}&skip=0&${chain.params}&showSystemFiles=${document.getElementById('chkSystem')?.checked??false}`,
             '',
             signal,
-            30000
+            TRENDING_API_TIMEOUT
           ).catch(()=>[]);
           const arr=Array.isArray(found)?found:[];
           perTermResults.push(...arr);
@@ -2224,7 +2237,7 @@ const performTrendingSearch=async()=>{
     }
 
     if(!combinedRootResults.length){
-      document.getElementById('feed').innerHTML='<div style="text-align:center;padding:30px;color:#666;">nothing\'s trending so far..</div>';
+      document.getElementById('feed').innerHTML=TRENDING_EMPTY_HTML;
       return;
     }
 
