@@ -51,7 +51,6 @@ namespace P2FK.IO.Services
                     _entries[normalized] = entry;
                 }
 
-                entry.SearchString = normalized;
                 entry.SuccessfulSearchCount++;
                 entry.LastResultCount = resultCount;
                 entry.TotalResultCount += resultCount;
@@ -118,14 +117,10 @@ namespace P2FK.IO.Services
                 .Select(kvp =>
                 {
                     TrendState entry = kvp.Value;
-                    double averageResultCount = entry.SuccessfulSearchCount == 0
-                        ? 0
-                        : (double)entry.TotalResultCount / entry.SuccessfulSearchCount;
-
                     return new
                     {
                         Entry = entry,
-                        AverageResultCount = Math.Round(averageResultCount, 2),
+                        AverageResultCount = Math.Round(GetAverageResultCount(entry), 2),
                         Score = CalculateScore(entry, now)
                     };
                 })
@@ -155,9 +150,7 @@ namespace P2FK.IO.Services
                 return 0;
 
             double freshness = 1d - (ageHours / EntryTtl.TotalHours);
-            double averageResultCount = entry.SuccessfulSearchCount == 0
-                ? 0
-                : (double)entry.TotalResultCount / entry.SuccessfulSearchCount;
+            double averageResultCount = GetAverageResultCount(entry);
 
             // Weight result volume more heavily than raw repeat count and dampen both
             // signals with logarithms so repeated spam has sharply diminishing returns.
@@ -174,5 +167,8 @@ namespace P2FK.IO.Services
 
             return WhitespaceRegex.Replace(searchString.Trim(), " ");
         }
+
+        private static double GetAverageResultCount(TrendState entry) =>
+            entry.SuccessfulSearchCount == 0 ? 0 : (double)entry.TotalResultCount / entry.SuccessfulSearchCount;
     }
 }
