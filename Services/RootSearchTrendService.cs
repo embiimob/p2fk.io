@@ -15,7 +15,7 @@ namespace P2FK.IO.Services
         private const double ResultSignalWeight = 1.6;
         private const double SearchSignalWeight = 0.85;
         private static readonly TimeSpan EntryTtl = TimeSpan.FromHours(24);
-        private static readonly Regex WhitespaceRegex = new(@"\s+", RegexOptions.Compiled);
+        private static readonly Regex WhitespaceRegex = new(@"\s+", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
         private readonly object _gate = new();
         private readonly Dictionary<string, TrendState> _entries = new(StringComparer.OrdinalIgnoreCase);
