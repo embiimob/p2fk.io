@@ -861,6 +861,11 @@ const state = {
   profileMsgLoading: false,
   profileMsgObserver: null,
   currentView: 'search',
+  isTrendingMode: false,
+  trendingTerms: [],
+  trendingTermIndex: 0,
+  trendingSeenTxIds: null,
+  trendingActiveChains: [],
 };
 
 // ── Utility helpers ────────────────────────────────────────────────────
@@ -1841,8 +1846,8 @@ const renderObjectCard=(obj,blockchain)=>{
 };
 
 // ── Search pagination helpers ──────────────────────────────────────────
-const allExhausted=()=>Object.values(state.pagination).every(p=>p.exhausted)&&state.buffer.length===0;
-const anyMoreNeeded=()=>Object.values(state.pagination).some(p=>!p.exhausted)||state.buffer.length>0;
+const allExhausted=()=>{if(state.isTrendingMode) return state.trendingTermIndex>=state.trendingTerms.length&&state.buffer.length===0;return Object.values(state.pagination).every(p=>p.exhausted)&&state.buffer.length===0;};
+const anyMoreNeeded=()=>{if(state.isTrendingMode) return state.trendingTermIndex<state.trendingTerms.length||state.buffer.length>0;return Object.values(state.pagination).some(p=>!p.exhausted)||state.buffer.length>0;};
 const updateResultCount=()=>{const n=state.totalDisplayed;const rc=document.getElementById('resultCount');if(n){rc.textContent=`${n} result${n===1?'':'s'} found`;rc.style.display='block';}};
 const endpointForType=(type)=>type==='objects'?'GetKnownObjectsBySearchString':type==='profiles'?'GetKnownProfilesBySearchString':'GetKnownRootsBySearchString';
 
@@ -1970,9 +1975,14 @@ const loadMoreBatch=async()=>{
     // Drain the buffer first; only fetch from the API when it is empty
     let objectResults=[],profileResults=[],rootResults=[];
     if(state.buffer.length===0){
-      const fetched=await fetchNextPage(signal);
-      if(state.currentSearchId!==searchId) return;
-      objectResults=fetched.objectResults;profileResults=fetched.profileResults;rootResults=fetched.rootResults;
+      if(state.isTrendingMode){
+        rootResults=await fetchNextTrendingPage(signal);
+        if(state.currentSearchId!==searchId) return;
+      }else{
+        const fetched=await fetchNextPage(signal);
+        if(state.currentSearchId!==searchId) return;
+        objectResults=fetched.objectResults;profileResults=fetched.profileResults;rootResults=fetched.rootResults;
+      }
     }
     const added=await appendResultItems(objectResults,profileResults,rootResults,searchId,signal);
     if(state.currentSearchId!==searchId) return;
@@ -2043,7 +2053,7 @@ const performKeywordSearch=async(keyword)=>{
     if(wantObjects)  pagination[`objects:${chainKey}`] ={skip:0,exhausted:false};
     if(wantProfiles) pagination[`profiles:${chainKey}`]={skip:0,exhausted:false};
     if(wantMessages) pagination[`messages:${chainKey}`]={skip:0,exhausted:false};
-    state.keywordMode=true;state.keywordAddress=addr;state.keywordMainnet=isMainnet;
+    state.keywordMode=true;state.keywordAddress=addr;state.keywordMainnet=isMainnet;state.isTrendingMode=false;
     state.lastSearchText='#'+keyword;state.pagination=pagination;state.totalDisplayed=0;state.chainCounts={};state.buffer=[];state.consecutiveEmptyRounds=0;state.initialLoadRounds=0;
     loadEl.textContent='Loading…';
     const{objectResults,profileResults,rootResults}=await fetchNextPage(signal);
@@ -2090,7 +2100,7 @@ const performSearch=async(searchText)=>{
   const wantMessages=document.getElementById('chkMessages').checked;
   if(!wantObjects&&!wantProfiles&&!wantMessages){showSearchError('Please select at least one result type.');return;}
 
-  state.isSearching=true;state.keywordMode=false;
+  state.isSearching=true;state.keywordMode=false;state.isTrendingMode=false;
   if(state.abortController) state.abortController.abort();
   state.abortController=new AbortController();
   const searchId=Date.now()+Math.random().toString(36).slice(2);
@@ -2154,10 +2164,34 @@ const performSearch=async(searchText)=>{
   }
 };
 
+// ── Trending page fetch (deduplicates by TxID, called by loadMoreBatch) ─
+const fetchNextTrendingPage=async(signal)=>{
+  if(state.trendingTermIndex>=state.trendingTerms.length) return [];
+  const term=state.trendingTerms[state.trendingTermIndex++];
+  const seenTxIds=state.trendingSeenTxIds;
+  const showSystem=String(document.getElementById('chkSystem')?.checked??false);
+  const results=[];
+  for(const chain of state.trendingActiveChains){
+    const qs=new URLSearchParams({searchString:term,qty:String(TRENDING_RESULTS_PER_TERM),skip:'0',showSystemFiles:showSystem});
+    const chainQs=new URLSearchParams(chain.params);
+    for(const[k,v]of chainQs.entries()) qs.set(k,v);
+    const found=await fetchAPI(`${BASE_URL}/GetKnownRootsBySearchString?${qs.toString()}`,'',signal,TRENDING_API_TIMEOUT).catch(()=>[]);
+    for(const r of(Array.isArray(found)?found:[])){
+      const root=r.Root||r.root;
+      if(!root) continue;
+      const txId=(root['Transaction Id']??root.TransactionId??root['Transaction ID']??'').toLowerCase();
+      if(!txId||seenTxIds.has(txId)) continue;
+      seenTxIds.add(txId);
+      results.push(r);
+    }
+  }
+  return results;
+};
+
 // ── Trending search (top searches → combined top results) ───────────────
 const performTrendingSearch=async()=>{
   if(state.isSearching) return;
-  state.isSearching=true;state.keywordMode=false;
+  state.isSearching=true;state.keywordMode=false;state.isTrendingMode=true;
   if(state.abortController) state.abortController.abort();
   state.abortController=new AbortController();
   const searchId=Date.now()+Math.random().toString(36).slice(2);
@@ -2172,11 +2206,12 @@ const performTrendingSearch=async()=>{
   document.getElementById('searchGaveUp').style.display='none';
   document.getElementById('searchLoading').style.display='block';
   document.getElementById('searchLoading').textContent='Loading trending searches…';
-  const trendingSentinel=document.getElementById('loadSentinel');
-  if(trendingSentinel) scrollObserver.unobserve(trendingSentinel);
+  scrollObserver.unobserve(document.getElementById('loadSentinel'));
   state.pagination={};state.buffer=[];state.totalDisplayed=0;state.chainCounts={};state.consecutiveEmptyRounds=0;state.initialLoadRounds=0;
+  state.trendingTerms=[];state.trendingTermIndex=0;state.trendingSeenTxIds=new Set();state.trendingActiveChains=[];
   const TRENDING_EMPTY_HTML='<div style="text-align:center;padding:30px;color:#666;">nothing\'s trending so far..</div>';
 
+  let addedInRound=0;
   try{
     const trending=await fetchAPI(`${BASE_URL}/GetTrendingRootSearches?qty=${TRENDING_TERMS_LIMIT}`,'',signal,TRENDING_API_TIMEOUT);
     if(state.currentSearchId!==searchId) return;
@@ -2194,56 +2229,29 @@ const performTrendingSearch=async()=>{
       return;
     }
 
-    const combinedRootResults=[];
-    const topTrendingTerms=searchTerms.slice(0,TRENDING_INITIAL_TERM_COUNT);
-    const overflowTrendingTerms=searchTerms.slice(TRENDING_INITIAL_TERM_COUNT);
-    const collectTrendingRootsForTerms=async(terms)=>{
-      for(const term of terms){
-        if(state.currentSearchId!==searchId) return;
-        if(combinedRootResults.length>=TRENDING_RESULTS_LIMIT) break;
-        const perTermResults=[];
-        for(const chain of activeChains){
-          if(perTermResults.length>=TRENDING_RESULTS_PER_TERM) break;
-          const qty=TRENDING_RESULTS_PER_TERM-perTermResults.length;
-          const qs=new URLSearchParams({
-            searchString: term,
-            qty: String(qty),
-            skip: '0',
-            showSystemFiles: String(document.getElementById('chkSystem')?.checked??false),
-          });
-          const chainQs=new URLSearchParams(chain.params);
-          for(const [k,v] of chainQs.entries()) qs.set(k,v);
-          const found=await fetchAPI(
-            `${BASE_URL}/GetKnownRootsBySearchString?${qs.toString()}`,
-            '',
-            signal,
-            TRENDING_API_TIMEOUT
-          ).catch(()=>[]);
-          const arr=Array.isArray(found)?found:[];
-          perTermResults.push(...arr);
-        }
-        if(perTermResults.length){
-          combinedRootResults.push(...perTermResults.slice(0,TRENDING_RESULTS_PER_TERM));
-        }
-      }
-    };
-    await collectTrendingRootsForTerms(topTrendingTerms);
-    if(state.currentSearchId!==searchId) return;
-    if(combinedRootResults.length<TRENDING_RESULTS_LIMIT){
-      await collectTrendingRootsForTerms(overflowTrendingTerms);
+    state.trendingTerms=searchTerms;
+    state.trendingActiveChains=activeChains;
+    document.getElementById('searchLoading').textContent='Loading trending results…';
+
+    // Pre-fetch enough deduplicated results to fill the initial display page
+    const initialResults=[];
+    while(state.trendingTermIndex<state.trendingTerms.length&&initialResults.length<DISPLAY_BATCH_SIZE){
       if(state.currentSearchId!==searchId) return;
+      const termResults=await fetchNextTrendingPage(signal);
+      if(state.currentSearchId!==searchId) return;
+      initialResults.push(...termResults);
     }
 
-    if(!combinedRootResults.length){
+    if(!initialResults.length){
       document.getElementById('feed').innerHTML=TRENDING_EMPTY_HTML;
       return;
     }
 
     document.getElementById('searchLoading').style.display='none';
-    const limited=combinedRootResults.slice(0,TRENDING_RESULTS_LIMIT);
-    const added=await appendResultItems([],[],limited,searchId,signal);
+    const added=await appendResultItems([],[],initialResults,searchId,signal);
     if(state.currentSearchId!==searchId) return;
-    state.totalDisplayed=added;
+    addedInRound=added;
+    state.totalDisplayed+=added;
     updateResultCount();
   }catch(e){
     if(e.name!=='AbortError'){
@@ -2255,6 +2263,19 @@ const performTrendingSearch=async()=>{
       setCancelMode(false);
       document.getElementById('searchLoading').style.display='none';
       document.getElementById('searchLoading').textContent='Loading…';
+    }
+    if(state.currentSearchId===searchId&&anyMoreNeeded()){
+      if(addedInRound===0) state.consecutiveEmptyRounds+=1;
+      else state.consecutiveEmptyRounds=0;
+      state.initialLoadRounds+=1;
+      const hitRoundLimit=state.totalDisplayed<DISPLAY_BATCH_SIZE&&state.initialLoadRounds>=MAX_INITIAL_ROUNDS;
+      if(state.consecutiveEmptyRounds>=GAVE_UP_ROUNDS){
+        document.getElementById('searchGaveUp').style.display='block';
+      }else if(state.totalDisplayed<DISPLAY_BATCH_SIZE&&!hitRoundLimit){
+        setTimeout(()=>loadMoreBatch(),0);
+      }else{
+        scrollObserver.observe(document.getElementById('loadSentinel'));
+      }
     }
   }
 };
