@@ -819,7 +819,11 @@ const GAVE_UP_ROUNDS = 4;
 const MAX_INITIAL_ROUNDS = 3;
 const THREAD_PAGE_SIZE = 200;
 const THREAD_MESSAGE_LIMIT = 1000;
+// Stop auto-retrying profile-message pages after this many consecutive failures.
+const PROFILE_MSG_MAX_RETRIES = 8;
+// Initial retry delay (ms) for profile-message paging; doubled on each failure.
 const PROFILE_MSG_RETRY_BASE_MS = 1500;
+// Upper bound (ms) for exponential backoff between profile-message retries.
 const PROFILE_MSG_RETRY_MAX_MS = 30000;
 
 const CHAINS = {
@@ -977,6 +981,11 @@ const fetchAPI=async(url,errMsg,signal,timeout=15000)=>{
     return res.json();
   }catch(e){clearTimeout(tid);if(e.name==='AbortError') return null;throw e;}
 };
+
+const calculateProfileMsgBackoff=(retryCount)=>Math.min(
+  PROFILE_MSG_RETRY_MAX_MS,
+  PROFILE_MSG_RETRY_BASE_MS*(2**(Math.max(0,retryCount-1)))
+);
 
 const fetchProfileByAddress=async(address,mainnet,signal)=>{
   if(!isAddress(address)) return null;
@@ -1778,7 +1787,7 @@ const renderMessageCard=async(normalized,signal,blockchain,shareParams,options={
   }else if(normalized.txId){
     const loadThreadBtn=document.createElement('button');
     loadThreadBtn.className='small-secondary-btn';
-    loadThreadBtn.textContent='Load thread activity';
+    loadThreadBtn.textContent='Load replies';
     loadThreadBtn.style.marginTop='8px';
     loadThreadBtn.addEventListener('click',e=>{
       e.preventDefault();
@@ -3018,11 +3027,18 @@ const loadProfileMessages=async()=>{
     if(roots.length<MSG_PAGE_SIZE) state.profileMsgExhausted=true;
     const msgsTabBtn=document.getElementById('tabMessages');if(msgsTabBtn) msgsTabBtn.textContent=`Messages (${state.profileMsgSkip})`;
   }catch(e){
-    state.profileMsgRetryCount=Math.min(state.profileMsgRetryCount+1,8);
-    const backoff=Math.min(PROFILE_MSG_RETRY_MAX_MS,PROFILE_MSG_RETRY_BASE_MS*(2**(state.profileMsgRetryCount-1)));
-    state.profileMsgNextRetryAt=Date.now()+backoff;
+    state.profileMsgRetryCount=Math.min(state.profileMsgRetryCount+1,PROFILE_MSG_MAX_RETRIES);
+    const reachedMaxRetries=state.profileMsgRetryCount>=PROFILE_MSG_MAX_RETRIES;
+    const backoff=calculateProfileMsgBackoff(state.profileMsgRetryCount);
+    state.profileMsgNextRetryAt=reachedMaxRetries?0:Date.now()+backoff;
+    if(reachedMaxRetries) state.profileMsgExhausted=true;
     const errEl=document.getElementById('profileError');
-    if(errEl){errEl.textContent=`Failed to load messages: ${e.message}. Retrying in ${Math.ceil(backoff/1000)}s…`;errEl.style.display='block';}
+    if(errEl){
+      errEl.textContent=reachedMaxRetries
+        ?`Failed to load messages: ${e.message}. Automatic retries paused after ${PROFILE_MSG_MAX_RETRIES} failed attempts.`
+        :`Failed to load messages: ${e.message}. Retrying in ${Math.ceil(backoff/1000)}s…`;
+      errEl.style.display='block';
+    }
   }finally{
     state.profileMsgLoading=false;
     // After loading completes the IntersectionObserver may have fired while
@@ -3031,7 +3047,10 @@ const loadProfileMessages=async()=>{
     if(!state.profileMsgExhausted){
       const scheduleNext=()=>{
         const s=document.getElementById('profileMsgSentinel');
-        if(s){const r=s.getBoundingClientRect();if(r.top<window.innerHeight+400) loadProfileMessages();}
+        if(!s) return;
+        const r=s.getBoundingClientRect();
+        const shouldLoadMore=r.top<window.innerHeight+400;
+        if(shouldLoadMore) loadProfileMessages();
       };
       const waitMs=Math.max(0,(state.profileMsgNextRetryAt||0)-Date.now());
       if(waitMs>0) setTimeout(scheduleNext,waitMs);
