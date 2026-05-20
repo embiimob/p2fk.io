@@ -819,6 +819,8 @@ const GAVE_UP_ROUNDS = 4;
 const MAX_INITIAL_ROUNDS = 3;
 const THREAD_PAGE_SIZE = 200;
 const THREAD_MESSAGE_LIMIT = 1000;
+const PROFILE_MSG_RETRY_BASE_MS = 1500;
+const PROFILE_MSG_RETRY_MAX_MS = 30000;
 
 const CHAINS = {
   chkBitcoin:  { key: 'BTC',  params: 'blockchain=BTC'  },
@@ -831,6 +833,7 @@ const CHAINS = {
 const CHAIN_UPPER_TO_API = { 'BTC':'BTC','TBTC':'BTC','LTC':'LTC','DOG':'DOG','MZC':'MZC' };
 const threadDataCache = new Map();
 const threadDataInflight = new Map();
+const profileRequestInflight = new Map();
 
 
 
@@ -859,6 +862,8 @@ const state = {
   profileMsgMainnet: true,
   profileMsgExhausted: false,
   profileMsgLoading: false,
+  profileMsgRetryCount: 0,
+  profileMsgNextRetryAt: 0,
   profileMsgObserver: null,
   currentView: 'search',
   isTrendingMode: false,
@@ -975,15 +980,37 @@ const fetchAPI=async(url,errMsg,signal,timeout=15000)=>{
 
 const fetchProfileByAddress=async(address,mainnet,signal)=>{
   if(!isAddress(address)) return null;
-  const cached=getCachedProfile(address);
+  const key=`addr_${address}_${!!mainnet}`;
+  const cached=getCachedProfile(key);
   if(cached) return cached;
-  try{const p=await fetchAPI(`${BASE_URL}/GetProfileByAddress/${encodeURIComponent(address)}?mainnet=${mainnet}`,'',signal);if(p) cacheProfile(address,p);return p;}catch{return null;}
+  if(profileRequestInflight.has(key)) return profileRequestInflight.get(key);
+  const run=(async()=>{
+    try{
+      const p=await fetchAPI(`${BASE_URL}/GetProfileByAddress/${encodeURIComponent(address)}?mainnet=${mainnet}`,'',signal);
+      if(p) cacheProfile(key,p);
+      return p;
+    }catch{return null;}
+    finally{profileRequestInflight.delete(key);}
+  })();
+  profileRequestInflight.set(key,run);
+  return run;
 };
 
 const fetchProfileByURN=async(urn,mainnet,signal)=>{
-  const cached=getCachedProfile(`urn_${urn}_${mainnet}`);
+  const key=`urn_${urn}_${!!mainnet}`;
+  const cached=getCachedProfile(key);
   if(cached) return cached;
-  try{const p=await fetchAPI(`${BASE_URL}/GetProfileByURN/${encodeURIComponent(urn)}?mainnet=${mainnet}`,'',signal);if(p) cacheProfile(`urn_${urn}_${mainnet}`,p);return p;}catch{return null;}
+  if(profileRequestInflight.has(key)) return profileRequestInflight.get(key);
+  const run=(async()=>{
+    try{
+      const p=await fetchAPI(`${BASE_URL}/GetProfileByURN/${encodeURIComponent(urn)}?mainnet=${mainnet}`,'',signal);
+      if(p) cacheProfile(key,p);
+      return p;
+    }catch{return null;}
+    finally{profileRequestInflight.delete(key);}
+  })();
+  profileRequestInflight.set(key,run);
+  return run;
 };
 
 // Extract the owner address from any profile object (handles both array and object Creators shapes)
@@ -1655,7 +1682,7 @@ const resetEngagementCounts=(engagementEl)=>{
 };
 
 // ── Message card renderer ──────────────────────────────────────────────
-const renderMessageCard=async(normalized,signal,blockchain,shareParams)=>{
+const renderMessageCard=async(normalized,signal,blockchain,shareParams,options={})=>{
   const chainUpper=(blockchain||'').toUpperCase();
   const mainnet=(chainUpper==='BTC-TESTNET'||chainUpper==='TBTC')?false:true;
   const{cleanMessage,attachments,links}=await parseMessage(normalized.message,mainnet,signal);
@@ -1736,12 +1763,30 @@ const renderMessageCard=async(normalized,signal,blockchain,shareParams)=>{
   threadEl.className='message-thread-wrap';
   threadEl.style.display='none';
   card.appendChild(threadEl);
-  if(normalized.txId){
+  let threadLoaded=false;
+  const startThreadLoad=()=>{
+    if(threadLoaded||!normalized.txId) return;
+    threadLoaded=true;
     loadMessageThreadUI(normalized.txId,mainnet,engagement,threadEl,signal,blockchain).catch(()=>{
       threadEl.style.display='none';
       engagement.style.display='none';
       resetEngagementCounts(engagement);
     });
+  };
+  if(options.loadThreadData===true&&normalized.txId){
+    startThreadLoad();
+  }else if(normalized.txId){
+    const loadThreadBtn=document.createElement('button');
+    loadThreadBtn.className='small-secondary-btn';
+    loadThreadBtn.textContent='Load thread activity';
+    loadThreadBtn.style.marginTop='8px';
+    loadThreadBtn.addEventListener('click',e=>{
+      e.preventDefault();
+      e.stopPropagation();
+      loadThreadBtn.remove();
+      startThreadLoad();
+    });
+    card.appendChild(loadThreadBtn);
   }else{
     threadEl.style.display='none';
     engagement.style.display='none';
@@ -2907,6 +2952,8 @@ const showProfileView=async(identifier,mainnet=true)=>{
     state.profileMsgMainnet=mainnet;
     state.profileMsgExhausted=false;
     state.profileMsgLoading=false;
+    state.profileMsgRetryCount=0;
+    state.profileMsgNextRetryAt=0;
 
     // Set up infinite scroll for profile messages feed
     if(state.profileMsgObserver){state.profileMsgObserver.disconnect();state.profileMsgObserver=null;}
@@ -2932,6 +2979,7 @@ const showProfileView=async(identifier,mainnet=true)=>{
 
 const loadProfileMessages=async()=>{
   if(state.profileMsgExhausted||state.profileMsgLoading) return;
+  if(state.profileMsgNextRetryAt&&Date.now()<state.profileMsgNextRetryAt) return;
   state.profileMsgLoading=true;
   const feedEl=document.getElementById('profileMsgFeed');
   const bc=state.profileMsgMainnet?'BTC':'BTC-TESTNET';
@@ -2965,21 +3013,29 @@ const loadProfileMessages=async()=>{
     cards.forEach(card=>feedEl.appendChild(card));
 
     state.profileMsgSkip+=roots.length;
+    state.profileMsgRetryCount=0;
+    state.profileMsgNextRetryAt=0;
     if(roots.length<MSG_PAGE_SIZE) state.profileMsgExhausted=true;
     const msgsTabBtn=document.getElementById('tabMessages');if(msgsTabBtn) msgsTabBtn.textContent=`Messages (${state.profileMsgSkip})`;
   }catch(e){
+    state.profileMsgRetryCount=Math.min(state.profileMsgRetryCount+1,8);
+    const backoff=Math.min(PROFILE_MSG_RETRY_MAX_MS,PROFILE_MSG_RETRY_BASE_MS*(2**(state.profileMsgRetryCount-1)));
+    state.profileMsgNextRetryAt=Date.now()+backoff;
     const errEl=document.getElementById('profileError');
-    if(errEl){errEl.textContent='Failed to load messages: '+e.message;errEl.style.display='block';}
+    if(errEl){errEl.textContent=`Failed to load messages: ${e.message}. Retrying in ${Math.ceil(backoff/1000)}s…`;errEl.style.display='block';}
   }finally{
     state.profileMsgLoading=false;
     // After loading completes the IntersectionObserver may have fired while
     // profileMsgLoading was true and been ignored.  Re-check the sentinel
     // position now so the feed continues loading if the user can still see it.
     if(!state.profileMsgExhausted){
-      requestAnimationFrame(()=>{
+      const scheduleNext=()=>{
         const s=document.getElementById('profileMsgSentinel');
         if(s){const r=s.getBoundingClientRect();if(r.top<window.innerHeight+400) loadProfileMessages();}
-      });
+      };
+      const waitMs=Math.max(0,(state.profileMsgNextRetryAt||0)-Date.now());
+      if(waitMs>0) setTimeout(scheduleNext,waitMs);
+      else requestAnimationFrame(scheduleNext);
     }
   }
 };
@@ -3270,7 +3326,7 @@ const showMessageView=async(txid,mainnet=true,blockchain='BTC')=>{
     if(!normalized) throw new Error('Could not parse message data');
 
     const bc=chain==='BTC'?(mainnet?'BTC':'BTC-TESTNET'):chain;
-    const card=await renderMessageCard(normalized,null,bc,{id:txid,mainnet,blockchain:CHAIN_UPPER_TO_API[chain]||'BTC'});
+    const card=await renderMessageCard(normalized,null,bc,{id:txid,mainnet,blockchain:CHAIN_UPPER_TO_API[chain]||'BTC'},{loadThreadData:true});
     // Update meta tags for sharing the message
     const msgPreview=(normalized.message||'').replace(/\s+/g,' ').trim().substring(0,160);
     updateMetaTags(`Message on bitFossil`,msgPreview||'On-chain message on bitFossil','https://p2fk.io/bitfossil.png');
