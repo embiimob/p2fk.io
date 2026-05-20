@@ -1691,7 +1691,7 @@ const resetEngagementCounts=(engagementEl)=>{
 };
 
 // ── Message card renderer ──────────────────────────────────────────────
-const renderMessageCard=async(normalized,signal,blockchain,shareParams,options={})=>{
+const renderMessageCard=async(normalized,signal,blockchain,shareParams)=>{
   const chainUpper=(blockchain||'').toUpperCase();
   const mainnet=(chainUpper==='BTC-TESTNET'||chainUpper==='TBTC')?false:true;
   const{cleanMessage,attachments,links}=await parseMessage(normalized.message,mainnet,signal);
@@ -1772,30 +1772,12 @@ const renderMessageCard=async(normalized,signal,blockchain,shareParams,options={
   threadEl.className='message-thread-wrap';
   threadEl.style.display='none';
   card.appendChild(threadEl);
-  let threadLoaded=false;
-  const startThreadLoad=()=>{
-    if(threadLoaded||!normalized.txId) return;
-    threadLoaded=true;
+  if(normalized.txId){
     loadMessageThreadUI(normalized.txId,mainnet,engagement,threadEl,signal,blockchain).catch(()=>{
       threadEl.style.display='none';
       engagement.style.display='none';
       resetEngagementCounts(engagement);
     });
-  };
-  if(options.loadThreadData===true&&normalized.txId){
-    startThreadLoad();
-  }else if(normalized.txId){
-    const loadThreadBtn=document.createElement('button');
-    loadThreadBtn.className='small-secondary-btn';
-    loadThreadBtn.textContent='Load replies';
-    loadThreadBtn.style.marginTop='8px';
-    loadThreadBtn.addEventListener('click',e=>{
-      e.preventDefault();
-      e.stopPropagation();
-      loadThreadBtn.remove();
-      startThreadLoad();
-    });
-    card.appendChild(loadThreadBtn);
   }else{
     threadEl.style.display='none';
     engagement.style.display='none';
@@ -3345,7 +3327,7 @@ const showMessageView=async(txid,mainnet=true,blockchain='BTC')=>{
     if(!normalized) throw new Error('Could not parse message data');
 
     const bc=chain==='BTC'?(mainnet?'BTC':'BTC-TESTNET'):chain;
-    const card=await renderMessageCard(normalized,null,bc,{id:txid,mainnet,blockchain:CHAIN_UPPER_TO_API[chain]||'BTC'},{loadThreadData:true});
+    const card=await renderMessageCard(normalized,null,bc,{id:txid,mainnet,blockchain:CHAIN_UPPER_TO_API[chain]||'BTC'});
     // Update meta tags for sharing the message
     const msgPreview=(normalized.message||'').replace(/\s+/g,' ').trim().substring(0,160);
     updateMetaTags(`Message on bitFossil`,msgPreview||'On-chain message on bitFossil','https://p2fk.io/bitfossil.png');
