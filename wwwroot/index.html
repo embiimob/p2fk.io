@@ -1273,6 +1273,7 @@ const renderAttachments=(container,attachments,links,blockchain)=>{
 };
 
 // ── Root normalizer ────────────────────────────────────────────────────
+const getRootTxId=(root)=>((root?.['Transaction Id']??root?.TransactionId??root?.['Transaction ID']??'').toLowerCase());
 const normalizeRoot=(root)=>{
   if(!root||typeof root!=='object') return null;
   const rawMsg=root['Message']??root.Message??'';
@@ -2179,7 +2180,7 @@ const fetchNextTrendingPage=async(signal)=>{
     for(const r of(Array.isArray(found)?found:[])){
       const root=r.Root||r.root;
       if(!root) continue;
-      const txId=(root['Transaction Id']??root.TransactionId??root['Transaction ID']??'').toLowerCase();
+      const txId=getRootTxId(root);
       if(!txId||seenTxIds.has(txId)) continue;
       seenTxIds.add(txId);
       results.push(r);
@@ -2206,7 +2207,8 @@ const performTrendingSearch=async()=>{
   document.getElementById('searchGaveUp').style.display='none';
   document.getElementById('searchLoading').style.display='block';
   document.getElementById('searchLoading').textContent='Loading trending searches…';
-  scrollObserver.unobserve(document.getElementById('loadSentinel'));
+  const trendingSentinel=document.getElementById('loadSentinel');
+  if(trendingSentinel) scrollObserver.unobserve(trendingSentinel);
   state.pagination={};state.buffer=[];state.totalDisplayed=0;state.chainCounts={};state.consecutiveEmptyRounds=0;state.initialLoadRounds=0;
   state.trendingTerms=[];state.trendingTermIndex=0;state.trendingSeenTxIds=new Set();state.trendingActiveChains=[];
   const TRENDING_EMPTY_HTML='<div style="text-align:center;padding:30px;color:#666;">nothing\'s trending so far..</div>';
