@@ -869,6 +869,7 @@ const state = {
   profileMsgRetryCount: 0,
   profileMsgNextRetryAt: 0,
   profileMsgObserver: null,
+  profileMsgAutoLoadEnabled: true,
   currentView: 'search',
   isTrendingMode: false,
   trendingTerms: [],
@@ -2909,6 +2910,23 @@ const showProfileView=async(identifier,mainnet=true)=>{
 
     // ── Profile tab wiring ────────────────────────────────────────────
     let _activeProfileTab='messages';
+    const setProfileMsgObserverEnabled=(enabled)=>{
+      state.profileMsgAutoLoadEnabled=!!enabled;
+      if(state.profileMsgObserver){state.profileMsgObserver.disconnect();state.profileMsgObserver=null;}
+      if(!state.profileMsgAutoLoadEnabled||state.currentView!=='profile'||!address) return;
+      const sentinelEl=document.getElementById('profileMsgSentinel');
+      if(!sentinelEl) return;
+      state.profileMsgObserver=new IntersectionObserver(entries=>{
+        if(
+          entries[0].isIntersecting &&
+          state.profileMsgAutoLoadEnabled &&
+          state.currentView==='profile' &&
+          !state.profileMsgExhausted &&
+          !state.profileMsgLoading
+        ) loadProfileMessages();
+      },{rootMargin:'200px'});
+      state.profileMsgObserver.observe(sentinelEl);
+    };
     const _switchProfileTab=async(tab)=>{
       _activeProfileTab=tab;
       document.querySelectorAll('.profile-obj-tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));
@@ -2918,12 +2936,14 @@ const showProfileView=async(identifier,mainnet=true)=>{
       const gridEl=document.getElementById('profileObjGrid');
       const statusEl=document.getElementById('profileObjStatus');
       if(tab==='messages'){
+        setProfileMsgObserverEnabled(true);
         if(sortWrap) sortWrap.style.display='none';
         if(feedEl2) feedEl2.style.display='';
         if(moreBtn2) moreBtn2.style.display='';
         if(gridEl) gridEl.style.display='none';
         if(statusEl) statusEl.style.display='none';
       }else{
+        setProfileMsgObserverEnabled(false);
         if(sortWrap) sortWrap.style.display='flex';
         if(feedEl2) feedEl2.style.display='none';
         if(moreBtn2) moreBtn2.style.display='none';
@@ -2945,16 +2965,10 @@ const showProfileView=async(identifier,mainnet=true)=>{
     state.profileMsgLoading=false;
     state.profileMsgRetryCount=0;
     state.profileMsgNextRetryAt=0;
+    state.profileMsgAutoLoadEnabled=true;
 
     // Set up infinite scroll for profile messages feed
-    if(state.profileMsgObserver){state.profileMsgObserver.disconnect();state.profileMsgObserver=null;}
-    const sentinelEl=document.getElementById('profileMsgSentinel');
-    if(sentinelEl&&address){
-      state.profileMsgObserver=new IntersectionObserver(entries=>{
-        if(entries[0].isIntersecting&&!state.profileMsgExhausted&&!state.profileMsgLoading) loadProfileMessages();
-      },{rootMargin:'200px'});
-      state.profileMsgObserver.observe(sentinelEl);
-    }
+    setProfileMsgObserverEnabled(true);
 
     if(address){
       await loadProfileMessages();
@@ -2969,6 +2983,7 @@ const showProfileView=async(identifier,mainnet=true)=>{
 };
 
 const loadProfileMessages=async()=>{
+  if(state.currentView!=='profile'||!state.profileMsgAutoLoadEnabled) return;
   if(state.profileMsgExhausted||state.profileMsgLoading) return;
   if(state.profileMsgNextRetryAt&&Date.now()<state.profileMsgNextRetryAt) return;
   state.profileMsgLoading=true;
@@ -3026,8 +3041,9 @@ const loadProfileMessages=async()=>{
     // After loading completes the IntersectionObserver may have fired while
     // profileMsgLoading was true and been ignored.  Re-check the sentinel
     // position now so the feed continues loading if the user can still see it.
-    if(!state.profileMsgExhausted){
+    if(!state.profileMsgExhausted&&state.currentView==='profile'&&state.profileMsgAutoLoadEnabled){
       const scheduleNext=()=>{
+        if(state.currentView!=='profile'||!state.profileMsgAutoLoadEnabled) return;
         const s=document.getElementById('profileMsgSentinel');
         if(!s) return;
         const r=s.getBoundingClientRect();
@@ -3343,6 +3359,10 @@ const showMessageView=async(txid,mainnet=true,blockchain='BTC')=>{
 
 // ── View switching ─────────────────────────────────────────────────────
 const setView=(name)=>{
+  if(name!=='profile'){
+    state.profileMsgAutoLoadEnabled=false;
+    if(state.profileMsgObserver){state.profileMsgObserver.disconnect();state.profileMsgObserver=null;}
+  }
   state.currentView=name;
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   const el=document.getElementById(`view-${name}`);
