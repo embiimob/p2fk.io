@@ -26,7 +26,7 @@ The live site at **https://p2fk.io** is a public demo running this exact codebas
 |---|------|--------|
 | 1 | **.NET 8 SDK** | https://dotnet.microsoft.com/en-us/download/dotnet/8.0 |
 | 2 | **ASP.NET Core Windows Hosting Bundle** *(only needed for IIS hosting; not required for `dotnet run`)* | https://dotnet.microsoft.com/en-us/download/dotnet/thank-you/runtime-aspnetcore-8.0.4-windows-hosting-bundle-installer |
-| 3 | **Sup!? CLI** | https://github.com/embiimob/SUP (latest release) |
+| 3 | **Sup!? CLI** | https://github.com/embiimob/SUPCLI (latest release) |
 | 4 | A synced **Bitcoin Core** node (or whichever blockchains you want to serve) | Included in Sup!? |
 
 ---
