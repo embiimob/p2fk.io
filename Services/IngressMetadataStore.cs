@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Options;
 using Microsoft.Data.Sqlite;
 using P2FK.IO.Models;
 using P2FK.IO.Options;
@@ -93,7 +94,7 @@ namespace P2FK.IO.Services
         public async Task RecordUploadAsync(IngressUploadRecord record, CancellationToken cancellationToken = default)
         {
             await using var connection = await OpenConnectionAsync(cancellationToken);
-            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+            await using var transaction = connection.BeginTransaction();
 
             await using (var command = connection.CreateCommand())
             {

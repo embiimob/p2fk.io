@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Options;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Http.Timeouts;
 using Microsoft.AspNetCore.Mvc;
@@ -40,8 +41,7 @@ namespace P2FK.IO.Controllers
         /// <summary>Streams a file into the temporary ingress Kubo node and returns a Kubo-style add result.</summary>
         [HttpPost("api/v0/add")]
         [DisableRequestTimeout]
-        [DisableFormValueModelBinding]
-        [EnableRateLimiting("IpfsUpload")]
+                [EnableRateLimiting("IpfsUpload")]
         [Consumes("multipart/form-data", "application/octet-stream")]
         public async Task<ActionResult<KuboAddResult>> Add(CancellationToken cancellationToken)
         {
@@ -58,8 +58,7 @@ namespace P2FK.IO.Controllers
         /// <summary>Streams a file into the temporary ingress Kubo node and returns ingress metadata.</summary>
         [HttpPost("ipfs")]
         [DisableRequestTimeout]
-        [DisableFormValueModelBinding]
-        [EnableRateLimiting("IpfsUpload")]
+                [EnableRateLimiting("IpfsUpload")]
         [Consumes("multipart/form-data", "application/octet-stream")]
         public async Task<ActionResult> Upload(CancellationToken cancellationToken)
         {
@@ -191,7 +190,11 @@ namespace P2FK.IO.Controllers
 
                 string fileName = contentDisposition.FileNameStar.Value ?? contentDisposition.FileName.Value ?? "upload.bin";
                 fileName = fileName.Trim('"');
-                long? sectionLength = section.Headers.ContentLength ?? Request.ContentLength;
+                long? sectionLength = Request.ContentLength;
+                if (section.Headers is not null
+                    && section.Headers.TryGetValue(HeaderNames.ContentLength, out var headerLength)
+                    && long.TryParse(headerLength.ToString(), out long parsedLength))
+                    sectionLength = parsedLength;
                 return new UploadRequest(section.Body, fileName, sectionLength);
             }
 
@@ -222,19 +225,4 @@ namespace P2FK.IO.Controllers
                 || !string.IsNullOrEmpty(contentDisposition.FileNameStar.Value));
     }
 
-    [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method)]
-    internal sealed class DisableFormValueModelBindingAttribute : Attribute, IResourceFilter
-    {
-        public void OnResourceExecuting(ResourceExecutingContext context)
-        {
-            var factories = context.ValueProviderFactories;
-            factories.RemoveType<FormValueProviderFactory>();
-            factories.RemoveType<FormFileValueProviderFactory>();
-            factories.RemoveType<JQueryFormValueProviderFactory>();
-        }
-
-        public void OnResourceExecuted(ResourceExecutedContext context)
-        {
-        }
-    }
 }

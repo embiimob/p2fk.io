@@ -128,6 +128,90 @@ Open **http://localhost:5000/API** in your browser to see the interactive Swagge
 
 > To change the port, edit `Properties\launchSettings.json` or pass `--urls http://localhost:8080` to `dotnet run`.
 
+### Step 5 — Build and validate
+
+```powershell
+dotnet build p2fk.io.sln
+dotnet test p2fk.io.sln
+```
+
+---
+
+## Temporary IPFS ingress relay
+
+P2FK.IO now includes a temporary IPFS ingress relay that can receive uploads, pin them in an isolated Kubo node for one hour, expose queue/status visibility, and then automatically unpin and garbage-collect expired content.
+
+### Required Kubo layout
+
+Use a dedicated ingress-only Kubo instance:
+
+| Setting | Value |
+|---|---|
+| Repo path | `D:\SupIngress` |
+| API | `127.0.0.1:5101` |
+| Gateway | `127.0.0.1:8180` |
+| Swarm | `4101` |
+
+Do **not** point these endpoints at the existing production Kubo repo.
+
+### App configuration
+
+Set the `IpfsIngress` section in `appsettings.json` (or environment-specific overrides):
+
+```json
+"IpfsIngress": {
+  "PublicBaseUrl": "https://p2fk.io",
+  "KuboApiBaseUrl": "http://127.0.0.1:5101",
+  "KuboGatewayBaseUrl": "http://127.0.0.1:8180",
+  "RepoPath": "D:\\SupIngress",
+  "DatabasePath": "App_Data/ipfs-ingress.db",
+  "MaxActiveCacheBytes": 536870912000,
+  "DailyIpQuotaBytes": 5368709120,
+  "PinLifetimeMinutes": 60,
+  "CleanupIntervalMinutes": 5,
+  "UploadRequestsPerMinute": 20
+}
+```
+
+### IIS hosting notes
+
+A sample `web.config` is included for IIS in-process hosting. It keeps ASP.NET Core behind IIS, enables forwarded headers, and raises IIS request filtering limits so large streamed ingress uploads can reach the API layer where quotas are enforced.
+
+### Ingress endpoints
+
+| Route | Purpose |
+|---|---|
+| `POST /api/v0/add` | Kubo-style multipart upload |
+| `POST /ipfs` | Simplified ingress upload response |
+| `GET /ipfs/status` | Kubo health and queue stats |
+| `GET /ipfs/queue` | Active temporary uploads |
+| `GET /ipfs/{cid}` | Optional passthrough for active ingress content |
+| `GET /health/ipfs` | Health probe for ingress services |
+
+### Example curl commands
+
+```bash
+curl -F file=@movie.mp4 https://p2fk.io/api/v0/add
+
+curl -F file=@movie.mp4 https://p2fk.io/ipfs
+
+curl https://p2fk.io/ipfs/status
+
+curl https://p2fk.io/ipfs/queue
+
+curl https://p2fk.io/health/ipfs
+```
+
+### Runtime behavior
+
+- Uploads are streamed directly into the ingress Kubo API and pinned immediately.
+- Each client IP is limited to **5 GB** of uploads over a rolling 24-hour window.
+- The ingress repo is capped at **500 GB** of active cached content.
+- Uploads stay pinned for **1 hour** and are cleaned by `IngressExpirationWorker` every **5 minutes**.
+- Queue and status endpoints expose active CID visibility without turning the API into a permanent recursive gateway.
+
+A ready-to-import Postman collection for these ingress endpoints lives at `API Examples/IPFS Ingress.postman_collection.json`.
+
 ---
 
 ## Using Sup!? Block, Mute & Filter Features to Keep the Index Healthy
