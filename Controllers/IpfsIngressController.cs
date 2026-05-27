@@ -170,12 +170,13 @@ namespace P2FK.IO.Controllers
 
         private async Task<UploadRequest> ReadUploadRequestAsync(IFormFile? file, CancellationToken cancellationToken)
         {
+            string queryFileName = ResolveFileNameFromQuery();
             if (file is not null)
             {
                 if (file.Length <= 0)
                     throw new InvalidDataException("No file section was found in the multipart payload.");
 
-                string formFileName = string.IsNullOrWhiteSpace(file.FileName) ? "upload.bin" : file.FileName;
+                string formFileName = ResolveFileName(file.FileName, queryFileName, Request.Headers["X-File-Name"].ToString());
                 return new UploadRequest(file.OpenReadStream(), formFileName, file.Length, DisposeStream: true);
             }
 
@@ -186,12 +187,9 @@ namespace P2FK.IO.Controllers
             if (Request.Body == Stream.Null)
                 throw new InvalidDataException("No upload body was provided.");
 
-            string fileName = Request.Headers.TryGetValue("X-File-Name", out var headerFileName)
-                ? headerFileName.ToString()
-                : Request.Query["filename"].ToString();
-
-            if (string.IsNullOrWhiteSpace(fileName))
-                fileName = "upload.bin";
+            string fileName = ResolveFileName(
+                Request.Headers.TryGetValue("X-File-Name", out var headerFileName) ? headerFileName.ToString() : null,
+                queryFileName);
 
             return new UploadRequest(Request.Body, fileName, Request.ContentLength);
         }
@@ -208,8 +206,11 @@ namespace P2FK.IO.Controllers
                 if (!MultipartRequestHelper.HasFileContentDisposition(contentDisposition))
                     continue;
 
-                string fileName = contentDisposition.FileNameStar.Value ?? contentDisposition.FileName.Value ?? "upload.bin";
-                fileName = fileName.Trim('"');
+                string fileName = ResolveFileName(
+                    contentDisposition.FileNameStar.Value,
+                    contentDisposition.FileName.Value,
+                    Request.Headers["X-File-Name"].ToString(),
+                    ResolveFileNameFromQuery());
                 long? sectionLength = Request.ContentLength;
                 if (section.Headers is not null
                     && section.Headers.TryGetValue(HeaderNames.ContentLength, out var headerLength)
@@ -219,6 +220,23 @@ namespace P2FK.IO.Controllers
             }
 
             throw new InvalidDataException("No file section was found in the multipart payload.");
+        }
+
+        private string ResolveFileNameFromQuery() => ResolveFileName(Request.Query["filename"].ToString(), Request.Query["arg"].ToString());
+
+        private static string ResolveFileName(params string?[] candidates)
+        {
+            foreach (string? candidate in candidates)
+            {
+                if (string.IsNullOrWhiteSpace(candidate))
+                    continue;
+
+                string resolved = Path.GetFileName(candidate.Trim().Trim('"'));
+                if (!string.IsNullOrWhiteSpace(resolved))
+                    return resolved;
+            }
+
+            return "upload.bin";
         }
 
         private sealed record UploadRequest(Stream Stream, string FileName, long? ContentLength, bool DisposeStream = false);

@@ -31,7 +31,7 @@ namespace P2FK.IO.Services
             fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
             content.Add(fileContent, "file", fileName);
 
-            using var response = await CreateClient().PostAsync(BuildApiUri("/api/v0/add?pin=false&cid-version=1&wrap-with-directory=false"), content, cancellationToken);
+            using var response = await CreateClient().PostAsync(BuildApiUri("/api/v0/add?pin=false&cid-version=0&wrap-with-directory=false"), content, cancellationToken);
             string payload = await response.Content.ReadAsStringAsync(cancellationToken);
             if (!response.IsSuccessStatusCode)
                 throw new InvalidOperationException($"Kubo add failed: {payload}");
