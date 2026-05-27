@@ -9,6 +9,7 @@ namespace P2FK.IO.Services
 {
     public sealed class ManagedKuboService : BackgroundService
     {
+        private const int MinimumStartupTimeoutSeconds = 5;
         private readonly IKuboIngressService _kuboIngressService;
         private readonly IpfsIngressOptions _options;
         private readonly IHostEnvironment _hostEnvironment;
@@ -140,7 +141,7 @@ namespace P2FK.IO.Services
 
         private async Task WaitForKuboAsync(CancellationToken cancellationToken)
         {
-            TimeSpan timeout = TimeSpan.FromSeconds(Math.Max(5, _options.KuboStartupTimeoutSeconds));
+            TimeSpan timeout = TimeSpan.FromSeconds(Math.Max(MinimumStartupTimeoutSeconds, _options.KuboStartupTimeoutSeconds));
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeoutCts.CancelAfter(timeout);
 
