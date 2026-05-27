@@ -6,7 +6,7 @@ namespace P2FK.IO.Options
 
         public string PublicBaseUrl { get; set; } = "https://p2fk.io";
         public bool ManageKuboProcess { get; set; } = true;
-        public string KuboExecutablePath { get; set; } = "kubo";
+        public string KuboExecutablePath { get; set; } = OperatingSystem.IsWindows() ? @"tools\kubo\kubo.exe" : "kubo";
         public string KuboInitProfile { get; set; } = "server";
         public string KuboApiBaseUrl { get; set; } = "http://127.0.0.1:5101";
         public string KuboGatewayBaseUrl { get; set; } = "http://127.0.0.1:8180";

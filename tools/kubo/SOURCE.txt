@@ -1,0 +1,4 @@
+source=https://github.com/ipfs/kubo/releases/tag/v0.41.0
+asset=https://github.com/ipfs/kubo/releases/download/v0.41.0/kubo_v0.41.0_windows-amd64.zip
+upstream-binary=ipfs.exe
+packaged-as=kubo.exe

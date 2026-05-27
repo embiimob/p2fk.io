@@ -10,6 +10,18 @@ The live site at **https://p2fk.io** is a public demo running this exact codebas
 
 [Sup!?](https://github.com/embiimob/Sup) compliant applications encode messages, user profiles, digital objects (NFTs) and related scripts directly into blockchain transactions using the **Pay-To-Future-Key (P2FK)** multichain metaprotocol invented by embii in 2013 as part of the HugPuddle project.  P2FK.IO reads that on-chain data through the Sup!? CLI and makes it available via a clean HTTP API with an interactive Swagger UI at `/API`.  A demo API based application hosted at the root effectively replaces the functions of [bitfossil.org](https://github.com/embiimob/bitFossil)
 
+### Full current functions of p2fk.io
+
+- **Chain-aware API access** to P2FK data on Bitcoin (mainnet/testnet), Litecoin, Dogecoin, and Mazacoin.
+- **Message and root retrieval** for public/private posts, root records, and transaction-linked payloads.
+- **Object and profile discovery** including direct lookups, ownership queries, creator queries, and URN/address/profile resolution.
+- **Keyword/address mapping endpoints** for cross-referencing public addresses and P2FK keyword identity mappings.
+- **Inquiry endpoints** for listing and resolving inquiry records by transaction and wallet address.
+- **Search and cache services** including known-root/object/profile search endpoints, trending root search visibility, and cache status reporting.
+- **Root content hosting** that serves indexed files from `/root/{txid}/{filename}` through the API host.
+- **Temporary IPFS ingress relay** backed by a dedicated Kubo node for upload, queue/status visibility, timed pin retention, and cleanup.
+- **Operational endpoints** including Swagger docs (`/API`) and ingress health probe (`/health/ipfs`).
+
 ---
 
 ## Live Demo
@@ -154,7 +166,7 @@ Use a dedicated ingress-only Kubo instance:
 
 | Setting | Value |
 |---|---|
-| Kubo executable | `kubo` on `PATH` or a configured local binary |
+| Kubo executable | bundled `tools\kubo\kubo.exe` (override with `IpfsIngress:KuboExecutablePath` if needed) |
 | Repo path | `D:\SupIngress` |
 | API | `127.0.0.1:5101` |
 | Gateway | `127.0.0.1:8180` |
@@ -170,7 +182,7 @@ Set the `IpfsIngress` section in `appsettings.json` (or environment-specific ove
 "IpfsIngress": {
   "PublicBaseUrl": "https://p2fk.io",
   "ManageKuboProcess": true,
-  "KuboExecutablePath": "kubo",
+  "KuboExecutablePath": "tools\\kubo\\kubo.exe",
   "KuboInitProfile": "server",
   "KuboApiBaseUrl": "http://127.0.0.1:5101",
   "KuboGatewayBaseUrl": "http://127.0.0.1:8180",
@@ -191,7 +203,14 @@ Set the `IpfsIngress` section in `appsettings.json` (or environment-specific ove
 }
 ```
 
-Set `KuboExecutablePath` to an absolute or repository-relative binary path if Kubo is not already available on `PATH`. The app also checks `tools/kubo/kubo(.exe)` next to the published site by default.
+Set `KuboExecutablePath` to an absolute or repository-relative binary path if you want to override the bundled binary.
+
+### Bundled Kubo source
+
+- Upstream project: `https://github.com/ipfs/kubo`
+- Release used in this repository: `v0.41.0`
+- Windows asset source: `https://github.com/ipfs/kubo/releases/download/v0.41.0/kubo_v0.41.0_windows-amd64.zip`
+- Source tracking file in repo: `tools/kubo/SOURCE.txt`
 
 If your local Kubo daemon is configured as `localhost`, P2FK.IO now normalizes that host to `127.0.0.1` at runtime so ingress health checks and API calls stay online in mixed IPv4/IPv6 environments.
 

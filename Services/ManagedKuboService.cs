@@ -276,6 +276,13 @@ namespace P2FK.IO.Services
             yield return Path.Combine(AppContext.BaseDirectory, executableName);
             yield return Path.Combine(AppContext.BaseDirectory, "tools", "kubo", executableName);
             yield return Path.Combine(_hostEnvironment.ContentRootPath, "tools", "kubo", executableName);
+            if (OperatingSystem.IsWindows())
+            {
+                yield return Path.Combine(AppContext.BaseDirectory, "ipfs.exe");
+                yield return Path.Combine(AppContext.BaseDirectory, "tools", "kubo", "ipfs.exe");
+                yield return Path.Combine(_hostEnvironment.ContentRootPath, "tools", "kubo", "ipfs.exe");
+                yield return "ipfs.exe";
+            }
             yield return executableName;
         }
     }
