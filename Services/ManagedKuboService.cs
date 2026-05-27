@@ -250,7 +250,7 @@ namespace P2FK.IO.Services
             }
 
             throw new FileNotFoundException(
-                $"Unable to find the Kubo executable. Set {IpfsIngressOptions.SectionName}:KuboExecutablePath to the kubo binary location.");
+                $"Unable to find the Kubo executable. Set {IpfsIngressOptions.SectionName}:KuboExecutablePath (IpfsIngress:KuboExecutablePath) to the kubo binary location.");
         }
 
         private IEnumerable<string> GetExecutableCandidates(string executableName)
