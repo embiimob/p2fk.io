@@ -1,11 +1,27 @@
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Http.Timeouts;
+using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.Server.IIS;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.OpenApi.Models;
+using P2FK.IO.HealthChecks;
+using P2FK.IO.Options;
+using P2FK.IO.Services;
+using Serilog;
 using Swashbuckle.AspNetCore.SwaggerUI;
-using System.Runtime.Versioning;
+using System.Text.Json;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
+var ingressOptions = builder.Configuration.GetSection(IpfsIngressOptions.SectionName).Get<IpfsIngressOptions>() ?? new IpfsIngressOptions();
+
+builder.Host.UseSerilog((context, services, configuration) => configuration
+    .ReadFrom.Configuration(context.Configuration)
+    .ReadFrom.Services(services)
+    .Enrich.FromLogContext());
+
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
@@ -21,15 +37,13 @@ builder.Services.AddSwaggerGen(c =>
             "- `mainnet=true` (default) + `blockchain=BTC` → Bitcoin mainnet  \n" +
             "- `mainnet=false` + `blockchain=BTC` → Bitcoin testnet  \n" +
             "- `blockchain=LTC | DOG | MZC` → Litecoin / Dogecoin / Mazacoin\n\n" +
-            "All endpoints are read-only.",
+            "Includes temporary IPFS ingress relay endpoints for one-hour Kubo pinning.",
     });
 
-    // Include XML doc comments generated from the triple-slash summaries on every controller
     var xmlFile = $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml";
     var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
     if (File.Exists(xmlPath)) c.IncludeXmlComments(xmlPath);
 
-    // Group endpoints by logical category instead of one-tag-per-controller
     c.TagActionsBy(api =>
     {
         var ctrl = api.ActionDescriptor.RouteValues["controller"] ?? "";
@@ -37,6 +51,8 @@ builder.Services.AddSwaggerGen(c =>
             return ["Search"];
         if (ctrl.Contains("CacheStatus"))
             return ["Cache"];
+        if (ctrl.Contains("Ipfs"))
+            return ["IPFS Ingress"];
         if (ctrl.Contains("PublicMessages") || ctrl.Contains("PrivateMessages") ||
             ctrl.Contains("Root") || ctrl.Contains("Roots"))
             return ["Messages & Roots"];
@@ -52,41 +68,71 @@ builder.Services.AddSwaggerGen(c =>
     });
     c.OrderActionsBy(a => a.ActionDescriptor.RouteValues["controller"]);
 });
+
 builder.Services.AddSingleton<P2FK.IO.Wrapper>();
 builder.Services.AddSingleton<P2FK.IO.Services.CacheStatusService>();
 builder.Services.AddSingleton<P2FK.IO.Services.RootSearchTrendService>();
+builder.Services.AddSingleton<IngressMetadataStore>();
+builder.Services.AddSingleton<IKuboIngressService, KuboIngressService>();
+builder.Services.AddSingleton<IpfsIngressService>();
+builder.Services.AddHttpClient(nameof(KuboIngressService));
+builder.Services.Configure<IpfsIngressOptions>(builder.Configuration.GetSection(IpfsIngressOptions.SectionName));
+builder.Services.AddHealthChecks().AddCheck<IpfsIngressHealthCheck>("ipfs_ingress");
 builder.Services.AddMemoryCache(options =>
 {
-    // Cap the total number of distinct cache entries at 1024.
-    // Each entry is registered with size=1.  Combined with the 5-minute TTL this
-    // prevents unbounded growth from cache-key explosion or runaway user queries.
-    // When the limit is reached the oldest 25 % of entries are evicted.
     options.SizeLimit = 1024;
     options.CompactionPercentage = 0.25;
 });
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = async (context, _) =>
+    {
+        if (context.HttpContext.Response.HasStarted)
+            return;
+
+        context.HttpContext.Response.ContentType = "application/json";
+        await context.HttpContext.Response.WriteAsync("{\"error\":\"Upload rate limit exceeded\"}");
+    };
+
+    options.AddPolicy("IpfsUpload", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = ingressOptions.UploadRequestsPerMinute,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
+});
+
 if (OperatingSystem.IsWindows())
 {
     builder.Services.AddSingleton<P2FK.IO.Services.WindowsSearchService>();
     builder.Services.AddHostedService<P2FK.IO.Services.CacheWarmingService>();
 }
 
-// Allow requests to take up to MaxTimeoutSeconds before the server cancels them
+builder.Services.AddHostedService<IngressExpirationWorker>();
 builder.Services.AddRequestTimeouts(options =>
     options.DefaultPolicy = new RequestTimeoutPolicy
     {
         Timeout = TimeSpan.FromSeconds(P2FK.IO.Wrapper.MaxTimeoutSeconds)
     });
+builder.Services.Configure<IISServerOptions>(options => options.MaxRequestBodySize = null);
 
-// Keep the Kestrel keep-alive and header timeouts well above the max query time
 builder.WebHost.ConfigureKestrel(kestrel =>
 {
     kestrel.Limits.KeepAliveTimeout = TimeSpan.FromSeconds(P2FK.IO.Wrapper.MaxTimeoutSeconds + 10);
     kestrel.Limits.RequestHeadersTimeout = TimeSpan.FromSeconds(P2FK.IO.Wrapper.MaxTimeoutSeconds + 10);
+    kestrel.Limits.MaxRequestBodySize = null;
 });
 
 var app = builder.Build();
 
-// Serve on-chain files from the root folder at /root/{txid}/{filename}
+await app.Services.GetRequiredService<IngressMetadataStore>().InitializeAsync();
+
 var wrapper = app.Services.GetRequiredService<P2FK.IO.Wrapper>();
 app.UseStaticFiles(new StaticFileOptions
 {
@@ -96,25 +142,18 @@ app.UseStaticFiles(new StaticFileOptions
     DefaultContentType = "application/octet-stream"
 });
 
+app.UseSerilogRequestLogging();
 app.UseSwagger();
 app.UseDefaultFiles();
 app.UseStaticFiles();
 app.UseRequestTimeouts();
 app.UseSwaggerUI(options =>
-    {
-        //swagger docs are served at /API
-        options.RoutePrefix = "API";
-
-        //update to incude your own api and version
-        options.SwaggerEndpoint("/swagger/v1/swagger.json", "P2FK.IO V1");
-
-        //update to incude your own api 
-        options.DocumentTitle = "P2FK.IO";
-
-        options.DisplayRequestDuration();
-
-        //update to use your own images and favicons
-        options.HeadContent = @"
+{
+    options.RoutePrefix = "API";
+    options.SwaggerEndpoint("/swagger/v1/swagger.json", "P2FK.IO V1");
+    options.DocumentTitle = "P2FK.IO";
+    options.DisplayRequestDuration();
+    options.HeadContent = @"
         <link rel=""apple-touch-icon"" sizes=""180x180"" href=""/apple-touch-icon.png"" />
         <link rel=""icon"" type=""image/png"" sizes=""32x32"" href=""/favicon-32x32.png"" />
         <link rel=""icon"" type=""image/png"" sizes=""16x16"" href=""/favicon-16x16.png"" />
@@ -126,26 +165,37 @@ app.UseSwaggerUI(options =>
             }
         </style>";
 
+    options.ConfigObject.AdditionalItems["syntaxHighlight"] = new Dictionary<string, object>
+    {
+        ["activated"] = false
+    };
 
-        //added because large json output styling slows down the swagger ui
-        options.ConfigObject.AdditionalItems["syntaxHighlight"] = new Dictionary<string, object>
-         {
-             ["activated"] = false
-         };
-
-        // Inject the P2FK dark theme stylesheet
-        options.InjectStylesheet("/swagger-dark.css");
-
-        // Inject the copyright footer
-        options.InjectJavascript("/swagger-footer.js");
-
-
-    }
-    );
+    options.InjectStylesheet("/swagger-dark.css");
+    options.InjectJavascript("/swagger-footer.js");
+});
 
 app.UseHttpsRedirection();
-
+app.UseRateLimiter();
 app.UseAuthorization();
+
+app.MapHealthChecks("/health/ipfs", new HealthCheckOptions
+{
+    Predicate = registration => registration.Name == "ipfs_ingress",
+    ResponseWriter = async (context, report) =>
+    {
+        context.Response.ContentType = "application/json";
+        bool kuboConnected = report.Entries.TryGetValue("ipfs_ingress", out HealthReportEntry entry)
+            && entry.Data.TryGetValue("kuboConnected", out object? value)
+            && value is bool connected
+            && connected;
+
+        await context.Response.WriteAsync(JsonSerializer.Serialize(new
+        {
+            healthy = report.Status == HealthStatus.Healthy,
+            kuboConnected
+        }));
+    }
+});
 
 app.MapControllers();
 
