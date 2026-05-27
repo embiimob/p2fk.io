@@ -10,6 +10,18 @@ The live site at **https://p2fk.io** is a public demo running this exact codebas
 
 [Sup!?](https://github.com/embiimob/Sup) compliant applications encode messages, user profiles, digital objects (NFTs) and related scripts directly into blockchain transactions using the **Pay-To-Future-Key (P2FK)** multichain metaprotocol invented by embii in 2013 as part of the HugPuddle project.  P2FK.IO reads that on-chain data through the Sup!? CLI and makes it available via a clean HTTP API with an interactive Swagger UI at `/API`.  A demo API based application hosted at the root effectively replaces the functions of [bitfossil.org](https://github.com/embiimob/bitFossil)
 
+### Full current functions of p2fk.io
+
+- **Chain-aware API access** to P2FK data on Bitcoin (mainnet/testnet), Litecoin, Dogecoin, and Mazacoin.
+- **Message and root retrieval** for public/private posts, root records, and transaction-linked payloads.
+- **Object and profile discovery** including direct lookups, ownership queries, creator queries, and URN/address/profile resolution.
+- **Keyword/address mapping endpoints** for cross-referencing public addresses and P2FK keyword identity mappings.
+- **Inquiry endpoints** for listing and resolving inquiry records by transaction and wallet address.
+- **Search and cache services** including known-root/object/profile search endpoints, trending root search visibility, and cache status reporting.
+- **Root content hosting** that serves indexed files from `/root/{txid}/{filename}` through the API host.
+- **Temporary IPFS ingress relay** backed by a dedicated Kubo node for upload, queue/status visibility, timed pin retention, and cleanup.
+- **Operational endpoints** including Swagger docs (`/API`) and ingress health probe (`/health/ipfs`).
+
 ---
 
 ## Live Demo
@@ -127,6 +139,130 @@ The API starts on `http://localhost:5000` by default.
 Open **http://localhost:5000/API** in your browser to see the interactive Swagger UI.
 
 > To change the port, edit `Properties\launchSettings.json` or pass `--urls http://localhost:8080` to `dotnet run`.
+
+### Step 5 — Build and validate
+
+```powershell
+dotnet build p2fk.io.sln
+dotnet test p2fk.io.sln
+```
+
+---
+
+## Temporary IPFS ingress relay
+
+P2FK.IO now includes a temporary IPFS ingress relay that can receive uploads, pin them in an isolated Kubo node for one hour, expose queue/status visibility, and then automatically unpin and garbage-collect expired content.
+
+### Managed Kubo startup
+
+P2FK.IO now starts and stops the ingress Kubo daemon with the ASP.NET Core host. When the .NET app launches it will:
+
+- create the ingress repo folder when needed
+- run `kubo init --profile=server` if the repo has not been initialized yet
+- apply the configured API, gateway, swarm, and `Gateway.NoFetch` settings
+- start `kubo daemon --migrate=true` and wait for it to become healthy before serving requests
+
+Use a dedicated ingress-only Kubo instance:
+
+| Setting | Value |
+|---|---|
+| Kubo executable | bundled `tools\kubo\kubo.exe` (override with `IpfsIngress:KuboExecutablePath` if needed) |
+| Repo path | `D:\SupIngress` |
+| API | `127.0.0.1:5101` |
+| Gateway | `127.0.0.1:8180` |
+| Swarm | `4101` |
+
+Do **not** point these endpoints at the existing production Kubo repo.
+
+### App configuration
+
+Set the `IpfsIngress` section in `appsettings.json` (or environment-specific overrides):
+
+```json
+"IpfsIngress": {
+  "PublicBaseUrl": "https://p2fk.io",
+  "ManageKuboProcess": true,
+  "KuboExecutablePath": "tools\\kubo\\kubo.exe",
+  "KuboInitProfile": "server",
+  "KuboApiBaseUrl": "http://127.0.0.1:5101",
+  "KuboGatewayBaseUrl": "http://127.0.0.1:8180",
+  "KuboApiMultiAddress": "/ip4/127.0.0.1/tcp/5101",
+  "KuboGatewayMultiAddress": "/ip4/127.0.0.1/tcp/8180",
+  "KuboSwarmMultiAddresses": [
+    "/ip4/0.0.0.0/tcp/4101",
+    "/ip6/::/tcp/4101"
+  ],
+  "KuboStartupTimeoutSeconds": 30,
+  "RepoPath": "D:\\SupIngress",
+  "DatabasePath": "App_Data/ipfs-ingress.db",
+  "MaxActiveCacheBytes": 536870912000,
+  "DailyIpQuotaBytes": 5368709120,
+  "PinLifetimeMinutes": 60,
+  "CleanupIntervalMinutes": 5,
+  "UploadRequestsPerMinute": 20
+}
+```
+
+Set `KuboExecutablePath` to an absolute or repository-relative binary path if you want to override the bundled binary.
+
+### Bundled Kubo source
+
+- Upstream project: `https://github.com/ipfs/kubo`
+- Release used in this repository: `v0.41.0`
+- Windows asset source: `https://github.com/ipfs/kubo/releases/download/v0.41.0/kubo_v0.41.0_windows-amd64.zip`
+- Source tracking file in repo: `tools/kubo/SOURCE.txt`
+
+If your local Kubo daemon is configured as `localhost`, P2FK.IO now normalizes that host to `127.0.0.1` at runtime so ingress health checks and API calls stay online in mixed IPv4/IPv6 environments.
+
+### Windows firewall behavior
+
+The firewall prompt comes from `kubo.exe`, not from ASP.NET Core itself.
+
+- `Addresses.API` and `Addresses.Gateway` are configured on loopback only, so they should **not** trigger a public firewall prompt.
+- `Addresses.Swarm` is configured on `0.0.0.0` / `::` by default, so the first interactive launch of `kubo.exe` on Windows may show a firewall consent dialog for inbound peer traffic on port `4101`.
+- If P2FK.IO runs under IIS, a Windows service, or another non-interactive host, that dialog usually will **not** be visible. In that case you should pre-create the firewall rule yourself for `kubo.exe` or the swarm port.
+- If you do not want any inbound peer traffic, change `KuboSwarmMultiAddresses` to loopback-only addresses and Windows should stop asking for firewall access.
+
+### IIS hosting notes
+
+A sample `web.config` is included for IIS in-process hosting. It keeps ASP.NET Core behind IIS, enables forwarded headers, and raises IIS request filtering limits so large streamed ingress uploads can reach the API layer where quotas are enforced.
+
+### Ingress endpoints
+
+| Route | Purpose |
+|---|---|
+| `POST /api/v0/add` | Kubo-style upload (Swagger shows a GUI file picker in **Try it out**) |
+| `POST /ipfs` | Simplified ingress upload response (also supports Swagger file picker) |
+| `GET /ipfs/status` | Kubo health and queue stats |
+| `GET /ipfs/queue` | Active temporary uploads |
+| `GET /ipfs/{cid}` | Optional passthrough for active ingress content |
+| `GET /health/ipfs` | Health probe for ingress services |
+
+### Example curl commands
+
+```bash
+curl -F file=@movie.mp4 https://p2fk.io/api/v0/add
+
+curl -F file=@movie.mp4 https://p2fk.io/ipfs
+
+curl https://p2fk.io/ipfs/status
+
+curl https://p2fk.io/ipfs/queue
+
+curl https://p2fk.io/health/ipfs
+```
+
+### Runtime behavior
+
+- Uploads are streamed directly into the ingress Kubo API and pinned immediately.
+- Each client IP is limited to **5 GB** of uploads over a rolling 24-hour window.
+- The ingress repo is capped at **500 GB** of active cached content.
+- Uploads stay pinned for **1 hour** and are cleaned by `IngressExpirationWorker` every **5 minutes**.
+- Queue and status endpoints expose active CID visibility without turning the API into a permanent recursive gateway.
+
+A ready-to-import Postman collection for these ingress endpoints lives at `API Examples/IPFS Ingress.postman_collection.json`.
+
+The Swagger **Schemas** section now includes all model contracts in `P2FK.IO.Models`, not only schemas currently referenced by the newest endpoint examples.
 
 ---
 

@@ -1,0 +1,91 @@
+{
+  "info": {
+    "name": "P2FK.IO IPFS Ingress",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Temporary IPFS ingress relay endpoints for p2fk.io."
+  },
+  "item": [
+    {
+      "name": "Add via /api/v0/add",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "file",
+              "type": "file",
+              "src": ""
+            }
+          ]
+        },
+        "url": {
+          "raw": "https://p2fk.io/api/v0/add",
+          "protocol": "https",
+          "host": ["p2fk", "io"],
+          "path": ["api", "v0", "add"]
+        }
+      }
+    },
+    {
+      "name": "Add via /ipfs",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "file",
+              "type": "file",
+              "src": ""
+            }
+          ]
+        },
+        "url": {
+          "raw": "https://p2fk.io/ipfs",
+          "protocol": "https",
+          "host": ["p2fk", "io"],
+          "path": ["ipfs"]
+        }
+      }
+    },
+    {
+      "name": "Ingress status",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "https://p2fk.io/ipfs/status",
+          "protocol": "https",
+          "host": ["p2fk", "io"],
+          "path": ["ipfs", "status"]
+        }
+      }
+    },
+    {
+      "name": "Ingress queue",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "https://p2fk.io/ipfs/queue",
+          "protocol": "https",
+          "host": ["p2fk", "io"],
+          "path": ["ipfs", "queue"]
+        }
+      }
+    },
+    {
+      "name": "Ingress health",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "https://p2fk.io/health/ipfs",
+          "protocol": "https",
+          "host": ["p2fk", "io"],
+          "path": ["health", "ipfs"]
+        }
+      }
+    }
+  ]
+}
