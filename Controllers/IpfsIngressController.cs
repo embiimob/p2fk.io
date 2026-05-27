@@ -43,9 +43,10 @@ namespace P2FK.IO.Controllers
         [DisableRequestTimeout]
         [EnableRateLimiting("IpfsUpload")]
         [Consumes("multipart/form-data", "application/octet-stream")]
-        public async Task<ActionResult<KuboAddResult>> Add(CancellationToken cancellationToken)
+        public async Task<ActionResult<KuboAddResult>> Add([FromForm(Name = "file")] IFormFile? file, CancellationToken cancellationToken)
         {
             return await HandleUploadAsync(
+                file,
                 async upload => new JsonResult(new KuboAddResult
                 {
                     Name = upload.AddResult.Name,
@@ -60,9 +61,10 @@ namespace P2FK.IO.Controllers
         [DisableRequestTimeout]
         [EnableRateLimiting("IpfsUpload")]
         [Consumes("multipart/form-data", "application/octet-stream")]
-        public async Task<ActionResult> Upload(CancellationToken cancellationToken)
+        public async Task<ActionResult> Upload([FromForm(Name = "file")] IFormFile? file, CancellationToken cancellationToken)
         {
             return await HandleUploadAsync(
+                file,
                 upload => Task.FromResult<ActionResult>(new JsonResult(new
                 {
                     cid = upload.AddResult.Hash,
@@ -89,6 +91,7 @@ namespace P2FK.IO.Controllers
         }
 
         /// <summary>Optionally proxies active ingress content through the local Kubo gateway while it remains pinned.</summary>
+        [HttpGet("ipfs/{cid}")]
         [HttpGet("ipfs/{cid}/{**path}")]
         public async Task<IActionResult> Gateway(string cid, string? path, CancellationToken cancellationToken)
         {
@@ -117,20 +120,28 @@ namespace P2FK.IO.Controllers
             return new EmptyResult();
         }
 
-        private async Task<ActionResult> HandleUploadAsync(Func<IngressUploadResult, Task<ActionResult>> projector, CancellationToken cancellationToken)
+        private async Task<ActionResult> HandleUploadAsync(IFormFile? file, Func<IngressUploadResult, Task<ActionResult>> projector, CancellationToken cancellationToken)
         {
             try
             {
-                var uploadRequest = await ReadUploadRequestAsync(cancellationToken);
+                var uploadRequest = await ReadUploadRequestAsync(file, cancellationToken);
                 string clientIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-                var upload = await _ipfsIngressService.UploadAsync(
-                    uploadRequest.Stream,
-                    uploadRequest.FileName,
-                    clientIp,
-                    uploadRequest.ContentLength,
-                    cancellationToken);
+                try
+                {
+                    var upload = await _ipfsIngressService.UploadAsync(
+                        uploadRequest.Stream,
+                        uploadRequest.FileName,
+                        clientIp,
+                        uploadRequest.ContentLength,
+                        cancellationToken);
 
-                return await projector(upload);
+                    return await projector(upload);
+                }
+                finally
+                {
+                    if (uploadRequest.DisposeStream)
+                        await uploadRequest.Stream.DisposeAsync();
+                }
             }
             catch (DailyUploadQuotaExceededException)
             {
@@ -157,8 +168,17 @@ namespace P2FK.IO.Controllers
             }
         }
 
-        private async Task<UploadRequest> ReadUploadRequestAsync(CancellationToken cancellationToken)
+        private async Task<UploadRequest> ReadUploadRequestAsync(IFormFile? file, CancellationToken cancellationToken)
         {
+            if (file is not null)
+            {
+                if (file.Length <= 0)
+                    throw new InvalidDataException("No file section was found in the multipart payload.");
+
+                string formFileName = string.IsNullOrWhiteSpace(file.FileName) ? "upload.bin" : file.FileName;
+                return new UploadRequest(file.OpenReadStream(), formFileName, file.Length, DisposeStream: true);
+            }
+
             string contentType = Request.ContentType ?? string.Empty;
             if (MultipartRequestHelper.IsMultipartContentType(contentType))
                 return await ReadMultipartUploadRequestAsync(contentType, cancellationToken);
@@ -201,7 +221,7 @@ namespace P2FK.IO.Controllers
             throw new InvalidDataException("No file section was found in the multipart payload.");
         }
 
-        private sealed record UploadRequest(Stream Stream, string FileName, long? ContentLength);
+        private sealed record UploadRequest(Stream Stream, string FileName, long? ContentLength, bool DisposeStream = false);
     }
 
     internal static class MultipartRequestHelper

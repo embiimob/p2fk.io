@@ -9,6 +9,8 @@ namespace P2FK.IO.Services
     public class KuboIngressService : IKuboIngressService
     {
         private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+        private readonly Uri _kuboApiBaseUri;
+        private readonly Uri _kuboGatewayBaseUri;
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly IpfsIngressOptions _options;
         private readonly ILogger<KuboIngressService> _logger;
@@ -18,6 +20,8 @@ namespace P2FK.IO.Services
             _httpClientFactory = httpClientFactory;
             _options = options.Value;
             _logger = logger;
+            _kuboApiBaseUri = BuildBaseUri(_options.KuboApiBaseUrl);
+            _kuboGatewayBaseUri = BuildBaseUri(_options.KuboGatewayBaseUrl);
         }
 
         public async Task<KuboAddResult> AddAsync(Stream stream, string fileName, CancellationToken cancellationToken = default)
@@ -91,7 +95,7 @@ namespace P2FK.IO.Services
             string relativePath = string.IsNullOrWhiteSpace(path)
                 ? $"/ipfs/{cid}"
                 : $"/ipfs/{cid}/{path.TrimStart('/')}";
-            return new Uri(new Uri(_options.KuboGatewayBaseUrl.TrimEnd('/') + "/"), relativePath.TrimStart('/'));
+            return new Uri(_kuboGatewayBaseUri, relativePath.TrimStart('/'));
         }
 
         private async Task PostNoContentAsync(string relativeUrl, CancellationToken cancellationToken)
@@ -109,7 +113,22 @@ namespace P2FK.IO.Services
             return client;
         }
 
-        private Uri BuildApiUri(string relativeUrl) => new(new Uri(_options.KuboApiBaseUrl.TrimEnd('/') + "/"), relativeUrl.TrimStart('/'));
+        private Uri BuildApiUri(string relativeUrl) => new(_kuboApiBaseUri, relativeUrl.TrimStart('/'));
+
+        private static Uri BuildBaseUri(string configuredBaseUrl)
+        {
+            string baseUrl = configuredBaseUrl.Trim();
+            if (Uri.TryCreate(baseUrl, UriKind.Absolute, out var absoluteUri)
+                && absoluteUri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase))
+            {
+                return EnsureTrailingSlash(new UriBuilder(absoluteUri) { Host = "127.0.0.1" }.Uri);
+            }
+
+            return EnsureTrailingSlash(new Uri(baseUrl));
+        }
+
+        private static Uri EnsureTrailingSlash(Uri uri) =>
+            uri.AbsoluteUri.EndsWith("/", StringComparison.Ordinal) ? uri : new Uri(uri.AbsoluteUri + "/");
 
         private static string SanitizeForLog(string value) =>
             value.Replace("\r", "\\r", StringComparison.Ordinal).Replace("\n", "\\n", StringComparison.Ordinal);

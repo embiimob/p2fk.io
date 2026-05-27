@@ -173,6 +173,8 @@ Set the `IpfsIngress` section in `appsettings.json` (or environment-specific ove
 }
 ```
 
+If your local Kubo daemon is configured as `localhost`, P2FK.IO now normalizes that host to `127.0.0.1` at runtime so ingress health checks and API calls stay online in mixed IPv4/IPv6 environments.
+
 ### IIS hosting notes
 
 A sample `web.config` is included for IIS in-process hosting. It keeps ASP.NET Core behind IIS, enables forwarded headers, and raises IIS request filtering limits so large streamed ingress uploads can reach the API layer where quotas are enforced.
@@ -181,11 +183,11 @@ A sample `web.config` is included for IIS in-process hosting. It keeps ASP.NET C
 
 | Route | Purpose |
 |---|---|
-| `POST /api/v0/add` | Kubo-style multipart upload |
-| `POST /ipfs` | Simplified ingress upload response |
+| `POST /api/v0/add` | Kubo-style upload (Swagger shows a GUI file picker in **Try it out**) |
+| `POST /ipfs` | Simplified ingress upload response (also supports Swagger file picker) |
 | `GET /ipfs/status` | Kubo health and queue stats |
 | `GET /ipfs/queue` | Active temporary uploads |
-| `GET /ipfs/{cid}` | Optional passthrough for active ingress content |
+| `GET /ipfs/{cid}` or `GET /ipfs/{cid}/{path}` | Optional passthrough for active ingress content (path is optional) |
 | `GET /health/ipfs` | Health probe for ingress services |
 
 ### Example curl commands
@@ -211,6 +213,8 @@ curl https://p2fk.io/health/ipfs
 - Queue and status endpoints expose active CID visibility without turning the API into a permanent recursive gateway.
 
 A ready-to-import Postman collection for these ingress endpoints lives at `API Examples/IPFS Ingress.postman_collection.json`.
+
+The Swagger **Schemas** section now includes all model contracts in `P2FK.IO.Models`, not only schemas currently referenced by the newest endpoint examples.
 
 ---
 
