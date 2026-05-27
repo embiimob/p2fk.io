@@ -41,7 +41,7 @@ namespace P2FK.IO.Controllers
         /// <summary>Streams a file into the temporary ingress Kubo node and returns a Kubo-style add result.</summary>
         [HttpPost("api/v0/add")]
         [DisableRequestTimeout]
-                [EnableRateLimiting("IpfsUpload")]
+        [EnableRateLimiting("IpfsUpload")]
         [Consumes("multipart/form-data", "application/octet-stream")]
         public async Task<ActionResult<KuboAddResult>> Add(CancellationToken cancellationToken)
         {
@@ -58,7 +58,7 @@ namespace P2FK.IO.Controllers
         /// <summary>Streams a file into the temporary ingress Kubo node and returns ingress metadata.</summary>
         [HttpPost("ipfs")]
         [DisableRequestTimeout]
-                [EnableRateLimiting("IpfsUpload")]
+        [EnableRateLimiting("IpfsUpload")]
         [Consumes("multipart/form-data", "application/octet-stream")]
         public async Task<ActionResult> Upload(CancellationToken cancellationToken)
         {

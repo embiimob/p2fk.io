@@ -39,7 +39,7 @@ namespace P2FK.IO.Services
             var result = JsonSerializer.Deserialize<KuboAddResult>(jsonLine, JsonOptions)
                 ?? throw new InvalidOperationException("Kubo add returned invalid JSON.");
 
-            _logger.LogInformation("Kubo add completed for {FileName} with CID {Cid}", fileName, result.Hash);
+            _logger.LogInformation("Kubo add completed for {FileName} with CID {Cid}", SanitizeForLog(fileName), result.Hash);
             return result;
         }
 
@@ -110,5 +110,8 @@ namespace P2FK.IO.Services
         }
 
         private Uri BuildApiUri(string relativeUrl) => new(new Uri(_options.KuboApiBaseUrl.TrimEnd('/') + "/"), relativeUrl.TrimStart('/'));
+
+        private static string SanitizeForLog(string value) =>
+            value.Replace("\r", "\\r", StringComparison.Ordinal).Replace("\n", "\\n", StringComparison.Ordinal);
     }
 }

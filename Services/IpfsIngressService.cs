@@ -62,9 +62,9 @@ namespace P2FK.IO.Services
                 _logger.LogInformation(
                     "Ingress upload stored CID={Cid} fileName={FileName} fileSizeBytes={FileSizeBytes} clientIp={ClientIp} expiresUtc={ExpiresUtc}",
                     record.CID,
-                    record.FileName,
+                    SanitizeForLog(record.FileName),
                     record.FileSizeBytes,
-                    record.ClientIp,
+                    SanitizeForLog(record.ClientIp),
                     record.ExpiresUtc);
 
                 return new IngressUploadResult
@@ -189,5 +189,8 @@ namespace P2FK.IO.Services
         }
 
         private string BuildGatewayUrl(string cid) => $"{_options.PublicBaseUrl.TrimEnd('/')}/ipfs/{cid}";
+
+        private static string SanitizeForLog(string value) =>
+            value.Replace("\r", "\\r", StringComparison.Ordinal).Replace("\n", "\\n", StringComparison.Ordinal);
     }
 }
