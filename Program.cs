@@ -115,6 +115,7 @@ if (OperatingSystem.IsWindows())
     builder.Services.AddHostedService<P2FK.IO.Services.CacheWarmingService>();
 }
 
+builder.Services.AddHostedService<ManagedKuboService>();
 builder.Services.AddHostedService<IngressExpirationWorker>();
 builder.Services.AddRequestTimeouts(options =>
     options.DefaultPolicy = new RequestTimeoutPolicy

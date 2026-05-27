@@ -141,12 +141,20 @@ dotnet test p2fk.io.sln
 
 P2FK.IO now includes a temporary IPFS ingress relay that can receive uploads, pin them in an isolated Kubo node for one hour, expose queue/status visibility, and then automatically unpin and garbage-collect expired content.
 
-### Required Kubo layout
+### Managed Kubo startup
+
+P2FK.IO now starts and stops the ingress Kubo daemon with the ASP.NET Core host. When the .NET app launches it will:
+
+- create the ingress repo folder when needed
+- run `kubo init --profile=server` if the repo has not been initialized yet
+- apply the configured API, gateway, swarm, and `Gateway.NoFetch` settings
+- start `kubo daemon --migrate=true` and wait for it to become healthy before serving requests
 
 Use a dedicated ingress-only Kubo instance:
 
 | Setting | Value |
 |---|---|
+| Kubo executable | `kubo` on `PATH` or a configured local binary |
 | Repo path | `D:\SupIngress` |
 | API | `127.0.0.1:5101` |
 | Gateway | `127.0.0.1:8180` |
@@ -161,8 +169,18 @@ Set the `IpfsIngress` section in `appsettings.json` (or environment-specific ove
 ```json
 "IpfsIngress": {
   "PublicBaseUrl": "https://p2fk.io",
+  "ManageKuboProcess": true,
+  "KuboExecutablePath": "kubo",
+  "KuboInitProfile": "server",
   "KuboApiBaseUrl": "http://127.0.0.1:5101",
   "KuboGatewayBaseUrl": "http://127.0.0.1:8180",
+  "KuboApiMultiAddress": "/ip4/127.0.0.1/tcp/5101",
+  "KuboGatewayMultiAddress": "/ip4/127.0.0.1/tcp/8180",
+  "KuboSwarmMultiAddresses": [
+    "/ip4/0.0.0.0/tcp/4101",
+    "/ip6/::/tcp/4101"
+  ],
+  "KuboStartupTimeoutSeconds": 30,
   "RepoPath": "D:\\SupIngress",
   "DatabasePath": "App_Data/ipfs-ingress.db",
   "MaxActiveCacheBytes": 536870912000,
@@ -172,6 +190,8 @@ Set the `IpfsIngress` section in `appsettings.json` (or environment-specific ove
   "UploadRequestsPerMinute": 20
 }
 ```
+
+Set `KuboExecutablePath` to an absolute or repository-relative binary path if Kubo is not already available on `PATH`. The app also checks `tools/kubo/kubo(.exe)` next to the published site by default.
 
 If your local Kubo daemon is configured as `localhost`, P2FK.IO now normalizes that host to `127.0.0.1` at runtime so ingress health checks and API calls stay online in mixed IPv4/IPv6 environments.
 

@@ -5,8 +5,15 @@ namespace P2FK.IO.Options
         public const string SectionName = "IpfsIngress";
 
         public string PublicBaseUrl { get; set; } = "https://p2fk.io";
+        public bool ManageKuboProcess { get; set; } = true;
+        public string KuboExecutablePath { get; set; } = "kubo";
+        public string KuboInitProfile { get; set; } = "server";
         public string KuboApiBaseUrl { get; set; } = "http://127.0.0.1:5101";
         public string KuboGatewayBaseUrl { get; set; } = "http://127.0.0.1:8180";
+        public string KuboApiMultiAddress { get; set; } = "/ip4/127.0.0.1/tcp/5101";
+        public string KuboGatewayMultiAddress { get; set; } = "/ip4/127.0.0.1/tcp/8180";
+        public string[] KuboSwarmMultiAddresses { get; set; } = ["/ip4/0.0.0.0/tcp/4101", "/ip6/::/tcp/4101"];
+        public int KuboStartupTimeoutSeconds { get; set; } = 30;
         public string RepoPath { get; set; } = @"D:\SupIngress";
         public string DatabasePath { get; set; } = "App_Data/ipfs-ingress.db";
         public long MaxActiveCacheBytes { get; set; } = 536_870_912_000;
