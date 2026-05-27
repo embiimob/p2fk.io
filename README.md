@@ -235,7 +235,7 @@ A sample `web.config` is included for IIS in-process hosting. It keeps ASP.NET C
 | `POST /ipfs` | Simplified ingress upload response (also supports Swagger file picker) |
 | `GET /ipfs/status` | Kubo health and queue stats |
 | `GET /ipfs/queue` | Active temporary uploads |
-| `GET /ipfs/{cid}` or `GET /ipfs/{cid}/{path}` | Optional passthrough for active ingress content (path is optional) |
+| `GET /ipfs/{cid}` | Optional passthrough for active ingress content |
 | `GET /health/ipfs` | Health probe for ingress services |
 
 ### Example curl commands

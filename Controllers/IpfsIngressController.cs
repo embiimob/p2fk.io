@@ -8,7 +8,6 @@ using Microsoft.Net.Http.Headers;
 using P2FK.IO.Models;
 using P2FK.IO.Options;
 using P2FK.IO.Services;
-using System.Text;
 
 namespace P2FK.IO.Controllers
 {
@@ -92,13 +91,12 @@ namespace P2FK.IO.Controllers
 
         /// <summary>Optionally proxies active ingress content through the local Kubo gateway while it remains pinned.</summary>
         [HttpGet("ipfs/{cid}")]
-        [HttpGet("ipfs/{cid}/{**path}")]
-        public async Task<IActionResult> Gateway(string cid, string? path, CancellationToken cancellationToken)
+        public async Task<IActionResult> Gateway(string cid, CancellationToken cancellationToken)
         {
             if (!await _metadataStore.IsCidActiveAsync(cid, DateTimeOffset.UtcNow, cancellationToken))
                 return NotFound(new { error = "CID not currently available via ingress gateway" });
 
-            using var request = new HttpRequestMessage(HttpMethod.Get, _kuboIngressGatewayService.BuildGatewayUri(cid, path));
+            using var request = new HttpRequestMessage(HttpMethod.Get, _kuboIngressGatewayService.BuildGatewayUri(cid, null));
             using var response = await _httpClientFactory.CreateClient(nameof(KuboIngressService))
                 .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
 
@@ -170,14 +168,13 @@ namespace P2FK.IO.Controllers
 
         private async Task<UploadRequest> ReadUploadRequestAsync(IFormFile? file, CancellationToken cancellationToken)
         {
-            string queryFileName = ResolveFileNameFromQuery();
+            // Filename metadata is not reliably available at this temporary ingress endpoint; always use "upload.bin".
             if (file is not null)
             {
                 if (file.Length <= 0)
                     throw new InvalidDataException("No file section was found in the multipart payload.");
 
-                string formFileName = ResolveFileName(file.FileName, queryFileName, Request.Headers["X-File-Name"].ToString());
-                return new UploadRequest(file.OpenReadStream(), formFileName, file.Length, DisposeStream: true);
+                return new UploadRequest(file.OpenReadStream(), "upload.bin", file.Length, DisposeStream: true);
             }
 
             string contentType = Request.ContentType ?? string.Empty;
@@ -187,11 +184,7 @@ namespace P2FK.IO.Controllers
             if (Request.Body == Stream.Null)
                 throw new InvalidDataException("No upload body was provided.");
 
-            string fileName = ResolveFileName(
-                Request.Headers.TryGetValue("X-File-Name", out var headerFileName) ? headerFileName.ToString() : null,
-                queryFileName);
-
-            return new UploadRequest(Request.Body, fileName, Request.ContentLength);
+            return new UploadRequest(Request.Body, "upload.bin", Request.ContentLength);
         }
 
         private async Task<UploadRequest> ReadMultipartUploadRequestAsync(string contentType, CancellationToken cancellationToken)
@@ -206,37 +199,15 @@ namespace P2FK.IO.Controllers
                 if (!MultipartRequestHelper.HasFileContentDisposition(contentDisposition))
                     continue;
 
-                string fileName = ResolveFileName(
-                    contentDisposition.FileNameStar.Value,
-                    contentDisposition.FileName.Value,
-                    Request.Headers["X-File-Name"].ToString(),
-                    ResolveFileNameFromQuery());
                 long? sectionLength = Request.ContentLength;
                 if (section.Headers is not null
                     && section.Headers.TryGetValue(HeaderNames.ContentLength, out var headerLength)
                     && long.TryParse(headerLength.ToString(), out long parsedLength))
                     sectionLength = parsedLength;
-                return new UploadRequest(section.Body, fileName, sectionLength);
+                return new UploadRequest(section.Body, "upload.bin", sectionLength);
             }
 
             throw new InvalidDataException("No file section was found in the multipart payload.");
-        }
-
-        private string ResolveFileNameFromQuery() => ResolveFileName(Request.Query["filename"].ToString(), Request.Query["arg"].ToString());
-
-        private static string ResolveFileName(params string?[] candidates)
-        {
-            foreach (string? candidate in candidates)
-            {
-                if (string.IsNullOrWhiteSpace(candidate))
-                    continue;
-
-                string resolved = Path.GetFileName(candidate.Trim().Trim('"'));
-                if (!string.IsNullOrWhiteSpace(resolved))
-                    return resolved;
-            }
-
-            return "upload.bin";
         }
 
         private sealed record UploadRequest(Stream Stream, string FileName, long? ContentLength, bool DisposeStream = false);
