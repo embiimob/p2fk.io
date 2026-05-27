@@ -195,6 +195,15 @@ Set `KuboExecutablePath` to an absolute or repository-relative binary path if Ku
 
 If your local Kubo daemon is configured as `localhost`, P2FK.IO now normalizes that host to `127.0.0.1` at runtime so ingress health checks and API calls stay online in mixed IPv4/IPv6 environments.
 
+### Windows firewall behavior
+
+The firewall prompt comes from `kubo.exe`, not from ASP.NET Core itself.
+
+- `Addresses.API` and `Addresses.Gateway` are configured on loopback only, so they should **not** trigger a public firewall prompt.
+- `Addresses.Swarm` is configured on `0.0.0.0` / `::` by default, so the first interactive launch of `kubo.exe` on Windows may show a firewall consent dialog for inbound peer traffic on port `4101`.
+- If P2FK.IO runs under IIS, a Windows service, or another non-interactive host, that dialog usually will **not** be visible. In that case you should pre-create the firewall rule yourself for `kubo.exe` or the swarm port.
+- If you do not want any inbound peer traffic, change `KuboSwarmMultiAddresses` to loopback-only addresses and Windows should stop asking for firewall access.
+
 ### IIS hosting notes
 
 A sample `web.config` is included for IIS in-process hosting. It keeps ASP.NET Core behind IIS, enables forwarded headers, and raises IIS request filtering limits so large streamed ingress uploads can reach the API layer where quotas are enforced.
