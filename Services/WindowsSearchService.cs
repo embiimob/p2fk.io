@@ -168,7 +168,8 @@ namespace P2FK.IO.Services
             bool isWildcard = (searchString ?? "").Trim() == "*";
 
             string cacheKey = $"roots:{searchString?.ToLowerInvariant() ?? ""}:{blockchain?.ToLowerInvariant() ?? ""}:{showSystemFiles}";
-            if (!forceRefresh && _cache.TryGetValue(cacheKey, out List<CachedRootEntry>? cachedEntries) && cachedEntries != null)
+            _cache.TryGetValue(cacheKey, out List<CachedRootEntry>? cachedEntries);
+            if (!forceRefresh && cachedEntries != null)
                 return SliceRootResults(cachedEntries, skip, qty);
 
             // Per-chain wildcard cache miss: derive from the all-chains warm cache if it
@@ -286,9 +287,19 @@ namespace P2FK.IO.Services
             // Build the full filtered list — no early qty/skip break here.
             // Pagination is applied after the cache is populated so a single cache entry
             // serves all skip/qty combinations for the same search+chain+filter tuple.
+            bool incrementalWildcardRefresh = forceRefresh && isWildcard && cachedEntries is { Count: > 0 };
+            var cachedTxIds = incrementalWildcardRefresh
+                ? cachedEntries!.Select(e => e.TxId).ToHashSet(StringComparer.OrdinalIgnoreCase)
+                : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
             foreach (var kvp in txMap.OrderByDescending(x => x.Value.Modified))
             {
                 string txId = kvp.Key;
+
+                // Incremental refresh optimization: wildcard warm scans are ordered newest
+                // first, so after we hit already-cached content we can stop scanning.
+                if (incrementalWildcardRefresh && cachedTxIds.Contains(txId))
+                    break;
 
                 // Short-circuit: txId already identified as a system transaction from the Windows
                 // Search file listing — skip the ROOT.json read entirely, no file I/O needed.
@@ -338,17 +349,15 @@ namespace P2FK.IO.Services
                 entries.Add(new CachedRootEntry(detectedBlockchain, txId, rawJson, blockDate));
             }
 
-            // Sort by BlockDate descending so the newest confirmed transactions appear first.
-            // Pending transactions carry the Unix epoch (≤ 1970-01-01) as their BlockDate;
-            // they are always placed at the top of the list regardless of date order.
-            entries.Sort((a, b) =>
+            // Incremental warm refresh appends the unchanged previous cache tail so existing
+            // results remain available while only newly-discovered rows are scanned.
+            if (incrementalWildcardRefresh && cachedEntries != null)
             {
-                bool aPending = a.BlockDate <= DateTime.UnixEpoch;
-                bool bPending = b.BlockDate <= DateTime.UnixEpoch;
-                if (aPending == bPending)
-                    return b.BlockDate.CompareTo(a.BlockDate);
-                return aPending ? -1 : 1;
-            });
+                var newTxIds = entries.Select(e => e.TxId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                entries.AddRange(cachedEntries.Where(e => !newTxIds.Contains(e.TxId)));
+            }
+
+            SortRootEntries(entries);
 
             _cache.Set(cacheKey, entries, new MemoryCacheEntryOptions()
                 .SetSize(1)
@@ -418,7 +427,8 @@ namespace P2FK.IO.Services
             qty = Math.Min(qty, 5000 - skip);
 
             string cacheKey = $"objects:{searchString?.ToLowerInvariant() ?? ""}:{blockchain?.ToLowerInvariant() ?? ""}";
-            if (!forceRefresh && _cache.TryGetValue(cacheKey, out List<CachedObjectEntry>? cachedEntries) && cachedEntries != null)
+            _cache.TryGetValue(cacheKey, out List<CachedObjectEntry>? cachedEntries);
+            if (!forceRefresh && cachedEntries != null)
                 return SliceObjectResults(cachedEntries, skip, qty);
 
             // Detect wildcard "*" early — needed for the all-chains fallback below.
@@ -482,18 +492,29 @@ namespace P2FK.IO.Services
 
             // Deduplicate by address (parent folder) so multiple file hits from the same
             // folder are collapsed to one entry, keeping the newest-modified file per address.
-            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var seenAddresses = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var ordered = rows
-                .Where(r => seen.Add(ExtractAddressFromPath(r.Path) ?? r.Path))
                 .OrderByDescending(r => r.Modified)
+                .Where(r =>
+                {
+                    string key = ExtractAddressFromPath(r.Path) ?? r.Path;
+                    return seenAddresses.Add(key);
+                })
                 .ToList();
 
             var entries = new List<CachedObjectEntry>();
+            bool incrementalWildcardRefresh = forceRefresh && isWildcard && cachedEntries is { Count: > 0 };
+            var cachedAddresses = incrementalWildcardRefresh
+                ? cachedEntries!.Select(e => e.Address).ToHashSet(StringComparer.OrdinalIgnoreCase)
+                : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var row in ordered)
             {
                 string? address = ExtractAddressFromPath(row.Path);
                 if (address == null) continue;
+
+                if (incrementalWildcardRefresh && cachedAddresses.Contains(address))
+                    break;
 
                 string detectedBlockchain = DetectBlockchain(address);
 
@@ -521,6 +542,12 @@ namespace P2FK.IO.Services
                     continue;
 
                 entries.Add(new CachedObjectEntry(detectedBlockchain, address, rawJson));
+            }
+
+            if (incrementalWildcardRefresh && cachedEntries != null)
+            {
+                var newAddresses = entries.Select(e => e.Address).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                entries.AddRange(cachedEntries.Where(e => !newAddresses.Contains(e.Address)));
             }
 
             _cache.Set(cacheKey, entries, new MemoryCacheEntryOptions()
@@ -554,7 +581,8 @@ namespace P2FK.IO.Services
             qty = Math.Min(qty, 5000 - skip);
 
             string cacheKey = $"profiles:{searchString?.ToLowerInvariant() ?? ""}:{blockchain?.ToLowerInvariant() ?? ""}";
-            if (!forceRefresh && _cache.TryGetValue(cacheKey, out List<CachedProfileEntry>? cachedEntries) && cachedEntries != null)
+            _cache.TryGetValue(cacheKey, out List<CachedProfileEntry>? cachedEntries);
+            if (!forceRefresh && cachedEntries != null)
                 return SliceProfileResults(cachedEntries, skip, qty);
 
             // Detect wildcard "*" early — needed for the all-chains fallback below.
@@ -618,18 +646,29 @@ namespace P2FK.IO.Services
 
             // Deduplicate by address (parent folder) so multiple file hits from the same
             // folder are collapsed to one entry, keeping the newest-modified file per address.
-            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var seenAddresses = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var ordered = rows
-                .Where(r => seen.Add(ExtractAddressFromPath(r.Path) ?? r.Path))
                 .OrderByDescending(r => r.Modified)
+                .Where(r =>
+                {
+                    string key = ExtractAddressFromPath(r.Path) ?? r.Path;
+                    return seenAddresses.Add(key);
+                })
                 .ToList();
 
             var entries = new List<CachedProfileEntry>();
+            bool incrementalWildcardRefresh = forceRefresh && isWildcard && cachedEntries is { Count: > 0 };
+            var cachedAddresses = incrementalWildcardRefresh
+                ? cachedEntries!.Select(e => e.Address).ToHashSet(StringComparer.OrdinalIgnoreCase)
+                : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var row in ordered)
             {
                 string? address = ExtractAddressFromPath(row.Path);
                 if (address == null) continue;
+
+                if (incrementalWildcardRefresh && cachedAddresses.Contains(address))
+                    break;
 
                 string detectedBlockchain = DetectBlockchain(address);
 
@@ -657,6 +696,12 @@ namespace P2FK.IO.Services
                     continue;
 
                 entries.Add(new CachedProfileEntry(detectedBlockchain, address, rawJson));
+            }
+
+            if (incrementalWildcardRefresh && cachedEntries != null)
+            {
+                var newAddresses = entries.Select(e => e.Address).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                entries.AddRange(cachedEntries.Where(e => !newAddresses.Contains(e.Address)));
             }
 
             _cache.Set(cacheKey, entries, new MemoryCacheEntryOptions()
@@ -798,6 +843,21 @@ namespace P2FK.IO.Services
             if (string.IsNullOrEmpty(dir)) return null;
             string parentFolderName = Path.GetFileName(dir);
             return string.IsNullOrEmpty(parentFolderName) ? null : parentFolderName;
+        }
+
+        private static void SortRootEntries(List<CachedRootEntry> entries)
+        {
+            // Sort by BlockDate descending so the newest confirmed transactions appear first.
+            // Pending transactions carry the Unix epoch (≤ 1970-01-01) as their BlockDate;
+            // they are always placed at the top of the list regardless of date order.
+            entries.Sort((a, b) =>
+            {
+                bool aPending = a.BlockDate <= DateTime.UnixEpoch;
+                bool bPending = b.BlockDate <= DateTime.UnixEpoch;
+                if (aPending == bPending)
+                    return b.BlockDate.CompareTo(a.BlockDate);
+                return aPending ? -1 : 1;
+            });
         }
 
         // ── Slice helpers ─────────────────────────────────────────────────────

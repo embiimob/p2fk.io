@@ -51,7 +51,7 @@ namespace P2FK.IO.Services
 
         /// <summary>
         /// The current adaptive refresh interval in milliseconds
-        /// (last scan duration + 60 000 ms).  Zero until the first cycle completes.
+        /// (last scan duration + 120 000 ms).  Zero until the first cycle completes.
         /// </summary>
         public long CurrentRefreshIntervalMs => Interlocked.Read(ref _currentRefreshIntervalMs);
 
@@ -71,7 +71,7 @@ namespace P2FK.IO.Services
         /// Mark the end of a warm cycle and record timing for the next scheduled run.
         /// </summary>
         /// <param name="durationMs">How long the warm took in milliseconds.</param>
-        /// <param name="refreshIntervalMs">How long to wait before the next warm (durationMs + 60 000).</param>
+        /// <param name="refreshIntervalMs">How long to wait before the next warm (durationMs + 120 000).</param>
         public void SetWarmCompleted(long durationMs, long refreshIntervalMs)
         {
             _isWarming = false;
