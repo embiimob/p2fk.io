@@ -17,9 +17,9 @@ namespace P2FK.IO.Services
     ///
     /// <para>
     /// The warm interval is <em>adaptive</em>: after each cycle completes the service
-    /// waits for <c>scanDuration + 60 s</c> before running again.  This means a fast
+    /// waits for <c>scanDuration + 120 s</c> before running again.  This means a fast
     /// index (seconds) refreshes frequently while a slow scan (several minutes) waits
-    /// longer, avoiding redundant back-to-back scans.  A floor of 65 s prevents
+    /// longer, avoiding redundant back-to-back scans.  A floor of 125 s prevents
     /// accidental spin-loops.
     /// </para>
     /// </summary>
@@ -27,12 +27,12 @@ namespace P2FK.IO.Services
     public class CacheWarmingService : BackgroundService
     {
         // Minimum wait between warm cycles regardless of scan speed (ms).
-        // Set to 65 s (5 s above the 60 s padding constant) so a very fast scan
-        // never produces a sub-60 s interval through rounding.
-        private const long MinRefreshIntervalMs = 65_000;
+        // Set to 125 s (5 s above the 120 s padding constant) so a very fast scan
+        // never produces a sub-120 s interval through rounding.
+        private const long MinRefreshIntervalMs = 125_000;
 
         // Extra padding added on top of the measured scan duration (ms).
-        private const long ExtraPaddingMs = 60_000;
+        private const long ExtraPaddingMs = 120_000;
 
         // Brief pause after host startup so routes and services are fully initialised.
         private const int StartupDelaySeconds = 5;
@@ -42,17 +42,21 @@ namespace P2FK.IO.Services
         // variant from the same scan so both cache keys are populated in one pass.
         private const int WarmQty = 5000;
         private const bool WarmShowSystemFiles = true;
+        private const int TrendingWarmQty = 100;
 
         private readonly WindowsSearchService _searchService;
+        private readonly RootSearchTrendService _trendService;
         private readonly CacheStatusService _cacheStatus;
         private readonly ILogger<CacheWarmingService> _logger;
 
         public CacheWarmingService(
             WindowsSearchService searchService,
+            RootSearchTrendService trendService,
             CacheStatusService cacheStatus,
             ILogger<CacheWarmingService> logger)
         {
             _searchService = searchService;
+            _trendService = trendService;
             _cacheStatus = cacheStatus;
             _logger = logger;
         }
@@ -129,6 +133,26 @@ namespace P2FK.IO.Services
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Warm: profiles * all-chains failed");
+            }
+
+            if (ct.IsCancellationRequested) return;
+
+            // Warm filtered root caches for the top trending search strings so heavy
+            // consumer endpoints can serve directly from hot in-memory entries.
+            try
+            {
+                var trending = _trendService.GetTrendingSearches(TrendingWarmQty);
+                foreach (var trend in trending)
+                {
+                    if (ct.IsCancellationRequested) return;
+                    await _searchService.SearchRootsAsync(
+                        trend.SearchString, WarmQty, 0, blockchain: null, showSystemFiles: false, forceRefresh: true);
+                }
+                _logger.LogDebug("Warm: trending filtered roots complete count={Count}", trending.Count);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Warm: trending filtered roots failed");
             }
         }
     }
