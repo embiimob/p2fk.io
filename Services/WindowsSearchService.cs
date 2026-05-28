@@ -168,8 +168,8 @@ namespace P2FK.IO.Services
             bool isWildcard = (searchString ?? "").Trim() == "*";
 
             string cacheKey = $"roots:{searchString?.ToLowerInvariant() ?? ""}:{blockchain?.ToLowerInvariant() ?? ""}:{showSystemFiles}";
-            _cache.TryGetValue(cacheKey, out List<CachedRootEntry>? cachedEntries);
-            if (!forceRefresh && cachedEntries != null)
+            bool hasCachedEntries = _cache.TryGetValue(cacheKey, out List<CachedRootEntry>? cachedEntries);
+            if (!forceRefresh && hasCachedEntries && cachedEntries != null)
                 return SliceRootResults(cachedEntries, skip, qty);
 
             // Per-chain wildcard cache miss: derive from the all-chains warm cache if it
@@ -287,7 +287,7 @@ namespace P2FK.IO.Services
             // Build the full filtered list — no early qty/skip break here.
             // Pagination is applied after the cache is populated so a single cache entry
             // serves all skip/qty combinations for the same search+chain+filter tuple.
-            bool incrementalWildcardRefresh = forceRefresh && isWildcard && cachedEntries is { Count: > 0 };
+            bool incrementalWildcardRefresh = forceRefresh && isWildcard && hasCachedEntries && cachedEntries is { Count: > 0 };
             var cachedTxIds = incrementalWildcardRefresh
                 ? cachedEntries!.Select(e => e.TxId).ToHashSet(StringComparer.OrdinalIgnoreCase)
                 : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -427,8 +427,8 @@ namespace P2FK.IO.Services
             qty = Math.Min(qty, 5000 - skip);
 
             string cacheKey = $"objects:{searchString?.ToLowerInvariant() ?? ""}:{blockchain?.ToLowerInvariant() ?? ""}";
-            _cache.TryGetValue(cacheKey, out List<CachedObjectEntry>? cachedEntries);
-            if (!forceRefresh && cachedEntries != null)
+            bool hasCachedEntries = _cache.TryGetValue(cacheKey, out List<CachedObjectEntry>? cachedEntries);
+            if (!forceRefresh && hasCachedEntries && cachedEntries != null)
                 return SliceObjectResults(cachedEntries, skip, qty);
 
             // Detect wildcard "*" early — needed for the all-chains fallback below.
@@ -505,7 +505,7 @@ namespace P2FK.IO.Services
                 .ToList();
 
             var entries = new List<CachedObjectEntry>();
-            bool incrementalWildcardRefresh = forceRefresh && isWildcard && cachedEntries is { Count: > 0 };
+            bool incrementalWildcardRefresh = forceRefresh && isWildcard && hasCachedEntries && cachedEntries is { Count: > 0 };
             var cachedAddresses = incrementalWildcardRefresh
                 ? cachedEntries!.Select(e => e.Address).ToHashSet(StringComparer.OrdinalIgnoreCase)
                 : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -583,8 +583,8 @@ namespace P2FK.IO.Services
             qty = Math.Min(qty, 5000 - skip);
 
             string cacheKey = $"profiles:{searchString?.ToLowerInvariant() ?? ""}:{blockchain?.ToLowerInvariant() ?? ""}";
-            _cache.TryGetValue(cacheKey, out List<CachedProfileEntry>? cachedEntries);
-            if (!forceRefresh && cachedEntries != null)
+            bool hasCachedEntries = _cache.TryGetValue(cacheKey, out List<CachedProfileEntry>? cachedEntries);
+            if (!forceRefresh && hasCachedEntries && cachedEntries != null)
                 return SliceProfileResults(cachedEntries, skip, qty);
 
             // Detect wildcard "*" early — needed for the all-chains fallback below.
@@ -661,7 +661,7 @@ namespace P2FK.IO.Services
                 .ToList();
 
             var entries = new List<CachedProfileEntry>();
-            bool incrementalWildcardRefresh = forceRefresh && isWildcard && cachedEntries is { Count: > 0 };
+            bool incrementalWildcardRefresh = forceRefresh && isWildcard && hasCachedEntries && cachedEntries is { Count: > 0 };
             var cachedAddresses = incrementalWildcardRefresh
                 ? cachedEntries!.Select(e => e.Address).ToHashSet(StringComparer.OrdinalIgnoreCase)
                 : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
