@@ -492,14 +492,16 @@ namespace P2FK.IO.Services
 
             // Deduplicate by address (parent folder) so multiple file hits from the same
             // folder are collapsed to one entry, keeping the newest-modified file per address.
-            var seenAddresses = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var ordered = rows
+            var newestByAddress = new Dictionary<string, SearchRow>(StringComparer.OrdinalIgnoreCase);
+            foreach (var row in rows)
+            {
+                string key = ExtractAddressFromPath(row.Path) ?? row.Path;
+                if (!newestByAddress.TryGetValue(key, out var existing) || row.Modified > existing.Modified)
+                    newestByAddress[key] = row;
+            }
+
+            var ordered = newestByAddress.Values
                 .OrderByDescending(r => r.Modified)
-                .Where(r =>
-                {
-                    string key = ExtractAddressFromPath(r.Path) ?? r.Path;
-                    return seenAddresses.Add(key);
-                })
                 .ToList();
 
             var entries = new List<CachedObjectEntry>();
@@ -646,14 +648,16 @@ namespace P2FK.IO.Services
 
             // Deduplicate by address (parent folder) so multiple file hits from the same
             // folder are collapsed to one entry, keeping the newest-modified file per address.
-            var seenAddresses = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var ordered = rows
+            var newestByAddress = new Dictionary<string, SearchRow>(StringComparer.OrdinalIgnoreCase);
+            foreach (var row in rows)
+            {
+                string key = ExtractAddressFromPath(row.Path) ?? row.Path;
+                if (!newestByAddress.TryGetValue(key, out var existing) || row.Modified > existing.Modified)
+                    newestByAddress[key] = row;
+            }
+
+            var ordered = newestByAddress.Values
                 .OrderByDescending(r => r.Modified)
-                .Where(r =>
-                {
-                    string key = ExtractAddressFromPath(r.Path) ?? r.Path;
-                    return seenAddresses.Add(key);
-                })
                 .ToList();
 
             var entries = new List<CachedProfileEntry>();
