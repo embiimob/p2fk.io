@@ -838,6 +838,8 @@ const CHAIN_UPPER_TO_API = { 'BTC':'BTC','TBTC':'BTC','LTC':'LTC','DOG':'DOG','M
 const threadDataCache = new Map();
 const threadDataInflight = new Map();
 const profileRequestInflight = new Map();
+const keywordAddressCache = new Map();
+const keywordAddressInflight = new Map();
 
 
 
@@ -899,6 +901,65 @@ const chainToMeta = (blockchain) => {
   if (c==='BTC-TESTNET'||c==='TBTC') return {mainnet:false,blockchain:'BTC'};
   if (c==='LTC'||c==='DOG'||c==='MZC') return {mainnet:true,blockchain:c};
   return {mainnet:true,blockchain:'BTC'};
+};
+
+const BASE58_ALPHABET='123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+const KEYWORD_PAD_BYTE='#'.charCodeAt(0);
+const keywordTextEncoder=new TextEncoder();
+
+const base58Encode=(bytes)=>{
+  let zeroCount=0;
+  while(zeroCount<bytes.length&&bytes[zeroCount]===0) zeroCount+=1;
+  let value=0n;
+  for(const b of bytes) value=(value<<8n)+BigInt(b);
+  let encoded='';
+  while(value>0n){
+    const mod=Number(value%58n);
+    encoded=BASE58_ALPHABET[mod]+encoded;
+    value/=58n;
+  }
+  return '1'.repeat(zeroCount)+(encoded||'');
+};
+
+const sha256Bytes=async(bytes)=>new Uint8Array(await crypto.subtle.digest('SHA-256',bytes));
+
+const base58EncodeWithChecksum=async(payload)=>{
+  const first=await sha256Bytes(payload);
+  const second=await sha256Bytes(first);
+  const full=new Uint8Array(payload.length+4);
+  full.set(payload);
+  full.set(second.slice(0,4),payload.length);
+  return base58Encode(full);
+};
+
+// Mirrors Root.GetPublicAddressByKeyword from the main Sup project:
+// keyword UTF-8 bytes are padded/truncated to 20 bytes with '#', prefixed by version byte,
+// then Base58Check encoded. This is deterministic, so doing it locally avoids redundant API calls.
+const getPublicAddressByKeywordLocal=async(keyword,mainnet)=>{
+  const keyText=String(keyword??'');
+  const versionByte=mainnet?0:111;
+  const cacheKey=`${versionByte}:${keyText}`;
+  if(keywordAddressCache.has(cacheKey)) return keywordAddressCache.get(cacheKey);
+  if(keywordAddressInflight.has(cacheKey)) return keywordAddressInflight.get(cacheKey);
+  const run=(async()=>{
+    const raw=keywordTextEncoder.encode(keyText);
+    const keywordPayload=new Uint8Array(20);
+    keywordPayload.fill(KEYWORD_PAD_BYTE);
+    keywordPayload.set(raw.slice(0,20));
+    const payload=new Uint8Array(21);
+    payload[0]=versionByte;
+    payload.set(keywordPayload,1);
+    const address=await base58EncodeWithChecksum(payload);
+    // Cache forever for this session because the mapping is a pure function and never changes.
+    keywordAddressCache.set(cacheKey,address);
+    return address;
+  })();
+  keywordAddressInflight.set(cacheKey,run);
+  try{
+    return await run;
+  }finally{
+    keywordAddressInflight.delete(cacheKey);
+  }
 };
 
 // ── Session caches ─────────────────────────────────────────────────────
@@ -1395,7 +1456,7 @@ const getMessageThreadDataByTxid=async(txid,mainnet,signal)=>{
   const run=(async()=>{
     let address='';
     try{
-      const addr=await fetchAPI(`${BASE_URL}/GetPublicAddressByKeyword/${encodeURIComponent(txid)}?mainnet=${mainnet}`,'',signal,15000);
+      const addr=await getPublicAddressByKeywordLocal(txid,mainnet);
       address=typeof addr==='string'?addr.trim():'';
       if(!address||!isAddress(address)){
         const empty=emptyThreadData();
@@ -2084,7 +2145,7 @@ const performKeywordSearch=async(keyword)=>{
   scrollObserver.unobserve(document.getElementById('loadSentinel'));
   let addedInRound=0;
   try{
-    const addr=await fetchAPI(`${BASE_URL}/GetPublicAddressByKeyword/${encodeURIComponent(keyword)}?mainnet=${isMainnet}`,'',signal,15000);
+    const addr=await getPublicAddressByKeywordLocal(keyword,isMainnet);
     if(!addr||typeof addr!=='string') throw new Error(`No address found for keyword: ${keyword}`);
     const chainKey=isMainnet?'BTC':'TBTC';
     const pagination={};
