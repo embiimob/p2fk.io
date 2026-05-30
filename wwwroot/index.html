@@ -2129,17 +2129,26 @@ const performKeywordSearch=async(keyword)=>{
 };
 
 // ── Main search ────────────────────────────────────────────────────────
+const normalizeSearchText=(value)=>{
+  const raw=String(value??'').trim();
+  if(!raw) return '*';
+  if(raw==='*') return '*';
+  const trimmedWildcards=raw.replace(/^\*+/, '').replace(/\*+$/, '').trim();
+  return trimmedWildcards||'*';
+};
+
 const performSearch=async(searchText)=>{
   if(state.isSearching) return;
   const raw=(searchText||document.getElementById('navbar-search-input').value.trim()||'*');
+  const normalizedSearch=normalizeSearchText(raw);
 
   // #keyword → keyword object search (calls GetObjectsByKeyword)
-  if(raw.startsWith('#')){
-    const kw=raw.slice(1).trim();
+  if(normalizedSearch.startsWith('#')){
+    const kw=normalizedSearch.slice(1).trim();
     if(kw) return performKeywordSearch(kw);
   }
 
-  const text=raw;
+  const text=normalizedSearch;
   const wantObjects=document.getElementById('chkObjects').checked;
   const wantProfiles=document.getElementById('chkProfiles').checked;
   const wantMessages=document.getElementById('chkMessages').checked;
@@ -2262,7 +2271,7 @@ const performTrendingSearch=async()=>{
     const trending=await fetchAPI(`${BASE_URL}/GetTrendingRootSearches?qty=${TRENDING_TERMS_LIMIT}`,'',signal,TRENDING_API_TIMEOUT);
     if(state.currentSearchId!==searchId) return;
     const searchTerms=(Array.isArray(trending)?trending:[])
-      .map(t=>String(t?.SearchString??t?.searchString??'').trim())
+      .map(t=>normalizeSearchText(t?.SearchString??t?.searchString??''))
       .filter(Boolean);
     if(!searchTerms.length){
       document.getElementById('feed').innerHTML=TRENDING_EMPTY_HTML;
