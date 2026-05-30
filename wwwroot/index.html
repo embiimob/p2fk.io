@@ -2132,7 +2132,6 @@ const performKeywordSearch=async(keyword)=>{
 const normalizeSearchText=(value)=>{
   const raw=String(value??'').trim();
   if(!raw) return '*';
-  if(raw==='*') return '*';
   const trimmedWildcards=raw.replace(/^\*+/, '').replace(/\*+$/, '').trim();
   return trimmedWildcards||'*';
 };
