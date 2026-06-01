@@ -80,7 +80,8 @@ namespace P2FK.IO.Controllers
                     result = await _wrapper.RunCommandAsync(_wrapper.TestCLIPath, arguments, CancellationToken.None);
                 }
 
-                if (_serviceProvider.GetService(typeof(WindowsSearchService)) is WindowsSearchService searchService)
+                if (OperatingSystem.IsWindows() &&
+                    _serviceProvider.GetService(typeof(WindowsSearchService)) is WindowsSearchService searchService)
                     searchService.QueueRootCacheRefresh(id, result);
 
                 return Content(result, "application/json");

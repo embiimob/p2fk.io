@@ -165,59 +165,66 @@ namespace P2FK.IO.Services
 
         private void RefreshRootCacheEntry(string txId, string rawJson)
         {
-            JsonElement rootEl;
-            try { rootEl = JsonSerializer.Deserialize<JsonElement>(rawJson); }
-            catch (JsonException) { return; }
-
-            if (!rootEl.TryGetProperty("Output", out var rootOutput) || rootOutput.ValueKind == JsonValueKind.Null)
-                return;
-
-            string detectedBlockchain = DetectFirstOutputAddress(rootEl);
-            bool isSystemRoot = IsSystemRoot(rootEl);
-
-            DateTime blockDate = default;
-            if (rootEl.TryGetProperty("BlockDate", out var bdProp) && bdProp.ValueKind == JsonValueKind.String)
-                DateTime.TryParse(bdProp.GetString(), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind, out blockDate);
-
-            var refreshedEntry = new CachedRootEntry(detectedBlockchain, txId, rawJson, blockDate);
-
-            foreach (string cacheKey in _cacheStatus.EntryCounts.Keys
-                         .Where(k => k.StartsWith("roots:", StringComparison.OrdinalIgnoreCase))
-                         .ToArray())
+            try
             {
-                if (!_cache.TryGetValue(cacheKey, out List<CachedRootEntry>? existing) || existing == null || existing.Count == 0)
-                    continue;
+                JsonElement rootEl;
+                try { rootEl = JsonSerializer.Deserialize<JsonElement>(rawJson); }
+                catch (JsonException) { return; }
 
-                bool showSystemFiles = ParseShowSystemFilesFromRootCacheKey(cacheKey);
-                string? chainFilter = ParseBlockchainFromRootCacheKey(cacheKey);
-                bool includeEntry = (showSystemFiles || !isSystemRoot) &&
-                                    (string.IsNullOrWhiteSpace(chainFilter) ||
-                                     string.Equals(chainFilter, detectedBlockchain, StringComparison.OrdinalIgnoreCase));
+                if (!rootEl.TryGetProperty("Output", out var rootOutput) || rootOutput.ValueKind == JsonValueKind.Null)
+                    return;
 
-                bool replacedAny = false;
-                var updated = new List<CachedRootEntry>(existing.Count + (includeEntry ? 1 : 0));
-                foreach (var entry in existing)
+                string detectedBlockchain = DetectFirstOutputAddress(rootEl);
+                bool isSystemRoot = IsSystemRoot(rootEl);
+
+                DateTime blockDate = default;
+                if (rootEl.TryGetProperty("BlockDate", out var bdProp) && bdProp.ValueKind == JsonValueKind.String)
+                    DateTime.TryParse(bdProp.GetString(), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind, out blockDate);
+
+                var refreshedEntry = new CachedRootEntry(detectedBlockchain, txId, rawJson, blockDate);
+
+                foreach (string cacheKey in _cacheStatus.EntryCounts.Keys
+                             .Where(k => k.StartsWith("roots:", StringComparison.OrdinalIgnoreCase))
+                             .ToArray())
                 {
-                    if (entry.TxId.Equals(txId, StringComparison.OrdinalIgnoreCase))
-                    {
-                        replacedAny = true;
+                    if (!_cache.TryGetValue(cacheKey, out List<CachedRootEntry>? existing) || existing == null || existing.Count == 0)
                         continue;
+
+                    bool showSystemFiles = ParseShowSystemFilesFromRootCacheKey(cacheKey);
+                    string? chainFilter = ParseBlockchainFromRootCacheKey(cacheKey);
+                    bool includeEntry = (showSystemFiles || !isSystemRoot) &&
+                                        (string.IsNullOrWhiteSpace(chainFilter) ||
+                                         string.Equals(chainFilter, detectedBlockchain, StringComparison.OrdinalIgnoreCase));
+
+                    bool replacedAny = false;
+                    var updated = new List<CachedRootEntry>(existing.Count + (includeEntry ? 1 : 0));
+                    foreach (var entry in existing)
+                    {
+                        if (entry.TxId.Equals(txId, StringComparison.OrdinalIgnoreCase))
+                        {
+                            replacedAny = true;
+                            continue;
+                        }
+
+                        updated.Add(entry);
                     }
 
-                    updated.Add(entry);
+                    if (!replacedAny)
+                        continue;
+
+                    if (includeEntry)
+                        updated.Add(refreshedEntry);
+
+                    SortRootEntries(updated);
+                    _cache.Set(cacheKey, updated, new MemoryCacheEntryOptions()
+                        .SetSize(1)
+                        .SetAbsoluteExpiration(CacheTtl));
+                    _cacheStatus.UpdateEntryCount(cacheKey, updated.Count);
                 }
-
-                if (!replacedAny)
-                    continue;
-
-                if (includeEntry)
-                    updated.Add(refreshedEntry);
-
-                SortRootEntries(updated);
-                _cache.Set(cacheKey, updated, new MemoryCacheEntryOptions()
-                    .SetSize(1)
-                    .SetAbsoluteExpiration(CacheTtl));
-                _cacheStatus.UpdateEntryCount(cacheKey, updated.Count);
+            }
+            catch (Exception)
+            {
+                // Intentionally swallow exceptions from background cache refresh.
             }
         }
 
