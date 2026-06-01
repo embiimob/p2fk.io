@@ -14,10 +14,12 @@ namespace P2FK.IO.Controllers
     [ApiController]
     public class IpfsIngressController : ControllerBase
     {
+        private const long DefaultMaxUploadBytes = IpfsIngressOptions.DefaultMaxUploadBytes;
         private readonly IpfsIngressService _ipfsIngressService;
         private readonly IngressMetadataStore _metadataStore;
         private readonly KuboIngressService _kuboIngressGatewayService;
         private readonly IpfsIngressOptions _options;
+        private readonly long _maxUploadBytes;
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly ILogger<IpfsIngressController> _logger;
 
@@ -33,6 +35,7 @@ namespace P2FK.IO.Controllers
             _metadataStore = metadataStore;
             _kuboIngressGatewayService = (KuboIngressService)kuboIngressGatewayService;
             _options = options.Value;
+            _maxUploadBytes = _options.MaxUploadBytes > 0 ? _options.MaxUploadBytes : DefaultMaxUploadBytes;
             _httpClientFactory = httpClientFactory;
             _logger = logger;
         }
@@ -41,6 +44,8 @@ namespace P2FK.IO.Controllers
         [HttpPost("api/v0/add")]
         [DisableRequestTimeout]
         [EnableRateLimiting("IpfsUpload")]
+        [RequestSizeLimit(DefaultMaxUploadBytes)]
+        [RequestFormLimits(MultipartBodyLengthLimit = DefaultMaxUploadBytes)]
         [Consumes("multipart/form-data", "application/octet-stream")]
         public async Task<ActionResult<KuboAddResult>> Add([FromForm(Name = "file")] IFormFile? file, CancellationToken cancellationToken)
         {
@@ -59,6 +64,8 @@ namespace P2FK.IO.Controllers
         [HttpPost("ipfs")]
         [DisableRequestTimeout]
         [EnableRateLimiting("IpfsUpload")]
+        [RequestSizeLimit(DefaultMaxUploadBytes)]
+        [RequestFormLimits(MultipartBodyLengthLimit = DefaultMaxUploadBytes)]
         [Consumes("multipart/form-data", "application/octet-stream")]
         public async Task<ActionResult> Upload([FromForm(Name = "file")] IFormFile? file, CancellationToken cancellationToken)
         {
@@ -173,8 +180,10 @@ namespace P2FK.IO.Controllers
             {
                 if (file.Length <= 0)
                     throw new InvalidDataException("No file section was found in the multipart payload.");
+                if (file.Length > _maxUploadBytes)
+                    throw new InvalidDataException($"Upload exceeds the maximum allowed size of {GetMaxUploadMb()} MB.");
 
-                return new UploadRequest(file.OpenReadStream(), "upload.bin", file.Length, DisposeStream: true);
+                return new UploadRequest(file.OpenReadStream(_maxUploadBytes), "upload.bin", file.Length, DisposeStream: true);
             }
 
             string contentType = Request.ContentType ?? string.Empty;
@@ -183,6 +192,10 @@ namespace P2FK.IO.Controllers
 
             if (Request.Body == Stream.Null)
                 throw new InvalidDataException("No upload body was provided.");
+            if (Request.ContentLength is null || Request.ContentLength <= 0)
+                throw new InvalidDataException("A valid Content-Length header is required for ingress uploads.");
+            if (Request.ContentLength > _maxUploadBytes)
+                throw new InvalidDataException($"Upload exceeds the maximum allowed size of {GetMaxUploadMb()} MB.");
 
             return new UploadRequest(Request.Body, "upload.bin", Request.ContentLength);
         }
@@ -191,6 +204,9 @@ namespace P2FK.IO.Controllers
         {
             string boundary = MultipartRequestHelper.GetBoundary(MediaTypeHeaderValue.Parse(contentType), lengthLimit: 256);
             var reader = new MultipartReader(boundary, Request.Body);
+            reader.BodyLengthLimit = _maxUploadBytes;
+            if (Request.ContentLength is not null && Request.ContentLength > _maxUploadBytes)
+                throw new InvalidDataException($"Upload exceeds the maximum allowed size of {GetMaxUploadMb()} MB.");
             MultipartSection? section;
             while ((section = await reader.ReadNextSectionAsync(cancellationToken)) is not null)
             {
@@ -204,6 +220,10 @@ namespace P2FK.IO.Controllers
                     && section.Headers.TryGetValue(HeaderNames.ContentLength, out var headerLength)
                     && long.TryParse(headerLength.ToString(), out long parsedLength))
                     sectionLength = parsedLength;
+                if (sectionLength is null || sectionLength <= 0)
+                    throw new InvalidDataException("A valid Content-Length header is required for ingress uploads.");
+                if (sectionLength > _maxUploadBytes)
+                    throw new InvalidDataException($"Upload exceeds the maximum allowed size of {GetMaxUploadMb()} MB.");
                 return new UploadRequest(section.Body, "upload.bin", sectionLength);
             }
 
@@ -211,6 +231,8 @@ namespace P2FK.IO.Controllers
         }
 
         private sealed record UploadRequest(Stream Stream, string FileName, long? ContentLength, bool DisposeStream = false);
+
+        private long GetMaxUploadMb() => _maxUploadBytes / (1024 * 1024);
     }
 
     internal static class MultipartRequestHelper
