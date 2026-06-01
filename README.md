@@ -255,7 +255,7 @@ curl https://p2fk.io/health/ipfs
 ### Runtime behavior
 
 - Uploads are streamed directly into the ingress Kubo API and pinned immediately.
-- Each ingress upload request supports files up to **500 MB**.
+- Each ingress upload request supports files up to **500 MB** by default (`IpfsIngress:MaxUploadBytes`).
 - Each client IP is limited to **5 GB** of uploads over a rolling 24-hour window.
 - The ingress repo is capped at **500 GB** of active cached content.
 - Uploads stay pinned for **1 hour** and are cleaned by `IngressExpirationWorker` every **5 minutes**.

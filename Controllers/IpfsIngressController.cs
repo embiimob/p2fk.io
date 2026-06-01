@@ -177,7 +177,7 @@ namespace P2FK.IO.Controllers
                 if (file.Length <= 0)
                     throw new InvalidDataException("No file section was found in the multipart payload.");
                 if (file.Length > _maxUploadBytes)
-                    throw new InvalidDataException($"Upload exceeds the maximum allowed size of {GetMaxUploadMegabytes()} MB.");
+                    throw new InvalidDataException($"Upload exceeds the maximum allowed size of {GetMaxUploadMegabytes()} MB (decimal).");
 
                 return new UploadRequest(file.OpenReadStream(), "upload.bin", file.Length, DisposeStream: true);
             }
@@ -189,9 +189,9 @@ namespace P2FK.IO.Controllers
             if (Request.Body == Stream.Null)
                 throw new InvalidDataException("No upload body was provided.");
             if (Request.ContentLength is null || Request.ContentLength <= 0)
-                throw new InvalidDataException("A valid Content-Length header is required for ingress uploads.");
+                throw new InvalidDataException("A valid Content-Length header with a positive value is required for ingress uploads.");
             if (Request.ContentLength > _maxUploadBytes)
-                throw new InvalidDataException($"Upload exceeds the maximum allowed size of {GetMaxUploadMegabytes()} MB.");
+                throw new InvalidDataException($"Upload exceeds the maximum allowed size of {GetMaxUploadMegabytes()} MB (decimal).");
 
             return new UploadRequest(Request.Body, "upload.bin", Request.ContentLength);
         }
@@ -202,7 +202,7 @@ namespace P2FK.IO.Controllers
             var reader = new MultipartReader(boundary, Request.Body);
             reader.BodyLengthLimit = _maxUploadBytes;
             if (Request.ContentLength is not null && Request.ContentLength > _maxUploadBytes)
-                throw new InvalidDataException($"Upload exceeds the maximum allowed size of {GetMaxUploadMegabytes()} MB.");
+                throw new InvalidDataException($"Upload exceeds the maximum allowed size of {GetMaxUploadMegabytes()} MB (decimal).");
             MultipartSection? section;
             while ((section = await reader.ReadNextSectionAsync(cancellationToken)) is not null)
             {
@@ -217,9 +217,9 @@ namespace P2FK.IO.Controllers
                     && long.TryParse(headerLength.ToString(), out long parsedLength))
                     sectionLength = parsedLength;
                 if (sectionLength is null || sectionLength <= 0)
-                    throw new InvalidDataException("A valid Content-Length header is required for ingress uploads.");
+                    throw new InvalidDataException("A valid Content-Length header with a positive value is required for ingress uploads.");
                 if (sectionLength > _maxUploadBytes)
-                    throw new InvalidDataException($"Upload exceeds the maximum allowed size of {GetMaxUploadMegabytes()} MB.");
+                    throw new InvalidDataException($"Upload exceeds the maximum allowed size of {GetMaxUploadMegabytes()} MB (decimal).");
                 return new UploadRequest(section.Body, "upload.bin", sectionLength);
             }
 
