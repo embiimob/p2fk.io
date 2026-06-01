@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Http.Timeouts;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Server.IIS;
@@ -123,6 +124,10 @@ builder.Services.AddRequestTimeouts(options =>
         Timeout = TimeSpan.FromSeconds(P2FK.IO.Wrapper.MaxTimeoutSeconds)
     });
 builder.Services.Configure<IISServerOptions>(options => options.MaxRequestBodySize = null);
+builder.Services.Configure<FormOptions>(options =>
+{
+    options.MultipartBodyLengthLimit = ingressOptions.MaxUploadBytes;
+});
 
 builder.WebHost.ConfigureKestrel(kestrel =>
 {

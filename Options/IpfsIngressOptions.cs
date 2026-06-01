@@ -3,6 +3,7 @@ namespace P2FK.IO.Options
     public class IpfsIngressOptions
     {
         public const string SectionName = "IpfsIngress";
+        public const long DefaultMaxUploadBytes = 500_000_000;
 
         public string PublicBaseUrl { get; set; } = "https://p2fk.io";
         public bool ManageKuboProcess { get; set; } = true;
@@ -21,5 +22,6 @@ namespace P2FK.IO.Options
         public int PinLifetimeMinutes { get; set; } = 60;
         public int CleanupIntervalMinutes { get; set; } = 5;
         public int UploadRequestsPerMinute { get; set; } = 20;
+        public long MaxUploadBytes { get; set; } = DefaultMaxUploadBytes;
     }
 }

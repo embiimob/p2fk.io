@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
+using P2FK.IO.Services;
 using static Microsoft.Extensions.Logging.EventSource.LoggingEventSource;
 
 
@@ -13,10 +14,12 @@ namespace P2FK.IO.Controllers
     public class GetRootByTransactionIDController : ControllerBase
     {
         private readonly Wrapper _wrapper;
+        private readonly IServiceProvider _serviceProvider;
 
-        public GetRootByTransactionIDController(Wrapper wrapper)
+        public GetRootByTransactionIDController(Wrapper wrapper, IServiceProvider serviceProvider)
         {
             _wrapper = wrapper;
+            _serviceProvider = serviceProvider;
         }
 
         // GET <GetRootByTransactionIDController>/5
@@ -76,6 +79,10 @@ namespace P2FK.IO.Controllers
                     if (verbose) { arguments = arguments + " --verbose"; }
                     result = await _wrapper.RunCommandAsync(_wrapper.TestCLIPath, arguments, CancellationToken.None);
                 }
+
+                if (OperatingSystem.IsWindows() &&
+                    _serviceProvider.GetService(typeof(WindowsSearchService)) is WindowsSearchService searchService)
+                    searchService.QueueRootCacheRefresh(id, result);
 
                 return Content(result, "application/json");
             }
