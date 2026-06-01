@@ -150,6 +150,100 @@ namespace P2FK.IO.Services
 
         // ── Public search methods ──────────────────────────────────────────────
 
+        /// <summary>
+        /// Queues a non-blocking in-memory refresh for any cached root entries that match
+        /// the specified transaction id. This is used by direct root lookups so pending
+        /// (epoch-date) entries can be replaced with confirmed block data quickly.
+        /// </summary>
+        public void QueueRootCacheRefresh(string txId, string rawJson)
+        {
+            if (string.IsNullOrWhiteSpace(txId) || string.IsNullOrWhiteSpace(rawJson))
+                return;
+
+            _ = Task.Run(() => RefreshRootCacheEntry(txId, rawJson));
+        }
+
+        private void RefreshRootCacheEntry(string txId, string rawJson)
+        {
+            JsonElement rootEl;
+            try { rootEl = JsonSerializer.Deserialize<JsonElement>(rawJson); }
+            catch (JsonException) { return; }
+
+            if (!rootEl.TryGetProperty("Output", out var rootOutput) || rootOutput.ValueKind == JsonValueKind.Null)
+                return;
+
+            string detectedBlockchain = DetectFirstOutputAddress(rootEl);
+            bool isSystemRoot = IsSystemRoot(rootEl);
+
+            DateTime blockDate = default;
+            if (rootEl.TryGetProperty("BlockDate", out var bdProp) && bdProp.ValueKind == JsonValueKind.String)
+                DateTime.TryParse(bdProp.GetString(), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind, out blockDate);
+
+            var refreshedEntry = new CachedRootEntry(detectedBlockchain, txId, rawJson, blockDate);
+
+            foreach (string cacheKey in _cacheStatus.EntryCounts.Keys
+                         .Where(k => k.StartsWith("roots:", StringComparison.OrdinalIgnoreCase))
+                         .ToArray())
+            {
+                if (!_cache.TryGetValue(cacheKey, out List<CachedRootEntry>? existing) || existing == null || existing.Count == 0)
+                    continue;
+
+                bool showSystemFiles = ParseShowSystemFilesFromRootCacheKey(cacheKey);
+                string? chainFilter = ParseBlockchainFromRootCacheKey(cacheKey);
+                bool includeEntry = (showSystemFiles || !isSystemRoot) &&
+                                    (string.IsNullOrWhiteSpace(chainFilter) ||
+                                     string.Equals(chainFilter, detectedBlockchain, StringComparison.OrdinalIgnoreCase));
+
+                bool replacedAny = false;
+                var updated = new List<CachedRootEntry>(existing.Count + (includeEntry ? 1 : 0));
+                foreach (var entry in existing)
+                {
+                    if (entry.TxId.Equals(txId, StringComparison.OrdinalIgnoreCase))
+                    {
+                        replacedAny = true;
+                        continue;
+                    }
+
+                    updated.Add(entry);
+                }
+
+                if (!replacedAny)
+                    continue;
+
+                if (includeEntry)
+                    updated.Add(refreshedEntry);
+
+                SortRootEntries(updated);
+                _cache.Set(cacheKey, updated, new MemoryCacheEntryOptions()
+                    .SetSize(1)
+                    .SetAbsoluteExpiration(CacheTtl));
+                _cacheStatus.UpdateEntryCount(cacheKey, updated.Count);
+            }
+        }
+
+        private static bool ParseShowSystemFilesFromRootCacheKey(string cacheKey)
+        {
+            int lastColon = cacheKey.LastIndexOf(':');
+            if (lastColon < 0 || lastColon >= cacheKey.Length - 1)
+                return true;
+
+            return !cacheKey[(lastColon + 1)..].Equals("false", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string? ParseBlockchainFromRootCacheKey(string cacheKey)
+        {
+            int lastColon = cacheKey.LastIndexOf(':');
+            if (lastColon <= 0)
+                return null;
+
+            int secondLastColon = cacheKey.LastIndexOf(':', lastColon - 1);
+            if (secondLastColon < 0 || secondLastColon >= lastColon - 1)
+                return null;
+
+            string chain = cacheKey[(secondLastColon + 1)..lastColon];
+            return string.IsNullOrWhiteSpace(chain) ? null : chain;
+        }
+
         public async Task<List<SearchResultRoot>> SearchRootsAsync(
             string searchString, int qty, int skip, string? blockchain = null, bool showSystemFiles = true,
             bool forceRefresh = false)
