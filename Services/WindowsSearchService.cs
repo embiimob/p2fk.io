@@ -619,8 +619,9 @@ namespace P2FK.IO.Services
                 {
                     if (blockDate <= DateTime.UnixEpoch)
                     {
-                        bool pendingMainnet = !string.Equals(detectedBlockchain, "BTC-testnet", StringComparison.OrdinalIgnoreCase);
-                        string pendingBlockchain = string.Equals(detectedBlockchain, "BTC-testnet", StringComparison.OrdinalIgnoreCase)
+                        bool isBtcTestnet = string.Equals(detectedBlockchain, "BTC-testnet", StringComparison.OrdinalIgnoreCase);
+                        bool pendingMainnet = !isBtcTestnet;
+                        string pendingBlockchain = isBtcTestnet
                             ? BtcBlockchain
                             : detectedBlockchain;
 
