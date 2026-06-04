@@ -13,10 +13,15 @@ namespace P2FK.IO.Services
         private readonly string _rootPath;
         private readonly IMemoryCache _cache;
         private readonly CacheStatusService _cacheStatus;
-        // Cache entries live for 5 minutes.  CacheWarmingService now uses an adaptive
-        // interval (last scan duration + 60 s) so the TTL acts only as an eviction
-        // backstop rather than driving the refresh cadence.
+        // TTL for regular text-search cache entries (5 min backstop for user-triggered scans).
         internal static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(300);
+
+        // TTL for wildcard ("*") cache entries that are owned and refreshed by CacheWarmingService.
+        // Must be long enough to survive the worst-case warm interval (scanDuration + 120 s).
+        // A scan that takes ~10 minutes would produce an interval of ~12 minutes; 1 hour provides
+        // a comfortable safety margin so these entries are never evicted between warm cycles.
+        internal static readonly TimeSpan WildcardCacheTtl = TimeSpan.FromHours(1);
+
         private static readonly Regex TxIdRegex = new Regex(@"[0-9a-fA-F]{64}", RegexOptions.Compiled);
         private const int MaxSearchLength = 2048;
 
@@ -218,7 +223,7 @@ namespace P2FK.IO.Services
                     SortRootEntries(updated);
                     _cache.Set(cacheKey, updated, new MemoryCacheEntryOptions()
                         .SetSize(1)
-                        .SetAbsoluteExpiration(CacheTtl));
+                        .SetAbsoluteExpiration(TtlForCacheKey(cacheKey)));
                     _cacheStatus.UpdateEntryCount(cacheKey, updated.Count);
                 }
             }
@@ -251,6 +256,23 @@ namespace P2FK.IO.Services
             return string.IsNullOrWhiteSpace(chain) ? null : chain;
         }
 
+        /// <summary>
+        /// Returns the appropriate cache TTL for a given cache key.
+        /// Wildcard cache keys (those whose search-string segment is "*") are managed
+        /// by <see cref="CacheWarmingService"/> and receive a long TTL so they are never
+        /// evicted between warm cycles.  All other keys use the standard short TTL.
+        /// </summary>
+        private static TimeSpan TtlForCacheKey(string cacheKey)
+        {
+            // Cache key format: "{type}:{searchString}:{blockchain}:{...}"
+            // A wildcard key has "*" as the second colon-delimited segment.
+            int firstColon = cacheKey.IndexOf(':');
+            if (firstColon < 0 || firstColon + 2 >= cacheKey.Length) return CacheTtl;
+            bool isWildcard = cacheKey[firstColon + 1] == '*' &&
+                              (firstColon + 2 >= cacheKey.Length || cacheKey[firstColon + 2] == ':');
+            return isWildcard ? WildcardCacheTtl : CacheTtl;
+        }
+
         public async Task<List<SearchResultRoot>> SearchRootsAsync(
             string searchString, int qty, int skip, string? blockchain = null, bool showSystemFiles = true,
             bool forceRefresh = false)
@@ -267,6 +289,10 @@ namespace P2FK.IO.Services
             // Detect wildcard "*" early — needed both for the all-chains fallback below
             // and for SQL query selection later.
             bool isWildcard = (searchString ?? "").Trim() == "*";
+
+            // Wildcard entries are owned/refreshed by CacheWarmingService; use a much longer
+            // TTL so they are never evicted between warm cycles even when scans run slowly.
+            TimeSpan ttl = isWildcard ? WildcardCacheTtl : CacheTtl;
 
             string cacheKey = $"roots:{searchString?.ToLowerInvariant() ?? ""}:{blockchain?.ToLowerInvariant() ?? ""}:{showSystemFiles}";
             bool hasCachedEntries = _cache.TryGetValue(cacheKey, out List<CachedRootEntry>? cachedEntries);
@@ -298,7 +324,7 @@ namespace P2FK.IO.Services
                         .ToList();
                     _cache.Set(cacheKey, filtered, new MemoryCacheEntryOptions()
                         .SetSize(1)
-                        .SetAbsoluteExpiration(CacheTtl));
+                        .SetAbsoluteExpiration(ttl));
                     _cacheStatus.UpdateEntryCount(cacheKey, filtered.Count);
                     return SliceRootResults(filtered, skip, qty);
                 }
@@ -462,7 +488,7 @@ namespace P2FK.IO.Services
 
             _cache.Set(cacheKey, entries, new MemoryCacheEntryOptions()
                 .SetSize(1)
-                .SetAbsoluteExpiration(CacheTtl));
+                .SetAbsoluteExpiration(ttl));
             _cacheStatus.UpdateEntryCount(cacheKey, entries.Count);
 
             // When this was an all-chains scan (blockchain == null), also populate the
@@ -476,7 +502,7 @@ namespace P2FK.IO.Services
                     var chainList = chainGroup.ToList();
                     _cache.Set(chainCacheKey, chainList, new MemoryCacheEntryOptions()
                         .SetSize(1)
-                        .SetAbsoluteExpiration(CacheTtl));
+                        .SetAbsoluteExpiration(ttl));
                     _cacheStatus.UpdateEntryCount(chainCacheKey, chainList.Count);
                 }
             }
@@ -500,7 +526,7 @@ namespace P2FK.IO.Services
                 string filteredKey = $"roots:{searchString?.ToLowerInvariant() ?? ""}:{blockchain?.ToLowerInvariant() ?? ""}:False";
                 _cache.Set(filteredKey, filteredEntries, new MemoryCacheEntryOptions()
                     .SetSize(1)
-                    .SetAbsoluteExpiration(CacheTtl));
+                    .SetAbsoluteExpiration(ttl));
                 _cacheStatus.UpdateEntryCount(filteredKey, filteredEntries.Count);
 
                 if (blockchain == null)
@@ -511,7 +537,7 @@ namespace P2FK.IO.Services
                         var chainList = chainGroup.ToList();
                         _cache.Set(chainCacheKey, chainList, new MemoryCacheEntryOptions()
                             .SetSize(1)
-                            .SetAbsoluteExpiration(CacheTtl));
+                            .SetAbsoluteExpiration(ttl));
                         _cacheStatus.UpdateEntryCount(chainCacheKey, chainList.Count);
                     }
                 }
@@ -535,6 +561,10 @@ namespace P2FK.IO.Services
             // Detect wildcard "*" early — needed for the all-chains fallback below.
             bool isWildcard = (searchString ?? "").Trim() == "*";
 
+            // Wildcard entries are owned/refreshed by CacheWarmingService; use a much longer
+            // TTL so they are never evicted between warm cycles even when scans run slowly.
+            TimeSpan ttl = isWildcard ? WildcardCacheTtl : CacheTtl;
+
             // Per-chain wildcard cache miss: derive from all-chains warm cache if available.
             if (!forceRefresh && blockchain != null && isWildcard)
             {
@@ -546,7 +576,7 @@ namespace P2FK.IO.Services
                         .ToList();
                     _cache.Set(cacheKey, filtered, new MemoryCacheEntryOptions()
                         .SetSize(1)
-                        .SetAbsoluteExpiration(CacheTtl));
+                        .SetAbsoluteExpiration(ttl));
                     _cacheStatus.UpdateEntryCount(cacheKey, filtered.Count);
                     return SliceObjectResults(filtered, skip, qty);
                 }
@@ -655,7 +685,7 @@ namespace P2FK.IO.Services
 
             _cache.Set(cacheKey, entries, new MemoryCacheEntryOptions()
                 .SetSize(1)
-                .SetAbsoluteExpiration(CacheTtl));
+                .SetAbsoluteExpiration(ttl));
             _cacheStatus.UpdateEntryCount(cacheKey, entries.Count);
 
             // When this was an all-chains scan, populate per-chain partition caches
@@ -668,7 +698,7 @@ namespace P2FK.IO.Services
                     var chainList = chainGroup.ToList();
                     _cache.Set(chainCacheKey, chainList, new MemoryCacheEntryOptions()
                         .SetSize(1)
-                        .SetAbsoluteExpiration(CacheTtl));
+                        .SetAbsoluteExpiration(ttl));
                     _cacheStatus.UpdateEntryCount(chainCacheKey, chainList.Count);
                 }
             }
@@ -691,6 +721,10 @@ namespace P2FK.IO.Services
             // Detect wildcard "*" early — needed for the all-chains fallback below.
             bool isWildcard = (searchString ?? "").Trim() == "*";
 
+            // Wildcard entries are owned/refreshed by CacheWarmingService; use a much longer
+            // TTL so they are never evicted between warm cycles even when scans run slowly.
+            TimeSpan ttl = isWildcard ? WildcardCacheTtl : CacheTtl;
+
             // Per-chain wildcard cache miss: derive from all-chains warm cache if available.
             if (!forceRefresh && blockchain != null && isWildcard)
             {
@@ -702,7 +736,7 @@ namespace P2FK.IO.Services
                         .ToList();
                     _cache.Set(cacheKey, filtered, new MemoryCacheEntryOptions()
                         .SetSize(1)
-                        .SetAbsoluteExpiration(CacheTtl));
+                        .SetAbsoluteExpiration(ttl));
                     _cacheStatus.UpdateEntryCount(cacheKey, filtered.Count);
                     return SliceProfileResults(filtered, skip, qty);
                 }
@@ -811,7 +845,7 @@ namespace P2FK.IO.Services
 
             _cache.Set(cacheKey, entries, new MemoryCacheEntryOptions()
                 .SetSize(1)
-                .SetAbsoluteExpiration(CacheTtl));
+                .SetAbsoluteExpiration(ttl));
             _cacheStatus.UpdateEntryCount(cacheKey, entries.Count);
 
             // When this was an all-chains scan, populate per-chain partition caches.
@@ -823,7 +857,7 @@ namespace P2FK.IO.Services
                     var chainList = chainGroup.ToList();
                     _cache.Set(chainCacheKey, chainList, new MemoryCacheEntryOptions()
                         .SetSize(1)
-                        .SetAbsoluteExpiration(CacheTtl));
+                        .SetAbsoluteExpiration(ttl));
                     _cacheStatus.UpdateEntryCount(chainCacheKey, chainList.Count);
                 }
             }
