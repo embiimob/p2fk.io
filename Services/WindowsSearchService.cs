@@ -1,5 +1,7 @@
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
 using P2FK.IO.Models;
+using System.Collections.Concurrent;
 using System.Data.OleDb;
 using System.Runtime.Versioning;
 using System.Text.Json;
@@ -12,7 +14,9 @@ namespace P2FK.IO.Services
     {
         private readonly string _rootPath;
         private readonly IMemoryCache _cache;
+        private readonly Wrapper _wrapper;
         private readonly CacheStatusService _cacheStatus;
+        private readonly ILogger<WindowsSearchService> _logger;
         // TTL for regular text-search cache entries (5 min backstop for user-triggered scans).
         internal static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(300);
 
@@ -24,12 +28,19 @@ namespace P2FK.IO.Services
 
         private static readonly Regex TxIdRegex = new Regex(@"[0-9a-fA-F]{64}", RegexOptions.Compiled);
         private const int MaxSearchLength = 2048;
+        private const string BtcBlockchain = "BTC";
 
-        public WindowsSearchService(IMemoryCache cache, Wrapper wrapper, CacheStatusService cacheStatus)
+        public WindowsSearchService(
+            IMemoryCache cache,
+            Wrapper wrapper,
+            CacheStatusService cacheStatus,
+            ILogger<WindowsSearchService> logger)
         {
             _cache = cache;
+            _wrapper = wrapper;
             _rootPath = wrapper.RootPath;
             _cacheStatus = cacheStatus;
+            _logger = logger;
         }
 
         // ── Blockchain detection ───────────────────────────────────────────────
@@ -83,6 +94,9 @@ namespace P2FK.IO.Services
         private record CachedRootEntry(string Blockchain, string TxId, string RawJson, DateTime BlockDate);
         private record CachedObjectEntry(string Blockchain, string Address, string RawJson);
         private record CachedProfileEntry(string Blockchain, string Address, string RawJson);
+        private record PendingRootRefreshRequest(string TxId, bool Mainnet, string Blockchain);
+        private readonly ConcurrentDictionary<string, PendingRootRefreshRequest> _pendingRootRefreshQueue =
+            new(StringComparer.OrdinalIgnoreCase);
 
         [SupportedOSPlatform("windows")]
         private List<SearchRow> ExecuteSearchQuery(string sql)
@@ -156,19 +170,133 @@ namespace P2FK.IO.Services
         // ── Public search methods ──────────────────────────────────────────────
 
         /// <summary>
-        /// Queues a non-blocking in-memory refresh for any cached root entries that match
-        /// the specified transaction id. This is used by direct root lookups so pending
-        /// (epoch-date) entries can be replaced with confirmed block data quickly.
+        /// Queues a transaction for periodic pending-status checks during warm/rewarm cycles.
+        /// Only pending roots (null/epoch block date) are retained in this queue.
         /// </summary>
-        public void QueueRootCacheRefresh(string txId, string rawJson)
+        public void QueueRootCacheRefresh(string txId, string rawJson, bool mainnet, string blockchain)
         {
             if (string.IsNullOrWhiteSpace(txId) || string.IsNullOrWhiteSpace(rawJson))
                 return;
 
-            _ = Task.Run(() => RefreshRootCacheEntry(txId, rawJson));
+            string normalizedBlockchain = string.IsNullOrWhiteSpace(blockchain)
+                ? BtcBlockchain
+                : blockchain.Trim().ToUpperInvariant();
+            string queueKey = BuildPendingRefreshQueueKey(txId, mainnet, normalizedBlockchain);
+
+            RefreshRootCacheEntry(txId, rawJson, insertIfNotFound: true);
+
+            if (!IsPendingRoot(rawJson))
+            {
+                _pendingRootRefreshQueue.TryRemove(queueKey, out _);
+                return;
+            }
+
+            _pendingRootRefreshQueue[queueKey] = new PendingRootRefreshRequest(txId, mainnet, normalizedBlockchain);
         }
 
-        private void RefreshRootCacheEntry(string txId, string rawJson)
+        /// <summary>
+        /// Rechecks currently pending transactions and updates root cache entries once
+        /// those transactions become confirmed.
+        /// </summary>
+        public async Task ProcessPendingRootCacheRefreshQueueAsync(CancellationToken cancellationToken)
+        {
+            foreach (var item in _pendingRootRefreshQueue.ToArray())
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                string? latestRootJson = await TryGetRootByTransactionIdAsync(item.Value, cancellationToken);
+                if (string.IsNullOrWhiteSpace(latestRootJson))
+                    continue;
+
+                if (IsPendingRoot(latestRootJson))
+                    continue;
+
+                RefreshRootCacheEntry(item.Value.TxId, latestRootJson, insertIfNotFound: true);
+                _pendingRootRefreshQueue.TryRemove(item.Key, out _);
+            }
+        }
+
+        private static bool IsPendingRoot(string rawJson)
+        {
+            JsonElement rootEl;
+            try { rootEl = JsonSerializer.Deserialize<JsonElement>(rawJson); }
+            catch (JsonException) { return false; }
+
+            DateTime blockDate = default;
+            if (rootEl.TryGetProperty("BlockDate", out var bdProp) && bdProp.ValueKind == JsonValueKind.String)
+                DateTime.TryParse(
+                    bdProp.GetString(),
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.RoundtripKind,
+                    out blockDate);
+
+            return blockDate <= DateTime.UnixEpoch;
+        }
+
+        private async Task<string?> TryGetRootByTransactionIdAsync(PendingRootRefreshRequest request, CancellationToken cancellationToken)
+        {
+            string arguments;
+            string executablePath;
+
+            if (request.Blockchain == "LTC")
+            {
+                arguments = BuildGetRootByTransactionIdArguments(
+                    _wrapper.LTCVersionByte, _wrapper.LTCRPCPassword, _wrapper.LTCRPCURL, _wrapper.LTCRPCUser, request.TxId);
+                executablePath = _wrapper.LTCCLIPath;
+            }
+            else if (request.Blockchain == "DOG")
+            {
+                arguments = BuildGetRootByTransactionIdArguments(
+                    _wrapper.DOGVersionByte, _wrapper.DOGRPCPassword, _wrapper.DOGRPCURL, _wrapper.DOGRPCUser, request.TxId);
+                executablePath = _wrapper.DOGCLIPath;
+            }
+            else if (request.Blockchain == "MZC")
+            {
+                arguments = BuildGetRootByTransactionIdArguments(
+                    _wrapper.MZCVersionByte, _wrapper.MZCRPCPassword, _wrapper.MZCRPCURL, _wrapper.MZCRPCUser, request.TxId);
+                executablePath = _wrapper.MZCCLIPath;
+            }
+            else if (request.Mainnet)
+            {
+                arguments = BuildGetRootByTransactionIdArguments(
+                    _wrapper.ProdVersionByte, _wrapper.ProdRPCPassword, _wrapper.ProdRPCURL, _wrapper.ProdRPCUser, request.TxId);
+                executablePath = _wrapper.ProdCLIPath;
+            }
+            else
+            {
+                arguments = BuildGetRootByTransactionIdArguments(
+                    _wrapper.TestVersionByte, _wrapper.TestRPCPassword, _wrapper.TestRPCURL, _wrapper.TestRPCUser, request.TxId);
+                executablePath = _wrapper.TestCLIPath;
+            }
+
+            try
+            {
+                return await _wrapper.RunCommandAsync(executablePath, arguments, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex,
+                    "Pending root refresh check failed for txId={TxId} chain={Blockchain}",
+                    request.TxId, request.Blockchain);
+                return null;
+            }
+        }
+
+        private static string BuildPendingRefreshQueueKey(string txId, bool mainnet, string blockchain)
+        {
+            // BTC can be mainnet or testnet; altchains here do not use the BTC mainnet flag.
+            string networkSegment = string.Equals(blockchain, BtcBlockchain, StringComparison.OrdinalIgnoreCase)
+                ? mainnet.ToString()
+                : "any";
+            return $"{blockchain}:{networkSegment}:{txId}";
+        }
+
+        private static string BuildGetRootByTransactionIdArguments(
+            string versionByte, string rpcPassword, string rpcUrl, string rpcUser, string txId) =>
+            "--versionbyte " + versionByte + " --getrootbytransactionid --password " + rpcPassword +
+            " --url " + rpcUrl + " --username " + rpcUser + " --tid " + txId;
+
+        private void RefreshRootCacheEntry(string txId, string rawJson, bool insertIfNotFound = false)
         {
             try
             {
@@ -214,8 +342,14 @@ namespace P2FK.IO.Services
                         updated.Add(entry);
                     }
 
+                    // For existing cache entries: replace when found, or insert into wildcard
+                    // caches when allowed.  Skip non-wildcard text-search caches for new entries
+                    // so unrelated pending/confirmed transactions don't bleed into specific searches.
                     if (!replacedAny)
-                        continue;
+                    {
+                        if (!insertIfNotFound || !IsWildcardCacheKey(cacheKey))
+                            continue;
+                    }
 
                     if (includeEntry)
                         updated.Add(refreshedEntry);
@@ -256,22 +390,24 @@ namespace P2FK.IO.Services
             return string.IsNullOrWhiteSpace(chain) ? null : chain;
         }
 
+        // Cache key format: "{type}:{searchString}:{blockchain}:{...}"
+        // A wildcard key has "*" as the second colon-delimited segment.
+        private static bool IsWildcardCacheKey(string cacheKey)
+        {
+            int firstColon = cacheKey.IndexOf(':');
+            if (firstColon < 0 || firstColon + 2 >= cacheKey.Length) return false;
+            return cacheKey[firstColon + 1] == '*' &&
+                   (firstColon + 2 >= cacheKey.Length || cacheKey[firstColon + 2] == ':');
+        }
+
         /// <summary>
         /// Returns the appropriate cache TTL for a given cache key.
         /// Wildcard cache keys (those whose search-string segment is "*") are managed
         /// by <see cref="CacheWarmingService"/> and receive a long TTL so they are never
         /// evicted between warm cycles.  All other keys use the standard short TTL.
         /// </summary>
-        private static TimeSpan TtlForCacheKey(string cacheKey)
-        {
-            // Cache key format: "{type}:{searchString}:{blockchain}:{...}"
-            // A wildcard key has "*" as the second colon-delimited segment.
-            int firstColon = cacheKey.IndexOf(':');
-            if (firstColon < 0 || firstColon + 2 >= cacheKey.Length) return CacheTtl;
-            bool isWildcard = cacheKey[firstColon + 1] == '*' &&
-                              (firstColon + 2 >= cacheKey.Length || cacheKey[firstColon + 2] == ':');
-            return isWildcard ? WildcardCacheTtl : CacheTtl;
-        }
+        private static TimeSpan TtlForCacheKey(string cacheKey) =>
+            IsWildcardCacheKey(cacheKey) ? WildcardCacheTtl : CacheTtl;
 
         public async Task<List<SearchResultRoot>> SearchRootsAsync(
             string searchString, int qty, int skip, string? blockchain = null, bool showSystemFiles = true,

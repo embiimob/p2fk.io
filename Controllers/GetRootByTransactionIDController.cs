@@ -82,7 +82,7 @@ namespace P2FK.IO.Controllers
 
                 if (OperatingSystem.IsWindows() &&
                     _serviceProvider.GetService(typeof(WindowsSearchService)) is WindowsSearchService searchService)
-                    searchService.QueueRootCacheRefresh(id, result);
+                    searchService.QueueRootCacheRefresh(id, result, mainnet, blockchain);
 
                 return Content(result, "application/json");
             }

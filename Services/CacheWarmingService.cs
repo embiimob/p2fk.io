@@ -154,6 +154,20 @@ namespace P2FK.IO.Services
             {
                 _logger.LogWarning(ex, "Warm: trending filtered roots failed");
             }
+
+            if (ct.IsCancellationRequested) return;
+
+            // Recheck the pending root queue during each warm/rewarm cycle so epoch-date
+            // entries can be promoted to confirmed cache rows once a block is mined.
+            try
+            {
+                await _searchService.ProcessPendingRootCacheRefreshQueueAsync(ct);
+                _logger.LogDebug("Warm: pending root refresh queue processed");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Warm: pending root refresh queue failed");
+            }
         }
     }
 }
