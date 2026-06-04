@@ -221,12 +221,9 @@ namespace P2FK.IO.Services
                         updated.Add(refreshedEntry);
 
                     SortRootEntries(updated);
-                    // Preserve the longer TTL for wildcard cache keys managed by CacheWarmingService.
-                    TimeSpan entryTtl = cacheKey.StartsWith("roots:*:", StringComparison.OrdinalIgnoreCase)
-                        ? WildcardCacheTtl : CacheTtl;
                     _cache.Set(cacheKey, updated, new MemoryCacheEntryOptions()
                         .SetSize(1)
-                        .SetAbsoluteExpiration(entryTtl));
+                        .SetAbsoluteExpiration(TtlForCacheKey(cacheKey)));
                     _cacheStatus.UpdateEntryCount(cacheKey, updated.Count);
                 }
             }
@@ -257,6 +254,23 @@ namespace P2FK.IO.Services
 
             string chain = cacheKey[(secondLastColon + 1)..lastColon];
             return string.IsNullOrWhiteSpace(chain) ? null : chain;
+        }
+
+        /// <summary>
+        /// Returns the appropriate cache TTL for a given cache key.
+        /// Wildcard cache keys (those whose search-string segment is "*") are managed
+        /// by <see cref="CacheWarmingService"/> and receive a long TTL so they are never
+        /// evicted between warm cycles.  All other keys use the standard short TTL.
+        /// </summary>
+        private static TimeSpan TtlForCacheKey(string cacheKey)
+        {
+            // Cache key format: "{type}:{searchString}:{blockchain}:{...}"
+            // A wildcard key has "*" as the second colon-delimited segment.
+            int firstColon = cacheKey.IndexOf(':');
+            if (firstColon < 0 || firstColon + 2 >= cacheKey.Length) return CacheTtl;
+            bool isWildcard = cacheKey[firstColon + 1] == '*' &&
+                              (firstColon + 2 >= cacheKey.Length || cacheKey[firstColon + 2] == ':');
+            return isWildcard ? WildcardCacheTtl : CacheTtl;
         }
 
         public async Task<List<SearchResultRoot>> SearchRootsAsync(
