@@ -185,11 +185,12 @@ namespace P2FK.IO.Services
 
             if (!IsPendingRoot(rawJson))
             {
-                RefreshRootCacheEntry(txId, rawJson);
+                RefreshRootCacheEntry(txId, rawJson, insertIfNotFound: true);
                 _pendingRootRefreshQueue.TryRemove(queueKey, out _);
                 return;
             }
 
+            RefreshRootCacheEntry(txId, rawJson, insertIfNotFound: true);
             _pendingRootRefreshQueue[queueKey] = new PendingRootRefreshRequest(txId, mainnet, normalizedBlockchain);
         }
 
@@ -295,7 +296,7 @@ namespace P2FK.IO.Services
             "--versionbyte " + versionByte + " --getrootbytransactionid --password " + rpcPassword +
             " --url " + rpcUrl + " --username " + rpcUser + " --tid " + txId;
 
-        private void RefreshRootCacheEntry(string txId, string rawJson)
+        private void RefreshRootCacheEntry(string txId, string rawJson, bool insertIfNotFound = false)
         {
             try
             {
@@ -341,8 +342,14 @@ namespace P2FK.IO.Services
                         updated.Add(entry);
                     }
 
+                    // For existing cache entries: replace when found, or insert into wildcard
+                    // caches when allowed.  Skip non-wildcard text-search caches for new entries
+                    // so unrelated pending/confirmed transactions don't bleed into specific searches.
                     if (!replacedAny)
-                        continue;
+                    {
+                        if (!insertIfNotFound || !IsWildcardCacheKey(cacheKey))
+                            continue;
+                    }
 
                     if (includeEntry)
                         updated.Add(refreshedEntry);
@@ -383,22 +390,24 @@ namespace P2FK.IO.Services
             return string.IsNullOrWhiteSpace(chain) ? null : chain;
         }
 
+        // Cache key format: "{type}:{searchString}:{blockchain}:{...}"
+        // A wildcard key has "*" as the second colon-delimited segment.
+        private static bool IsWildcardCacheKey(string cacheKey)
+        {
+            int firstColon = cacheKey.IndexOf(':');
+            if (firstColon < 0 || firstColon + 2 > cacheKey.Length) return false;
+            return cacheKey[firstColon + 1] == '*' &&
+                   (firstColon + 2 >= cacheKey.Length || cacheKey[firstColon + 2] == ':');
+        }
+
         /// <summary>
         /// Returns the appropriate cache TTL for a given cache key.
         /// Wildcard cache keys (those whose search-string segment is "*") are managed
         /// by <see cref="CacheWarmingService"/> and receive a long TTL so they are never
         /// evicted between warm cycles.  All other keys use the standard short TTL.
         /// </summary>
-        private static TimeSpan TtlForCacheKey(string cacheKey)
-        {
-            // Cache key format: "{type}:{searchString}:{blockchain}:{...}"
-            // A wildcard key has "*" as the second colon-delimited segment.
-            int firstColon = cacheKey.IndexOf(':');
-            if (firstColon < 0 || firstColon + 2 >= cacheKey.Length) return CacheTtl;
-            bool isWildcard = cacheKey[firstColon + 1] == '*' &&
-                              (firstColon + 2 >= cacheKey.Length || cacheKey[firstColon + 2] == ':');
-            return isWildcard ? WildcardCacheTtl : CacheTtl;
-        }
+        private static TimeSpan TtlForCacheKey(string cacheKey) =>
+            IsWildcardCacheKey(cacheKey) ? WildcardCacheTtl : CacheTtl;
 
         public async Task<List<SearchResultRoot>> SearchRootsAsync(
             string searchString, int qty, int skip, string? blockchain = null, bool showSystemFiles = true,
