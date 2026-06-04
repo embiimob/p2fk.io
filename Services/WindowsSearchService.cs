@@ -185,6 +185,7 @@ namespace P2FK.IO.Services
 
             if (!IsPendingRoot(rawJson))
             {
+                RefreshRootCacheEntry(txId, rawJson);
                 _pendingRootRefreshQueue.TryRemove(queueKey, out _);
                 return;
             }
