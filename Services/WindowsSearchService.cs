@@ -183,7 +183,7 @@ namespace P2FK.IO.Services
                 : blockchain.Trim().ToUpperInvariant();
             string queueKey = BuildPendingRefreshQueueKey(txId, mainnet, normalizedBlockchain);
 
-            RefreshRootCacheEntry(txId, rawJson, insertIfNotFound: true);
+            _ = RefreshRootCacheEntry(txId, rawJson, insertIfNotFound: true);
 
             if (!IsPendingRoot(rawJson))
             {
@@ -211,8 +211,9 @@ namespace P2FK.IO.Services
                 if (IsPendingRoot(latestRootJson))
                     continue;
 
-                RefreshRootCacheEntry(item.Value.TxId, latestRootJson, insertIfNotFound: true);
-                _pendingRootRefreshQueue.TryRemove(item.Key, out _);
+                bool cacheUpdated = RefreshRootCacheEntry(item.Value.TxId, latestRootJson, insertIfNotFound: true);
+                if (cacheUpdated)
+                    _pendingRootRefreshQueue.TryRemove(item.Key, out _);
             }
         }
 
@@ -296,16 +297,16 @@ namespace P2FK.IO.Services
             "--versionbyte " + versionByte + " --getrootbytransactionid --password " + rpcPassword +
             " --url " + rpcUrl + " --username " + rpcUser + " --tid " + txId;
 
-        private void RefreshRootCacheEntry(string txId, string rawJson, bool insertIfNotFound = false)
+        private bool RefreshRootCacheEntry(string txId, string rawJson, bool insertIfNotFound = false)
         {
             try
             {
                 JsonElement rootEl;
                 try { rootEl = JsonSerializer.Deserialize<JsonElement>(rawJson); }
-                catch (JsonException) { return; }
+                catch (JsonException) { return false; }
 
                 if (!rootEl.TryGetProperty("Output", out var rootOutput) || rootOutput.ValueKind == JsonValueKind.Null)
-                    return;
+                    return false;
 
                 string detectedBlockchain = DetectFirstOutputAddress(rootEl);
                 bool isSystemRoot = IsSystemRoot(rootEl);
@@ -316,6 +317,7 @@ namespace P2FK.IO.Services
 
                 var refreshedEntry = new CachedRootEntry(detectedBlockchain, txId, rawJson, blockDate);
 
+                bool updatedAny = false;
                 foreach (string cacheKey in _cacheStatus.EntryCounts.Keys
                              .Where(k => k.StartsWith("roots:", StringComparison.OrdinalIgnoreCase))
                              .ToArray())
@@ -347,7 +349,7 @@ namespace P2FK.IO.Services
                     // so unrelated pending/confirmed transactions don't bleed into specific searches.
                     if (!replacedAny)
                     {
-                        if (!insertIfNotFound || !IsWildcardCacheKey(cacheKey))
+                        if (!insertIfNotFound || !IsWildcardCacheKey(cacheKey) || !includeEntry)
                             continue;
                     }
 
@@ -359,11 +361,15 @@ namespace P2FK.IO.Services
                         .SetSize(1)
                         .SetAbsoluteExpiration(TtlForCacheKey(cacheKey)));
                     _cacheStatus.UpdateEntryCount(cacheKey, updated.Count);
+                    updatedAny = true;
                 }
+
+                return updatedAny;
             }
             catch (Exception)
             {
                 // Intentionally swallow exceptions from background cache refresh.
+                return false;
             }
         }
 
@@ -608,6 +614,26 @@ namespace P2FK.IO.Services
                 DateTime blockDate = default;
                 if (rootEl.TryGetProperty("BlockDate", out var bdProp) && bdProp.ValueKind == JsonValueKind.String)
                     DateTime.TryParse(bdProp.GetString(), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind, out blockDate);
+
+                if (forceRefresh && isWildcard)
+                {
+                    if (blockDate <= DateTime.UnixEpoch)
+                    {
+                        bool pendingMainnet = !string.Equals(detectedBlockchain, "BTC-testnet", StringComparison.OrdinalIgnoreCase);
+                        string pendingBlockchain = string.Equals(detectedBlockchain, "BTC-testnet", StringComparison.OrdinalIgnoreCase)
+                            ? BtcBlockchain
+                            : detectedBlockchain;
+
+                        if (!string.Equals(pendingBlockchain, "Unknown", StringComparison.OrdinalIgnoreCase))
+                        {
+                            string pendingQueueKey = BuildPendingRefreshQueueKey(txId, pendingMainnet, pendingBlockchain);
+                            _pendingRootRefreshQueue[pendingQueueKey] = new PendingRootRefreshRequest(
+                                txId,
+                                pendingMainnet,
+                                pendingBlockchain.ToUpperInvariant());
+                        }
+                    }
+                }
 
                 entries.Add(new CachedRootEntry(detectedBlockchain, txId, rawJson, blockDate));
             }
