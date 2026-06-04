@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
 using P2FK.IO.Models;
 using System.Collections.Concurrent;
 using System.Data.OleDb;
@@ -15,6 +16,7 @@ namespace P2FK.IO.Services
         private readonly IMemoryCache _cache;
         private readonly Wrapper _wrapper;
         private readonly CacheStatusService _cacheStatus;
+        private readonly ILogger<WindowsSearchService> _logger;
         // TTL for regular text-search cache entries (5 min backstop for user-triggered scans).
         internal static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(300);
 
@@ -26,13 +28,19 @@ namespace P2FK.IO.Services
 
         private static readonly Regex TxIdRegex = new Regex(@"[0-9a-fA-F]{64}", RegexOptions.Compiled);
         private const int MaxSearchLength = 2048;
+        private const string BtcBlockchain = "BTC";
 
-        public WindowsSearchService(IMemoryCache cache, Wrapper wrapper, CacheStatusService cacheStatus)
+        public WindowsSearchService(
+            IMemoryCache cache,
+            Wrapper wrapper,
+            CacheStatusService cacheStatus,
+            ILogger<WindowsSearchService> logger)
         {
             _cache = cache;
             _wrapper = wrapper;
             _rootPath = wrapper.RootPath;
             _cacheStatus = cacheStatus;
+            _logger = logger;
         }
 
         // ── Blockchain detection ───────────────────────────────────────────────
@@ -171,9 +179,9 @@ namespace P2FK.IO.Services
                 return;
 
             string normalizedBlockchain = string.IsNullOrWhiteSpace(blockchain)
-                ? "BTC"
+                ? BtcBlockchain
                 : blockchain.Trim().ToUpperInvariant();
-            string queueKey = $"{normalizedBlockchain}:{(normalizedBlockchain == "BTC" ? mainnet.ToString() : "any")}:{txId}";
+            string queueKey = BuildPendingRefreshQueueKey(txId, mainnet, normalizedBlockchain);
 
             if (!IsPendingRoot(rawJson))
             {
@@ -230,37 +238,32 @@ namespace P2FK.IO.Services
 
             if (request.Blockchain == "LTC")
             {
-                arguments = "--versionbyte " + _wrapper.LTCVersionByte + " --getrootbytransactionid --password " +
-                            _wrapper.LTCRPCPassword + " --url " + _wrapper.LTCRPCURL + " --username " +
-                            _wrapper.LTCRPCUser + " --tid " + request.TxId;
+                arguments = BuildGetRootByTransactionIdArguments(
+                    _wrapper.LTCVersionByte, _wrapper.LTCRPCPassword, _wrapper.LTCRPCURL, _wrapper.LTCRPCUser, request.TxId);
                 executablePath = _wrapper.LTCCLIPath;
             }
             else if (request.Blockchain == "DOG")
             {
-                arguments = "--versionbyte " + _wrapper.DOGVersionByte + " --getrootbytransactionid --password " +
-                            _wrapper.DOGRPCPassword + " --url " + _wrapper.DOGRPCURL + " --username " +
-                            _wrapper.DOGRPCUser + " --tid " + request.TxId;
+                arguments = BuildGetRootByTransactionIdArguments(
+                    _wrapper.DOGVersionByte, _wrapper.DOGRPCPassword, _wrapper.DOGRPCURL, _wrapper.DOGRPCUser, request.TxId);
                 executablePath = _wrapper.DOGCLIPath;
             }
             else if (request.Blockchain == "MZC")
             {
-                arguments = "--versionbyte " + _wrapper.MZCVersionByte + " --getrootbytransactionid --password " +
-                            _wrapper.MZCRPCPassword + " --url " + _wrapper.MZCRPCURL + " --username " +
-                            _wrapper.MZCRPCUser + " --tid " + request.TxId;
+                arguments = BuildGetRootByTransactionIdArguments(
+                    _wrapper.MZCVersionByte, _wrapper.MZCRPCPassword, _wrapper.MZCRPCURL, _wrapper.MZCRPCUser, request.TxId);
                 executablePath = _wrapper.MZCCLIPath;
             }
             else if (request.Mainnet)
             {
-                arguments = "--versionbyte " + _wrapper.ProdVersionByte + " --getrootbytransactionid --password " +
-                            _wrapper.ProdRPCPassword + " --url " + _wrapper.ProdRPCURL + " --username " +
-                            _wrapper.ProdRPCUser + " --tid " + request.TxId;
+                arguments = BuildGetRootByTransactionIdArguments(
+                    _wrapper.ProdVersionByte, _wrapper.ProdRPCPassword, _wrapper.ProdRPCURL, _wrapper.ProdRPCUser, request.TxId);
                 executablePath = _wrapper.ProdCLIPath;
             }
             else
             {
-                arguments = "--versionbyte " + _wrapper.TestVersionByte + " --getrootbytransactionid --password " +
-                            _wrapper.TestRPCPassword + " --url " + _wrapper.TestRPCURL + " --username " +
-                            _wrapper.TestRPCUser + " --tid " + request.TxId;
+                arguments = BuildGetRootByTransactionIdArguments(
+                    _wrapper.TestVersionByte, _wrapper.TestRPCPassword, _wrapper.TestRPCURL, _wrapper.TestRPCUser, request.TxId);
                 executablePath = _wrapper.TestCLIPath;
             }
 
@@ -268,11 +271,28 @@ namespace P2FK.IO.Services
             {
                 return await _wrapper.RunCommandAsync(executablePath, arguments, cancellationToken);
             }
-            catch
+            catch (Exception ex)
             {
+                _logger.LogDebug(ex,
+                    "Pending root refresh check failed for txId={TxId} chain={Blockchain}",
+                    request.TxId, request.Blockchain);
                 return null;
             }
         }
+
+        private static string BuildPendingRefreshQueueKey(string txId, bool mainnet, string blockchain)
+        {
+            // BTC can be mainnet or testnet; altchains here do not use the BTC mainnet flag.
+            string networkSegment = string.Equals(blockchain, BtcBlockchain, StringComparison.OrdinalIgnoreCase)
+                ? mainnet.ToString()
+                : "any";
+            return $"{blockchain}:{networkSegment}:{txId}";
+        }
+
+        private static string BuildGetRootByTransactionIdArguments(
+            string versionByte, string rpcPassword, string rpcUrl, string rpcUser, string txId) =>
+            "--versionbyte " + versionByte + " --getrootbytransactionid --password " + rpcPassword +
+            " --url " + rpcUrl + " --username " + rpcUser + " --tid " + txId;
 
         private void RefreshRootCacheEntry(string txId, string rawJson)
         {
