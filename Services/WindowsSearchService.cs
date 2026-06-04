@@ -138,74 +138,6 @@ namespace P2FK.IO.Services
                 }
             }
 
-            private static bool IsPendingRoot(string rawJson)
-            {
-                JsonElement rootEl;
-                try { rootEl = JsonSerializer.Deserialize<JsonElement>(rawJson); }
-                catch (JsonException) { return false; }
-
-                DateTime blockDate = default;
-                if (rootEl.TryGetProperty("BlockDate", out var bdProp) && bdProp.ValueKind == JsonValueKind.String)
-                    DateTime.TryParse(
-                        bdProp.GetString(),
-                        System.Globalization.CultureInfo.InvariantCulture,
-                        System.Globalization.DateTimeStyles.RoundtripKind,
-                        out blockDate);
-
-                return blockDate <= DateTime.UnixEpoch;
-            }
-
-            private async Task<string?> TryGetRootByTransactionIdAsync(PendingRootRefreshRequest request, CancellationToken cancellationToken)
-            {
-                string arguments;
-                string executablePath;
-
-                if (request.Blockchain == "LTC")
-                {
-                    arguments = "--versionbyte " + _wrapper.LTCVersionByte + " --getrootbytransactionid --password " +
-                                _wrapper.LTCRPCPassword + " --url " + _wrapper.LTCRPCURL + " --username " +
-                                _wrapper.LTCRPCUser + " --tid " + request.TxId;
-                    executablePath = _wrapper.LTCCLIPath;
-                }
-                else if (request.Blockchain == "DOG")
-                {
-                    arguments = "--versionbyte " + _wrapper.DOGVersionByte + " --getrootbytransactionid --password " +
-                                _wrapper.DOGRPCPassword + " --url " + _wrapper.DOGRPCURL + " --username " +
-                                _wrapper.DOGRPCUser + " --tid " + request.TxId;
-                    executablePath = _wrapper.DOGCLIPath;
-                }
-                else if (request.Blockchain == "MZC")
-                {
-                    arguments = "--versionbyte " + _wrapper.MZCVersionByte + " --getrootbytransactionid --password " +
-                                _wrapper.MZCRPCPassword + " --url " + _wrapper.MZCRPCURL + " --username " +
-                                _wrapper.MZCRPCUser + " --tid " + request.TxId;
-                    executablePath = _wrapper.MZCCLIPath;
-                }
-                else if (request.Mainnet)
-                {
-                    arguments = "--versionbyte " + _wrapper.ProdVersionByte + " --getrootbytransactionid --password " +
-                                _wrapper.ProdRPCPassword + " --url " + _wrapper.ProdRPCURL + " --username " +
-                                _wrapper.ProdRPCUser + " --tid " + request.TxId;
-                    executablePath = _wrapper.ProdCLIPath;
-                }
-                else
-                {
-                    arguments = "--versionbyte " + _wrapper.TestVersionByte + " --getrootbytransactionid --password " +
-                                _wrapper.TestRPCPassword + " --url " + _wrapper.TestRPCURL + " --username " +
-                                _wrapper.TestRPCUser + " --tid " + request.TxId;
-                    executablePath = _wrapper.TestCLIPath;
-                }
-
-                try
-                {
-                    return await _wrapper.RunCommandAsync(executablePath, arguments, cancellationToken);
-                }
-                catch
-                {
-                    return null;
-                }
-            }
-
             // Check if any file name or extension matches a system type
             foreach (string f in files)
             {
@@ -271,6 +203,74 @@ namespace P2FK.IO.Services
 
                 RefreshRootCacheEntry(item.Value.TxId, latestRootJson);
                 _pendingRootRefreshQueue.TryRemove(item.Key, out _);
+            }
+        }
+
+        private static bool IsPendingRoot(string rawJson)
+        {
+            JsonElement rootEl;
+            try { rootEl = JsonSerializer.Deserialize<JsonElement>(rawJson); }
+            catch (JsonException) { return false; }
+
+            DateTime blockDate = default;
+            if (rootEl.TryGetProperty("BlockDate", out var bdProp) && bdProp.ValueKind == JsonValueKind.String)
+                DateTime.TryParse(
+                    bdProp.GetString(),
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.RoundtripKind,
+                    out blockDate);
+
+            return blockDate <= DateTime.UnixEpoch;
+        }
+
+        private async Task<string?> TryGetRootByTransactionIdAsync(PendingRootRefreshRequest request, CancellationToken cancellationToken)
+        {
+            string arguments;
+            string executablePath;
+
+            if (request.Blockchain == "LTC")
+            {
+                arguments = "--versionbyte " + _wrapper.LTCVersionByte + " --getrootbytransactionid --password " +
+                            _wrapper.LTCRPCPassword + " --url " + _wrapper.LTCRPCURL + " --username " +
+                            _wrapper.LTCRPCUser + " --tid " + request.TxId;
+                executablePath = _wrapper.LTCCLIPath;
+            }
+            else if (request.Blockchain == "DOG")
+            {
+                arguments = "--versionbyte " + _wrapper.DOGVersionByte + " --getrootbytransactionid --password " +
+                            _wrapper.DOGRPCPassword + " --url " + _wrapper.DOGRPCURL + " --username " +
+                            _wrapper.DOGRPCUser + " --tid " + request.TxId;
+                executablePath = _wrapper.DOGCLIPath;
+            }
+            else if (request.Blockchain == "MZC")
+            {
+                arguments = "--versionbyte " + _wrapper.MZCVersionByte + " --getrootbytransactionid --password " +
+                            _wrapper.MZCRPCPassword + " --url " + _wrapper.MZCRPCURL + " --username " +
+                            _wrapper.MZCRPCUser + " --tid " + request.TxId;
+                executablePath = _wrapper.MZCCLIPath;
+            }
+            else if (request.Mainnet)
+            {
+                arguments = "--versionbyte " + _wrapper.ProdVersionByte + " --getrootbytransactionid --password " +
+                            _wrapper.ProdRPCPassword + " --url " + _wrapper.ProdRPCURL + " --username " +
+                            _wrapper.ProdRPCUser + " --tid " + request.TxId;
+                executablePath = _wrapper.ProdCLIPath;
+            }
+            else
+            {
+                arguments = "--versionbyte " + _wrapper.TestVersionByte + " --getrootbytransactionid --password " +
+                            _wrapper.TestRPCPassword + " --url " + _wrapper.TestRPCURL + " --username " +
+                            _wrapper.TestRPCUser + " --tid " + request.TxId;
+                executablePath = _wrapper.TestCLIPath;
+            }
+
+            try
+            {
+                return await _wrapper.RunCommandAsync(executablePath, arguments, cancellationToken);
+            }
+            catch
+            {
+                return null;
             }
         }
 
