@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Caching.Memory;
 using P2FK.IO.Models;
+using System.Collections.Concurrent;
 using System.Data.OleDb;
 using System.Runtime.Versioning;
 using System.Text.Json;
@@ -12,6 +13,7 @@ namespace P2FK.IO.Services
     {
         private readonly string _rootPath;
         private readonly IMemoryCache _cache;
+        private readonly Wrapper _wrapper;
         private readonly CacheStatusService _cacheStatus;
         // TTL for regular text-search cache entries (5 min backstop for user-triggered scans).
         internal static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(300);
@@ -28,6 +30,7 @@ namespace P2FK.IO.Services
         public WindowsSearchService(IMemoryCache cache, Wrapper wrapper, CacheStatusService cacheStatus)
         {
             _cache = cache;
+            _wrapper = wrapper;
             _rootPath = wrapper.RootPath;
             _cacheStatus = cacheStatus;
         }
@@ -83,6 +86,9 @@ namespace P2FK.IO.Services
         private record CachedRootEntry(string Blockchain, string TxId, string RawJson, DateTime BlockDate);
         private record CachedObjectEntry(string Blockchain, string Address, string RawJson);
         private record CachedProfileEntry(string Blockchain, string Address, string RawJson);
+        private record PendingRootRefreshRequest(string TxId, bool Mainnet, string Blockchain);
+        private readonly ConcurrentDictionary<string, PendingRootRefreshRequest> _pendingRootRefreshQueue =
+            new(StringComparer.OrdinalIgnoreCase);
 
         [SupportedOSPlatform("windows")]
         private List<SearchRow> ExecuteSearchQuery(string sql)
@@ -132,6 +138,74 @@ namespace P2FK.IO.Services
                 }
             }
 
+            private static bool IsPendingRoot(string rawJson)
+            {
+                JsonElement rootEl;
+                try { rootEl = JsonSerializer.Deserialize<JsonElement>(rawJson); }
+                catch (JsonException) { return false; }
+
+                DateTime blockDate = default;
+                if (rootEl.TryGetProperty("BlockDate", out var bdProp) && bdProp.ValueKind == JsonValueKind.String)
+                    DateTime.TryParse(
+                        bdProp.GetString(),
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        System.Globalization.DateTimeStyles.RoundtripKind,
+                        out blockDate);
+
+                return blockDate <= DateTime.UnixEpoch;
+            }
+
+            private async Task<string?> TryGetRootByTransactionIdAsync(PendingRootRefreshRequest request, CancellationToken cancellationToken)
+            {
+                string arguments;
+                string executablePath;
+
+                if (request.Blockchain == "LTC")
+                {
+                    arguments = "--versionbyte " + _wrapper.LTCVersionByte + " --getrootbytransactionid --password " +
+                                _wrapper.LTCRPCPassword + " --url " + _wrapper.LTCRPCURL + " --username " +
+                                _wrapper.LTCRPCUser + " --tid " + request.TxId;
+                    executablePath = _wrapper.LTCCLIPath;
+                }
+                else if (request.Blockchain == "DOG")
+                {
+                    arguments = "--versionbyte " + _wrapper.DOGVersionByte + " --getrootbytransactionid --password " +
+                                _wrapper.DOGRPCPassword + " --url " + _wrapper.DOGRPCURL + " --username " +
+                                _wrapper.DOGRPCUser + " --tid " + request.TxId;
+                    executablePath = _wrapper.DOGCLIPath;
+                }
+                else if (request.Blockchain == "MZC")
+                {
+                    arguments = "--versionbyte " + _wrapper.MZCVersionByte + " --getrootbytransactionid --password " +
+                                _wrapper.MZCRPCPassword + " --url " + _wrapper.MZCRPCURL + " --username " +
+                                _wrapper.MZCRPCUser + " --tid " + request.TxId;
+                    executablePath = _wrapper.MZCCLIPath;
+                }
+                else if (request.Mainnet)
+                {
+                    arguments = "--versionbyte " + _wrapper.ProdVersionByte + " --getrootbytransactionid --password " +
+                                _wrapper.ProdRPCPassword + " --url " + _wrapper.ProdRPCURL + " --username " +
+                                _wrapper.ProdRPCUser + " --tid " + request.TxId;
+                    executablePath = _wrapper.ProdCLIPath;
+                }
+                else
+                {
+                    arguments = "--versionbyte " + _wrapper.TestVersionByte + " --getrootbytransactionid --password " +
+                                _wrapper.TestRPCPassword + " --url " + _wrapper.TestRPCURL + " --username " +
+                                _wrapper.TestRPCUser + " --tid " + request.TxId;
+                    executablePath = _wrapper.TestCLIPath;
+                }
+
+                try
+                {
+                    return await _wrapper.RunCommandAsync(executablePath, arguments, cancellationToken);
+                }
+                catch
+                {
+                    return null;
+                }
+            }
+
             // Check if any file name or extension matches a system type
             foreach (string f in files)
             {
@@ -156,16 +230,48 @@ namespace P2FK.IO.Services
         // ── Public search methods ──────────────────────────────────────────────
 
         /// <summary>
-        /// Queues a non-blocking in-memory refresh for any cached root entries that match
-        /// the specified transaction id. This is used by direct root lookups so pending
-        /// (epoch-date) entries can be replaced with confirmed block data quickly.
+        /// Queues a transaction for periodic pending-status checks during warm/rewarm cycles.
+        /// Only pending roots (null/epoch block date) are retained in this queue.
         /// </summary>
-        public void QueueRootCacheRefresh(string txId, string rawJson)
+        public void QueueRootCacheRefresh(string txId, string rawJson, bool mainnet, string blockchain)
         {
             if (string.IsNullOrWhiteSpace(txId) || string.IsNullOrWhiteSpace(rawJson))
                 return;
 
-            _ = Task.Run(() => RefreshRootCacheEntry(txId, rawJson));
+            string normalizedBlockchain = string.IsNullOrWhiteSpace(blockchain)
+                ? "BTC"
+                : blockchain.Trim().ToUpperInvariant();
+            string queueKey = $"{normalizedBlockchain}:{(normalizedBlockchain == "BTC" ? mainnet.ToString() : "any")}:{txId}";
+
+            if (!IsPendingRoot(rawJson))
+            {
+                _pendingRootRefreshQueue.TryRemove(queueKey, out _);
+                return;
+            }
+
+            _pendingRootRefreshQueue[queueKey] = new PendingRootRefreshRequest(txId, mainnet, normalizedBlockchain);
+        }
+
+        /// <summary>
+        /// Rechecks currently pending transactions and updates root cache entries once
+        /// those transactions become confirmed.
+        /// </summary>
+        public async Task ProcessPendingRootCacheRefreshQueueAsync(CancellationToken cancellationToken)
+        {
+            foreach (var item in _pendingRootRefreshQueue.ToArray())
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                string? latestRootJson = await TryGetRootByTransactionIdAsync(item.Value, cancellationToken);
+                if (string.IsNullOrWhiteSpace(latestRootJson))
+                    continue;
+
+                if (IsPendingRoot(latestRootJson))
+                    continue;
+
+                RefreshRootCacheEntry(item.Value.TxId, latestRootJson);
+                _pendingRootRefreshQueue.TryRemove(item.Key, out _);
+            }
         }
 
         private void RefreshRootCacheEntry(string txId, string rawJson)
