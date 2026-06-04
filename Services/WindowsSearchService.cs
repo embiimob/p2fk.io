@@ -183,14 +183,14 @@ namespace P2FK.IO.Services
                 : blockchain.Trim().ToUpperInvariant();
             string queueKey = BuildPendingRefreshQueueKey(txId, mainnet, normalizedBlockchain);
 
+            RefreshRootCacheEntry(txId, rawJson, insertIfNotFound: true);
+
             if (!IsPendingRoot(rawJson))
             {
-                RefreshRootCacheEntry(txId, rawJson, insertIfNotFound: true);
                 _pendingRootRefreshQueue.TryRemove(queueKey, out _);
                 return;
             }
 
-            RefreshRootCacheEntry(txId, rawJson, insertIfNotFound: true);
             _pendingRootRefreshQueue[queueKey] = new PendingRootRefreshRequest(txId, mainnet, normalizedBlockchain);
         }
 
@@ -211,7 +211,7 @@ namespace P2FK.IO.Services
                 if (IsPendingRoot(latestRootJson))
                     continue;
 
-                RefreshRootCacheEntry(item.Value.TxId, latestRootJson);
+                RefreshRootCacheEntry(item.Value.TxId, latestRootJson, insertIfNotFound: true);
                 _pendingRootRefreshQueue.TryRemove(item.Key, out _);
             }
         }
@@ -395,7 +395,7 @@ namespace P2FK.IO.Services
         private static bool IsWildcardCacheKey(string cacheKey)
         {
             int firstColon = cacheKey.IndexOf(':');
-            if (firstColon < 0 || firstColon + 2 > cacheKey.Length) return false;
+            if (firstColon < 0 || firstColon + 2 >= cacheKey.Length) return false;
             return cacheKey[firstColon + 1] == '*' &&
                    (firstColon + 2 >= cacheKey.Length || cacheKey[firstColon + 2] == ':');
         }
