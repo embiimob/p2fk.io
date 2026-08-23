@@ -917,6 +917,7 @@ const getCachedObject=(id,mainnet)=>{try{const c=sessionStorage.getItem(`obj_${i
 const cacheObject=(id,mainnet,data)=>{try{sessionStorage.setItem(`obj_${id}_${mainnet}`,JSON.stringify(data));}catch{}};
 
 // ── Image helpers ──────────────────────────────────────────────────────
+const IPFS_GWS=['https://gateway.pinata.cloud/ipfs/','https://4everland.io/ipfs/','https://ipfs.filebase.io/ipfs/','https://hardbin.com/ipfs/'];
 const MAX_IMG_CACHE=100;
 const cacheImage=(url,res)=>{if(state.imageCache.size>=MAX_IMG_CACHE){state.imageCache.delete(state.imageCache.keys().next().value);}state.imageCache.set(url,res);};
 
@@ -936,7 +937,7 @@ const getImageUrl=(image,urn)=>{
     const val=norm(v); if(!val) return null;
     const lo=val.toLowerCase();
     try{const u=new URL(val);if(u.protocol==='file:')return null;if(['https:','data:'].includes(u.protocol))return val.replace(/^http:\/\/bitfossil\.com\//i,`${BASE_URL}/root/`).replace(/^https?:\/\/bitfossil\.org\//i,`${BASE_URL}/root/`).replace(/^http:/i,'https:');}catch{}
-    if(lo.startsWith('ipfs')){const m=val.match(/ipfs[:/]*([a-zA-Z0-9]+)/i);return m?`https://ipfs.io/ipfs/${m[1]}`:null;}
+    if(lo.startsWith('ipfs')){const m=val.match(/ipfs[:/]*([a-zA-Z0-9]+)/i);return m?`${IPFS_GWS[0]}${m[1]}`:null;}
     if(/^(BTC|LTC|DOG|MZC):[0-9a-fA-F]{64}$/i.test(val)) return null;
     return /^(BTC|LTC|DOG|MZC):/i.test(val)||/^[A-Za-z0-9]+\/.+/.test(val)?resolveUrnPath(val):null;
   };
@@ -954,7 +955,8 @@ const loadImageWithTimeout=async(url,timeout=180000)=>{
   if(state.imageCache.has(url)) return state.imageCache.get(url);
   if(url===fallbackImage) return url;
   let cur=url;
-  try{const u=new URL(url);if(u.protocol==='file:'){cacheImage(url,fallbackImage);return fallbackImage;}if(u.protocol==='ipfs:'){const h=url.replace(/^ipfs[:/]+/i,'').split('/')[0];cur=`https://ipfs.io/ipfs/${h}`;}}catch(e){const m=url.match(/ipfs[:/]*([a-zA-Z0-9]+)/i);if(m)cur=`https://ipfs.io/ipfs/${m[1]}`;else{cacheImage(url,fallbackImage);return fallbackImage;}}
+  let ipfsHash=null;
+  try{const u=new URL(url);if(u.protocol==='file:'){cacheImage(url,fallbackImage);return fallbackImage;}if(u.protocol==='ipfs:'){ipfsHash=url.replace(/^ipfs[:/]+/i,'').split('/')[0];cur=`${IPFS_GWS[0]}${ipfsHash}`;}}catch(e){const m=url.match(/ipfs[:/]*([a-zA-Z0-9]+)/i);if(m){ipfsHash=m[1];cur=`${IPFS_GWS[0]}${ipfsHash}`;}else{cacheImage(url,fallbackImage);return fallbackImage;}}
   let warmed=false;
   for(let i=0;i<3;i++){
     try{
@@ -968,7 +970,8 @@ const loadImageWithTimeout=async(url,timeout=180000)=>{
       return res;
     }catch{
       if(!warmed&&url.includes('p2fk.io/root')){warmed=true;const m=url.match(/\/root\/([0-9a-fA-F]{64})\//i);if(m){const{mainnet,blockchain}=state.txidMeta.get(m[1])||{mainnet:true,blockchain:'BTC'};await warmRootCache(m[1],mainnet,blockchain);i--;continue;}}
-      if(i===2){cacheImage(url,fallbackImage);return fallbackImage;}
+      if(ipfsHash&&i<IPFS_GWS.length-1){cur=`${IPFS_GWS[i+1]}${ipfsHash}`;}
+      else if(i===2){cacheImage(url,fallbackImage);return fallbackImage;}
       await new Promise(r=>setTimeout(r,800));
     }
   }
@@ -1253,7 +1256,7 @@ const renderAttachments=(container,attachments,links,blockchain)=>{
   const imgEls=[];
   for(const{hash,filename}of attachments){
     const isTx=/^[0-9a-f]{64}$/i.test(hash);
-    const url=isTx?`${BASE_URL}/root/${hash}/${encodeURIComponent(filename)}`:`https://ipfs.io/ipfs/${hash}`;
+    const url=isTx?`${BASE_URL}/root/${hash}/${encodeURIComponent(filename)}`:`${IPFS_GWS[0]}${hash}`;
     if(isTx) state.txidMeta.set(hash,chainToMeta(blockchain));
     // INQ poll card
     if(filename.toUpperCase()==='INQ'&&isTx){
@@ -2350,11 +2353,11 @@ const getUrnMediaUrl=(urn)=>{
   const u=urn.replace(/\\/g,'/');
   if(/^IPFS:/i.test(u)||/^ipfs[:/]+/i.test(u)){
     // The CID itself is the content — the /filename is display metadata only.
-    // Fetch via hash only: https://ipfs.io/ipfs/{HASH}
+    // Fetch via hash only: {gateway}/ipfs/{HASH}
     const raw=u.replace(/^ipfs[:/]+/i,'');
     const hash=raw.split('/')[0];
     if(!hash) return null;
-    return `https://ipfs.io/ipfs/${hash}`;
+    return `${IPFS_GWS[0]}${hash}`;
   }
   if(/^(BTC|LTC|DOG|MZC):/i.test(u)||/^[A-Za-z0-9]+\/.+/.test(u)){
     const parts=u.split(':').pop().split('/');
@@ -2576,7 +2579,7 @@ const renderUrnLinkForObj=(urn)=>{
   if(/^IPFS:/i.test(urn)||/^ipfs[:/]+/i.test(urn)){
     // Link to just the CID (hash); filename portion is display-only
     const hash=urn.replace(/^ipfs[:/]+/i,'').split(/[/\\]/)[0];
-    return `<a href="https://ipfs.io/ipfs/${encodeURIComponent(hash)}" target="_blank" rel="noopener">${escapeHtml(urn)}</a>`;
+    return `<a href="${IPFS_GWS[0]}${encodeURIComponent(hash)}" target="_blank" rel="noopener">${escapeHtml(urn)}</a>`;
   }
   if(/^(BTC|LTC|DOG|MZC):/i.test(urn)||/^[A-Za-z0-9]+\/.+/.test(urn)){
     const parts=urn.split(':').pop().split('/');
