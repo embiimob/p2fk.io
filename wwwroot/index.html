@@ -596,6 +596,25 @@
     .profile-sort-wrap { margin-left: auto; display: flex; align-items: center; gap: 6px; }
     .profile-sort-select { background: #1a1a1a; border: 1px solid #333; color: #b0b0b0; border-radius: 4px; padding: 3px 8px; font-size: 0.78em; cursor: pointer; }
     .profile-sort-select:focus { outline: none; border-color: #bb86fc; }
+    /* Activity feed */
+    #profileActivityFeed { margin-top:10px; }
+    .activity-feed-header { display:flex; gap:10px; padding:6px 4px; font-size:0.75em; color:#666; border-bottom:1px solid #2a2a2a; font-weight:bold; }
+    .activity-feed-header .act-col-thumb { width:46px; flex-shrink:0; }
+    .activity-feed-header .act-col-parties { flex:1; min-width:0; }
+    .activity-feed-header .act-col-date { width:88px; text-align:right; flex-shrink:0; }
+    .activity-feed-header .act-col-action { width:80px; text-align:right; flex-shrink:0; }
+    .activity-row { display:flex; align-items:center; gap:10px; padding:5px 4px; border-bottom:1px solid #222; font-size:0.82em; }
+    .activity-row:hover { background:#1e1e1e; }
+    .act-thumb { width:42px; height:42px; border-radius:5px; object-fit:cover; flex-shrink:0; cursor:pointer; border:1px solid #333; }
+    .act-col-parties { flex:1; min-width:0; overflow:hidden; }
+    .act-obj-name { font-size:0.75em; color:#888; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-bottom:1px; cursor:pointer; }
+    .act-obj-name:hover { color:#bb86fc; }
+    .act-parties-text { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .act-col-date { width:88px; text-align:right; color:#888; flex-shrink:0; font-size:0.85em; }
+    .act-col-action { width:80px; text-align:right; flex-shrink:0; }
+    .activity-loading { color:#888; font-size:0.9em; padding:18px 0; text-align:center; }
+    .activity-load-more-btn { display:block; width:100%; margin-top:10px; padding:8px; background:#1e1e1e; border:1px solid #333; color:#b0b0b0; border-radius:6px; cursor:pointer; font-size:0.82em; }
+    .activity-load-more-btn:hover { border-color:#bb86fc; color:#bb86fc; }
     .profile-obj-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; margin-top: 10px; }
     .profile-obj-card { background: #1e1e1e; border: 1px solid #2a2a2a; border-radius: 8px; overflow: hidden; cursor: pointer; transition: border-color 0.2s; position: relative; }
     .profile-obj-card:hover { border-color: #bb86fc; }
@@ -707,6 +726,7 @@
           <button class="profile-obj-tab" id="tabOwned"    data-tab="owned">Owned</button>
           <button class="profile-obj-tab" id="tabCreated"  data-tab="created">Created</button>
           <button class="profile-obj-tab" id="tabAssoc"    data-tab="associated">Associated</button>
+          <button class="profile-obj-tab" id="tabActivity" data-tab="activity"   style="display:none;">⚡ Activity</button>
           <div class="profile-sort-wrap" id="profileSortWrap" style="display:none;">
             <label style="font-size:0.78em;color:#888;">Sort:</label>
             <select class="profile-sort-select" id="profileObjSort">
@@ -725,6 +745,7 @@
         <button id="profileMsgLoadMore" style="display:none;">Load more messages</button>
         <div id="profileObjGrid" class="profile-obj-grid" style="display:none;"></div>
         <div id="profileObjStatus" style="display:none;"></div>
+        <div id="profileActivityFeed" style="display:none;"></div>
       </div>
     </div>
   </div>
@@ -2771,6 +2792,200 @@ const loadProfileObjects=async(type,address,mainnet)=>{
   }
 };
 
+// ── Profile activity (provenance) feed ─────────────────────────────────
+const ACTIVITY_PAGE=30;
+const _activityIcons={mint:'🪙',transfer:'↔️',list:'🏷️',delist:'✖️',lock:'🔒',burn:'🔥',edit:'✏️',create:'✨',claim:'⚓',buy:'💰',give:'🎁',grant:'🔓'};
+const _activityCache=new Map(); // key: `${mainnet}:${address}:${type}` → allEntries[]
+
+const loadProfileActivity=async(type,address,mainnet)=>{
+  const feedEl=document.getElementById('profileActivityFeed');
+  if(!feedEl||!address||!type) return;
+
+  // Use cached entries if available for this type/address/mainnet combo
+  const cacheKey=`${mainnet?1:0}:${address}:${type}`;
+  if(_activityCache.has(cacheKey)){
+    _renderActivityEntries(feedEl,_activityCache.get(cacheKey),mainnet);
+    return;
+  }
+
+  feedEl.innerHTML='<div class="activity-loading">Loading activity…</div>';
+
+  const endpoints={owned:'GetObjectsOwnedByAddress',created:'GetObjectsCreatedByAddress',associated:'GetObjectsByAddress'};
+  const ep=endpoints[type]||'GetObjectsByAddress';
+  try{
+    const data=await fetchAPI(`${BASE_URL}/${ep}/${encodeURIComponent(address)}?mainnet=${mainnet}&skip=0&qty=-1&verbose=false`,'',null,30000);
+    let objs=Array.isArray(data)?data:[];
+    objs=objs.map(o=>o.Object||o.object||o).filter(o=>o&&typeof o==='object'&&!Array.isArray(o));
+
+    if(!objs.length){
+      feedEl.innerHTML='<div class="activity-loading">No objects found for this category.</div>';
+      return;
+    }
+
+    // For each object, ensure we have up-to-date provenance
+    feedEl.innerHTML='<div class="activity-loading">Fetching provenance data… (0 / '+objs.length+')</div>';
+    let done=0;
+    const updateProgress=()=>{done++;const el=feedEl.querySelector('.activity-loading');if(el) el.textContent=`Fetching provenance data… (${done} / ${objs.length})`;};
+
+    const resolvedObjs=await Promise.all(objs.map(async obj=>{
+      const objAddr=Object.keys(obj.Creators||{})[0]||'';
+      const changelog=obj.ChangeLog||[];
+      // Check if we need a verbose fetch
+      let needVerbose=false;
+      if(!changelog.length){
+        needVerbose=true;
+      }else{
+        // Get the date of the last provenance entry
+        try{
+          const last=changelog[changelog.length-1];
+          let lastDate='';
+          if(typeof last==='string'){const parts=JSON.parse(last);lastDate=parts[6]||'';}
+          else{lastDate=last.Date||'';}
+          const changeDate=obj.ChangeDate||'';
+          if(changeDate&&!isNullDate(changeDate)&&lastDate){
+            const cd=new Date(changeDate);const ld=new Date(lastDate);
+            if(cd>ld) needVerbose=true;
+          }
+        }catch{needVerbose=true;}
+      }
+      if(needVerbose&&objAddr){
+        try{
+          const fresh=await fetchAPI(`${BASE_URL}/GetObjectByAddress/${encodeURIComponent(objAddr)}?mainnet=${mainnet}&verbose=true`,'',null,15000);
+          const fo=fresh?.Object||fresh?.object||fresh;
+          if(fo&&!Array.isArray(fo)){updateProgress();return fo;}
+        }catch{}
+      }
+      updateProgress();
+      return obj;
+    }));
+
+    // Build flat list of all provenance entries with object reference
+    const allEntries=[];
+    for(const obj of resolvedObjs){
+      const objAddr=Object.keys(obj.Creators||{})[0]||'';
+      const imgUrl=getImageUrl(obj.Image,obj.URN);
+      const changelog=(obj.ChangeLog||[]).slice().reverse();
+      for(const entry of changelog){
+        try{
+          if(typeof entry==='string'){
+            const [from,to,action,qty,details,status,date]=JSON.parse(entry);
+            allEntries.push({obj,objAddr,imgUrl,from,to,action,qty,details,status,date});
+          }else if(entry.Date){
+            allEntries.push({obj,objAddr,imgUrl,from:'',to:'',action:entry.Description||'',qty:'',details:'',status:'success',date:entry.Date});
+          }
+        }catch{}
+      }
+    }
+
+    // Sort all entries newest first
+    allEntries.sort((a,b)=>new Date(b.date)-new Date(a.date));
+
+    if(!allEntries.length){
+      feedEl.innerHTML='<div class="activity-loading">No provenance data found for this category.</div>';
+      return;
+    }
+
+    // Cache the results for subsequent tab visits
+    _activityCache.set(cacheKey,allEntries);
+    _renderActivityEntries(feedEl,allEntries,mainnet);
+  }catch(e){
+    feedEl.innerHTML='<div class="activity-loading" style="color:#cf6679">Failed to load activity: '+escapeHtml(e.message)+'</div>';
+  }
+};
+
+const _renderActivityEntries=(feedEl,allEntries,mainnet)=>{
+  feedEl.innerHTML='';
+  // Header row
+  const hdr=document.createElement('div');hdr.className='activity-feed-header';
+  hdr.innerHTML='<span class="act-col-thumb"></span><span class="act-col-parties">Parties</span><span class="act-col-date">Date</span><span class="act-col-action">Action</span>';
+  feedEl.appendChild(hdr);
+
+  // Paginated rendering
+  let shown=0;
+  const renderBatch=async()=>{
+    const end=Math.min(shown+ACTIVITY_PAGE,allEntries.length);
+    const batch=allEntries.slice(shown,end);
+    shown=end;
+
+    // Resolve profile names for this batch in parallel
+    const addrsNeeded=new Set();
+    batch.forEach(e=>{if(e.from) addrsNeeded.add(e.from);if(e.to) addrsNeeded.add(e.to);});
+    const nameMap={};
+    await Promise.all([...addrsNeeded].map(async addr=>{
+      try{
+        const p=await fetchProfileByAddress(addr,mainnet,null);
+        nameMap[addr]=p?(p.DisplayName||p.URN||abbreviateAddress(addr)):abbreviateAddress(addr);
+      }catch{nameMap[addr]=abbreviateAddress(addr);}
+    }));
+
+    // Remove existing load-more button
+    feedEl.querySelector('.activity-load-more-btn')?.remove();
+
+    for(const e of batch){
+      const row=document.createElement('div');row.className='activity-row';
+
+      // Thumbnail
+      const thumb=document.createElement('img');thumb.className='act-thumb';thumb.src=fallbackImage;thumb.alt=e.obj.Name||'Object';
+      if(isTextOnlyUrn(e.obj.URN)){
+        fetchTextForUrn(e.obj.URN,mainnet).then(t=>{if(t) thumb.src=generateTextImage(t,42,42);}).catch(()=>{});
+      }else{
+        loadImageWithTimeout(e.imgUrl).then(u=>{thumb.src=u;}).catch(()=>{});
+      }
+      if(e.objAddr) thumb.addEventListener('click',()=>navigateTo('object',{object:e.objAddr,mainnet}));
+      row.appendChild(thumb);
+
+      // Parties column
+      const partiesCol=document.createElement('div');partiesCol.className='act-col-parties';
+      const objNameEl=document.createElement('div');objNameEl.className='act-obj-name';objNameEl.textContent=e.obj.Name||abbreviateAddress(e.objAddr)||'Object';
+      if(e.objAddr) objNameEl.addEventListener('click',()=>navigateTo('object',{object:e.objAddr,mainnet}));
+      partiesCol.appendChild(objNameEl);
+
+      const partiesText=document.createElement('div');partiesText.className='act-parties-text';
+      const fn=e.from?(nameMap[e.from]||abbreviateAddress(e.from)):'';
+      const tn=e.to?(nameMap[e.to]||abbreviateAddress(e.to)):'';
+      const qtyStr=e.qty?` ×${e.qty}`:'';
+      let partiesHtml='';
+      if(fn&&tn){
+        partiesHtml=`<span class="owner-addr" data-addr="${escapeHtml(e.from)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(fn)}</span> → <span class="owner-addr" data-addr="${escapeHtml(e.to)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(tn)}</span>${escapeHtml(qtyStr)}`;
+      }else if(tn){
+        partiesHtml=`→ <span class="owner-addr" data-addr="${escapeHtml(e.to)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(tn)}</span>${escapeHtml(qtyStr)}`;
+      }else if(fn){
+        partiesHtml=`<span class="owner-addr" data-addr="${escapeHtml(e.from)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(fn)}</span>${escapeHtml(qtyStr)}`;
+      }else{
+        partiesHtml=escapeHtml(e.action||'');
+      }
+      partiesText.innerHTML=partiesHtml;
+      partiesText.querySelectorAll('.owner-addr').forEach(el=>el.addEventListener('click',()=>navigateTo('profile',{profile:el.dataset.addr,mainnet})));
+      partiesCol.appendChild(partiesText);
+      row.appendChild(partiesCol);
+
+      // Date
+      const dateCol=document.createElement('span');dateCol.className='act-col-date';
+      const ds=formatDateShort(e.date)||'';
+      const df=formatDateFull(e.date)||e.date||'';
+      dateCol.textContent=ds;dateCol.title=df;
+      row.appendChild(dateCol);
+
+      // Action
+      const isFailed=e.status&&!e.status.toLowerCase().startsWith('success');
+      const icon=isFailed?'🚫':(_activityIcons[(e.action||'').toLowerCase()]||'⚙️');
+      const actionCol=document.createElement('span');actionCol.className='act-col-action';
+      actionCol.innerHTML=`<span title="${isFailed?escapeHtml(e.status||'Failed'):'Success'}" style="cursor:default">${icon}</span> ${escapeHtml(e.action||'')}`;
+      row.appendChild(actionCol);
+
+      feedEl.appendChild(row);
+    }
+
+    if(shown<allEntries.length){
+      const moreBtn=document.createElement('button');moreBtn.className='activity-load-more-btn';
+      moreBtn.textContent=`Load more (${allEntries.length-shown} remaining)`;
+      moreBtn.onclick=()=>renderBatch();
+      feedEl.appendChild(moreBtn);
+    }
+  };
+  renderBatch();
+};
+
 // ── Profile view ───────────────────────────────────────────────────────
 const showProfileView=async(identifier,mainnet=true)=>{
   setView('profile');
@@ -2781,6 +2996,14 @@ const showProfileView=async(identifier,mainnet=true)=>{
   const feedEl=document.getElementById('profileMsgFeed');
   loadEl.style.display='block';errEl.textContent='';errEl.style.display='none';panelEl.style.display='none';
   innerEl.innerHTML='';feedEl.innerHTML='';
+  // Reset activity button state when loading a new profile
+  const activityTabBtn=document.getElementById('tabActivity');
+  if(activityTabBtn) activityTabBtn.style.display='none';
+  const activityFeedEl=document.getElementById('profileActivityFeed');
+  if(activityFeedEl){activityFeedEl.innerHTML='';activityFeedEl.style.display='none';}
+  _activityCache.clear();
+  // Reset tab bar to Messages active
+  document.querySelectorAll('.profile-obj-tab').forEach(b=>b.classList.toggle('active',b.dataset.tab==='messages'));
   // Disconnect any previous message scroll observer
   if(state.profileMsgObserver){state.profileMsgObserver.disconnect();state.profileMsgObserver=null;}
 
@@ -2920,6 +3143,7 @@ const showProfileView=async(identifier,mainnet=true)=>{
 
     // ── Profile tab wiring ────────────────────────────────────────────
     let _activeProfileTab='messages';
+    let _lastObjCategory=''; // track last category for activity tab
     const setProfileMsgObserverEnabled=(enabled)=>{
       state.profileMsgAutoLoadEnabled=!!enabled;
       if(state.profileMsgObserver){state.profileMsgObserver.disconnect();state.profileMsgObserver=null;}
@@ -2945,6 +3169,7 @@ const showProfileView=async(identifier,mainnet=true)=>{
       const moreBtn2=document.getElementById('profileMsgLoadMore');
       const gridEl=document.getElementById('profileObjGrid');
       const statusEl=document.getElementById('profileObjStatus');
+      const activityEl=document.getElementById('profileActivityFeed');
       if(tab==='messages'){
         setProfileMsgObserverEnabled(true);
         if(sortWrap) sortWrap.style.display='none';
@@ -2952,12 +3177,28 @@ const showProfileView=async(identifier,mainnet=true)=>{
         if(moreBtn2) moreBtn2.style.display='';
         if(gridEl) gridEl.style.display='none';
         if(statusEl) statusEl.style.display='none';
+        if(activityEl) activityEl.style.display='none';
+      }else if(tab==='activity'){
+        setProfileMsgObserverEnabled(false);
+        if(sortWrap) sortWrap.style.display='none';
+        if(feedEl2) feedEl2.style.display='none';
+        if(moreBtn2) moreBtn2.style.display='none';
+        if(gridEl) gridEl.style.display='none';
+        if(statusEl) statusEl.style.display='none';
+        if(activityEl) activityEl.style.display='block';
+        await loadProfileActivity(_lastObjCategory,address,mainnet);
       }else{
         setProfileMsgObserverEnabled(false);
         if(sortWrap) sortWrap.style.display='flex';
         if(feedEl2) feedEl2.style.display='none';
         if(moreBtn2) moreBtn2.style.display='none';
+        if(gridEl){ gridEl.style.display='none'; }
         if(statusEl) statusEl.style.display='block';
+        if(activityEl) activityEl.style.display='none';
+        // Show activity button now that a category has been selected
+        _lastObjCategory=tab;
+        const actBtn=document.getElementById('tabActivity');
+        if(actBtn) actBtn.style.display='';
         await loadProfileObjects(tab,address,mainnet);
       }
     };
@@ -2965,7 +3206,7 @@ const showProfileView=async(identifier,mainnet=true)=>{
       btn.onclick=()=>_switchProfileTab(btn.dataset.tab);
     });
     const sortSel=document.getElementById('profileObjSort');
-    if(sortSel) sortSel.onchange=()=>{if(_activeProfileTab!=='messages') loadProfileObjects(_activeProfileTab,address,mainnet);};
+    if(sortSel) sortSel.onchange=()=>{if(_activeProfileTab!=='messages'&&_activeProfileTab!=='activity') loadProfileObjects(_activeProfileTab,address,mainnet);};
 
     // Load messages
     state.profileMsgSkip=0;
