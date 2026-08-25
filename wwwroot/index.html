@@ -2799,13 +2799,19 @@ const loadProfileObjects=async(type,address,mainnet)=>{
 const ACTIVITY_PAGE=30;
 const _activityIcons={mint:'🪙',transfer:'↔️',list:'🏷️',delist:'✖️',lock:'🔒',burn:'🔥',edit:'✏️',create:'✨',claim:'⚓',buy:'💰',give:'🎁',grant:'🔓'};
 const _activityCache=new Map(); // key: `${mainnet}:${address}:${type}` → allEntries[]
-const formatActivityDetails=(action,details)=>{
-  const raw=String(details||'').trim();
-  if(!raw) return '';
+const getSuccessAmount=(status)=>{
+  const s=String(status||'').trim();
+  const m=s.match(/^success\b\s+([0-9]*\.?[0-9]+)$/i);
+  return m&&m[1]?m[1].trim():'';
+};
+
+const formatActionSuffix=(action,qty,details,status)=>{
+  const q=String(qty??'').trim();
   const a=(action||'').toLowerCase();
-  if(a==='list') return ` · each list: ${raw}`;
-  if(a==='buy') return ` · each buy: ${raw}`;
-  return ` · ${raw}`;
+  const rawDetails=String(details??'').trim();
+  const amount=a==='buy'?(getSuccessAmount(status)||rawDetails):rawDetails;
+  if(!q&&!amount) return '';
+  return `${q?` ×${q}`:''}${amount?` (${amount})`:''}`;
 };
 
 const loadProfileActivity=async(type,address,mainnet)=>{
@@ -2954,17 +2960,16 @@ const _renderActivityEntries=(feedEl,allEntries,mainnet)=>{
       const partiesText=document.createElement('div');partiesText.className='act-parties-text';
       const fn=e.from?(nameMap[e.from]||abbreviateAddress(e.from)):'';
       const tn=e.to?(nameMap[e.to]||abbreviateAddress(e.to)):'';
-      const qtyStr=e.qty?` ×${e.qty}`:'';
-      const detailsStr=formatActivityDetails(e.action,e.details);
+      const suffixStr=formatActionSuffix(e.action,e.qty,e.details,e.status);
       let partiesHtml='';
       if(fn&&tn){
-        partiesHtml=`<span class="owner-addr" data-addr="${escapeHtml(e.from)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(fn)}</span> → <span class="owner-addr" data-addr="${escapeHtml(e.to)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(tn)}</span>${escapeHtml(qtyStr)}${escapeHtml(detailsStr)}`;
+        partiesHtml=`<span class="owner-addr" data-addr="${escapeHtml(e.from)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(fn)}</span> → <span class="owner-addr" data-addr="${escapeHtml(e.to)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(tn)}</span>${escapeHtml(suffixStr)}`;
       }else if(tn){
-        partiesHtml=`→ <span class="owner-addr" data-addr="${escapeHtml(e.to)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(tn)}</span>${escapeHtml(qtyStr)}${escapeHtml(detailsStr)}`;
+        partiesHtml=`→ <span class="owner-addr" data-addr="${escapeHtml(e.to)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(tn)}</span>${escapeHtml(suffixStr)}`;
       }else if(fn){
-        partiesHtml=`<span class="owner-addr" data-addr="${escapeHtml(e.from)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(fn)}</span>${escapeHtml(qtyStr)}${escapeHtml(detailsStr)}`;
+        partiesHtml=`<span class="owner-addr" data-addr="${escapeHtml(e.from)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(fn)}</span>${escapeHtml(suffixStr)}`;
       }else{
-        partiesHtml=`${escapeHtml(e.action||'')}${escapeHtml(detailsStr)}`;
+        partiesHtml=`${escapeHtml(e.action||'')}${escapeHtml(suffixStr)}`;
       }
       partiesText.innerHTML=partiesHtml;
       partiesText.querySelectorAll('.owner-addr').forEach(el=>el.addEventListener('click',()=>navigateTo('profile',{profile:el.dataset.addr,mainnet})));
@@ -3539,7 +3544,8 @@ const showObjectView=async(identifier,mainnet=true)=>{
               const ds=formatDateShort(date)||'';
               const df=formatDateFull(date)||date||'';
               const dateHtml=ds?`<span class="col-date" title="${escapeHtml(df)}">${escapeHtml(ds)}</span>`:`<span class="col-date"></span>`;
-              const parties=`<span class="owner-addr" data-addr="${escapeHtml(from)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(fn)}</span> → <span class="owner-addr" data-addr="${escapeHtml(to)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(tn)}</span>${qty?` ×${escapeHtml(String(qty))}`:''} ${details?`(${escapeHtml(details)})` :''}`;
+              const suffix=formatActionSuffix(action,qty,details,status);
+              const parties=`<span class="owner-addr" data-addr="${escapeHtml(from)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(fn)}</span> → <span class="owner-addr" data-addr="${escapeHtml(to)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(tn)}</span>${escapeHtml(suffix)}`;
               return `<div class="obj-list-row ${statusCls}"><span class="col-name">${parties}</span>${dateHtml}<span class="col-action"><span title="${statusTitle}" style="cursor:default">${icon}</span> ${escapeHtml(action||'')}</span></div>`;
             }
             const d=entry.Date||'';
