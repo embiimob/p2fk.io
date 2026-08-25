@@ -2753,7 +2753,7 @@ const loadProfileObjects=async(type,address,mainnet)=>{
   const ep=endpoints[type]||'GetObjectsByAddress';
   const tabLabels={owned:'Owned',created:'Created',associated:'Associated'};
   try{
-    const data=await fetchAPI(`${BASE_URL}/${ep}/${encodeURIComponent(address)}?mainnet=${mainnet}&skip=0&qty=-1&verbose=false`,'',null,30000);
+    const data=await fetchAPI(`${BASE_URL}/${ep}/${encodeURIComponent(address)}?mainnet=${mainnet}&skip=0&qty=-1&verbose=false`,'',null,60000);
     let objs=Array.isArray(data)?data:[];
     // Objects API may return them wrapped or bare
     objs=objs.map(o=>o.Object||o.object||o).filter(o=>o&&typeof o==='object'&&!Array.isArray(o));
@@ -3586,7 +3586,7 @@ const showObjectView=async(identifier,mainnet=true)=>{
       if(!objectAddress){alert('Cannot refresh: no object address');return;}
       refreshBtn.classList.add('loading');refreshBtn.disabled=true;
       try{
-        const fresh=await fetchAPI(`${BASE_URL}/GetObjectByAddress/${encodeURIComponent(objectAddress)}?mainnet=${mainnet}&verbose=true`,'Refresh failed',null);
+        const fresh=await fetchAPI(`${BASE_URL}/GetObjectByAddress/${encodeURIComponent(objectAddress)}?mainnet=${mainnet}&verbose=true`,'Refresh failed',null,60000);
         const newObj=fresh?.Object||fresh?.object||fresh;
         if(!newObj||Array.isArray(newObj)) throw new Error('No object data in refresh response');
         cacheObject(objectAddress,mainnet,newObj);
