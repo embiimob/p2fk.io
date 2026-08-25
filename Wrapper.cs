@@ -63,12 +63,26 @@ namespace P2FK.IO
         // only one process per address+command is ever running at once, so the CLI mutex
         // is almost never contested and cache file writes are sequential by construction.
         //
-        // The coalescing key is (executablePath, command verb, address, versionbyte) so
-        // concurrent requests with different --skip / --qty values for the same address
+        // The coalescing key is (executablePath, command verb, address, versionbyte, verbose)
+        // so concurrent requests with different --skip / --qty values for the same address
         // still share one build.  Per-caller HTTP cancellation only cancels the individual
         // wait; the shared CLI process continues so other callers and the disk cache still
         // benefit even if the originating HTTP request is abandoned.
+        //
+        // Per-address serialization: even though verbose=true and verbose=false produce
+        // different coalescing keys, both processes read and write the same on-disk cache
+        // file for a given address.  Running them concurrently causes cursor races that
+        // truncate the returned changelog.  _addressLocks ensures that for any given
+        // (executablePath, command, address, versionbyte) tuple only one CLI process is
+        // executing at a time; the second request simply waits and is then served fresh
+        // from the updated cache.
         private static readonly ConcurrentDictionary<string, Task<string>> _inFlight =
+            new(StringComparer.Ordinal);
+        // One SemaphoreSlim per (executablePath, command, address, versionbyte).  Entries
+        // are never removed because safe disposal would require reference-counting; in
+        // practice the set of distinct addresses seen by the API is bounded and each
+        // SemaphoreSlim is ~100 bytes, so the memory cost is negligible.
+        private static readonly ConcurrentDictionary<string, SemaphoreSlim> _addressLocks =
             new(StringComparer.Ordinal);
 
         // Compiled patterns used by BuildCoalescingKey.
@@ -97,9 +111,10 @@ namespace P2FK.IO
             }
         }
 
-        // Derives a stable coalescing key from the CLI verb and address so that callers
-        // with different --skip / --qty still coalesce on the same address+command pair.
-        // Falls back to the full argument string for commands that have no --address flag.
+        // Derives a stable coalescing key from the CLI verb, address, versionbyte, and
+        // verbose flag so that callers with different --skip / --qty still coalesce on the
+        // same address+command pair.  Falls back to the full argument string for commands
+        // that have no --address flag.
         private static string BuildCoalescingKey(string executablePath, string arguments)
         {
             var addrMatch = _addrPattern.Match(arguments);
@@ -109,14 +124,33 @@ namespace P2FK.IO
             string address  = addrMatch.Groups[1].Value;
             string command  = _cmdPattern.Match(arguments) is { Success: true } m ? m.Groups[1].Value : "";
             string vb       = _vbPattern.Match(arguments)  is { Success: true } v ? v.Groups[1].Value : "";
-            string verbose = _verbosePattern.IsMatch(arguments) ? "1" : "0";
+            string verbose  = _verbosePattern.IsMatch(arguments) ? "1" : "0";
             return $"{executablePath}\0{command}\0{address}\0{vb}\0{verbose}";
         }
 
+        // Returns the address-level lock key (same as coalescing key but without verbose)
+        // so that verbose and non-verbose requests for the same address are serialized.
+        private static string BuildAddressLockKey(string executablePath, string arguments)
+        {
+            var addrMatch = _addrPattern.Match(arguments);
+            if (!addrMatch.Success)
+                return executablePath + "\0" + arguments;
+
+            string address = addrMatch.Groups[1].Value;
+            string command = _cmdPattern.Match(arguments) is { Success: true } m ? m.Groups[1].Value : "";
+            string vb      = _vbPattern.Match(arguments)  is { Success: true } v ? v.Groups[1].Value : "";
+            return $"{executablePath}\0{command}\0{address}\0{vb}";
+        }
+
         // Creates the shared Task and schedules its removal from _inFlight on completion.
+        // Acquires the per-address lock before launching the CLI process so that verbose
+        // and non-verbose processes for the same address are never running simultaneously.
         private Task<string> LaunchShared(string key, string executablePath, string arguments)
         {
-            var task = ExecuteCliAsync(executablePath, arguments);
+            string addrLockKey = BuildAddressLockKey(executablePath, arguments);
+            var addrLock = _addressLocks.GetOrAdd(addrLockKey, _ => new SemaphoreSlim(1, 1));
+
+            var task = ExecuteWithAddressLockAsync(addrLock, executablePath, arguments);
             // Remove once done so the next caller after this one gets a fresh run.
             _ = task.ContinueWith(
                 _ => _inFlight.TryRemove(new KeyValuePair<string, Task<string>>(key, task)),
@@ -124,15 +158,39 @@ namespace P2FK.IO
             return task;
         }
 
+        private async Task<string> ExecuteWithAddressLockAsync(SemaphoreSlim addrLock, string executablePath, string arguments)
+        {
+            // One shared timeout covers both the lock-acquisition wait and the CLI
+            // execution so the two phases cannot each consume a full MaxTimeoutSeconds.
+            using var timeoutCts = new CancellationTokenSource(_timeout);
+            try
+            {
+                await addrLock.WaitAsync(timeoutCts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                return "[\"error: request timed out\"]";
+            }
+            try
+            {
+                return await ExecuteCliAsync(executablePath, arguments, timeoutCts.Token);
+            }
+            finally
+            {
+                addrLock.Release();
+            }
+        }
+
         // Executes the CLI process with an internal-only timeout.  Not bound to any
         // individual caller's CancellationToken so HTTP disconnects don't abort the build.
-        private async Task<string> ExecuteCliAsync(string executablePath, string arguments)
+        // Accepts a shared timeout token from ExecuteWithAddressLockAsync so the
+        // lock-wait and execution phases together consume at most MaxTimeoutSeconds.
+        private async Task<string> ExecuteCliAsync(string executablePath, string arguments, CancellationToken timeoutToken = default)
         {
-            using var timeoutCts = new CancellationTokenSource(_timeout);
             bool acquired = false;
             try
             {
-                await _semaphore.WaitAsync(timeoutCts.Token);
+                await _semaphore.WaitAsync(timeoutToken);
                 acquired = true;
             }
             catch (OperationCanceledException)
@@ -157,13 +215,13 @@ namespace P2FK.IO
                 using var process = new Process { StartInfo = processStartInfo };
                 process.Start();
 
-                var outputTask = process.StandardOutput.ReadToEndAsync(timeoutCts.Token);
-                var errorTask  = process.StandardError.ReadToEndAsync(timeoutCts.Token);
+                var outputTask = process.StandardOutput.ReadToEndAsync(timeoutToken);
+                var errorTask  = process.StandardError.ReadToEndAsync(timeoutToken);
 
                 try
                 {
                     await Task.WhenAll(outputTask, errorTask);
-                    await process.WaitForExitAsync(timeoutCts.Token);
+                    await process.WaitForExitAsync(timeoutToken);
                 }
                 catch (OperationCanceledException)
                 {
