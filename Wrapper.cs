@@ -233,6 +233,14 @@ namespace P2FK.IO
                 string output = outputTask.Result;
                 string error  = errorTask.Result;
 
+                // Prefer stdout when the CLI produced any output there.
+                // Some CLI invocations (e.g. non-verbose scans) emit informational
+                // lines on stderr while writing the actual JSON to stdout; discarding
+                // stdout whenever stderr is non-empty would cause valid responses to
+                // be silently replaced by progress messages.
+                if (!string.IsNullOrEmpty(output))
+                    return output;
+
                 if (!string.IsNullOrEmpty(error))
                     return $"Error: {error}";
 
