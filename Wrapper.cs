@@ -75,6 +75,7 @@ namespace P2FK.IO
         private static readonly Regex _addrPattern = new(@"--address\s+(\S+)", RegexOptions.Compiled);
         private static readonly Regex _cmdPattern  = new(@"--(get\w+)",         RegexOptions.Compiled);
         private static readonly Regex _vbPattern   = new(@"--versionbyte\s+(\S+)", RegexOptions.Compiled);
+        private static readonly Regex _verbosePattern = new(@"--verbose(?:\s|$)", RegexOptions.Compiled);
 
         public async Task<string> RunCommandAsync(string executablePath, string arguments, CancellationToken cancellationToken = default)
         {
@@ -108,7 +109,8 @@ namespace P2FK.IO
             string address  = addrMatch.Groups[1].Value;
             string command  = _cmdPattern.Match(arguments) is { Success: true } m ? m.Groups[1].Value : "";
             string vb       = _vbPattern.Match(arguments)  is { Success: true } v ? v.Groups[1].Value : "";
-            return $"{executablePath}\0{command}\0{address}\0{vb}";
+            string verbose = _verbosePattern.IsMatch(arguments) ? "1" : "0";
+            return $"{executablePath}\0{command}\0{address}\0{vb}\0{verbose}";
         }
 
         // Creates the shared Task and schedules its removal from _inFlight on completion.
