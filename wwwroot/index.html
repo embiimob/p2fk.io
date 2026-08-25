@@ -1098,16 +1098,19 @@ const buildShareUrl=(type,params)=>{
   const p=new URLSearchParams({[type]:params.id});
   if(params.mainnet===false||params.mainnet==='false') p.set('mainnet','false');
   if(params.blockchain&&params.blockchain!=='BTC') p.set('blockchain',params.blockchain);
+  if(params.profileTab) p.set('profileTab',params.profileTab);
+  if(params.profileCategory) p.set('profileCategory',params.profileCategory);
   return base+'?'+p.toString();
 };
 
-const makeShareBtn=(type,params)=>{
+const makeShareBtn=(type,paramsOrFactory)=>{
   const btn=document.createElement('button');
   btn.className='share-btn';
   btn.title='Copy shareable link';
   btn.innerHTML='🔗 Share';
   btn.addEventListener('click',async(e)=>{
     e.stopPropagation(); e.preventDefault();
+    const params=typeof paramsOrFactory==='function' ? (paramsOrFactory()||{}) : (paramsOrFactory||{});
     const url=buildShareUrl(type,params);
     try{await navigator.clipboard.writeText(url);}catch{
       const ta=document.createElement('textarea');ta.value=url;ta.style.cssText='position:fixed;opacity:0';document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);
@@ -2796,6 +2799,14 @@ const loadProfileObjects=async(type,address,mainnet)=>{
 const ACTIVITY_PAGE=30;
 const _activityIcons={mint:'🪙',transfer:'↔️',list:'🏷️',delist:'✖️',lock:'🔒',burn:'🔥',edit:'✏️',create:'✨',claim:'⚓',buy:'💰',give:'🎁',grant:'🔓'};
 const _activityCache=new Map(); // key: `${mainnet}:${address}:${type}` → allEntries[]
+const formatActivityDetails=(action,details)=>{
+  const raw=String(details||'').trim();
+  if(!raw) return '';
+  const a=(action||'').toLowerCase();
+  if(a==='list') return ` · each list: ${raw}`;
+  if(a==='buy') return ` · each buy: ${raw}`;
+  return ` · ${raw}`;
+};
 
 const loadProfileActivity=async(type,address,mainnet)=>{
   const feedEl=document.getElementById('profileActivityFeed');
@@ -2944,15 +2955,16 @@ const _renderActivityEntries=(feedEl,allEntries,mainnet)=>{
       const fn=e.from?(nameMap[e.from]||abbreviateAddress(e.from)):'';
       const tn=e.to?(nameMap[e.to]||abbreviateAddress(e.to)):'';
       const qtyStr=e.qty?` ×${e.qty}`:'';
+      const detailsStr=formatActivityDetails(e.action,e.details);
       let partiesHtml='';
       if(fn&&tn){
-        partiesHtml=`<span class="owner-addr" data-addr="${escapeHtml(e.from)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(fn)}</span> → <span class="owner-addr" data-addr="${escapeHtml(e.to)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(tn)}</span>${escapeHtml(qtyStr)}`;
+        partiesHtml=`<span class="owner-addr" data-addr="${escapeHtml(e.from)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(fn)}</span> → <span class="owner-addr" data-addr="${escapeHtml(e.to)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(tn)}</span>${escapeHtml(qtyStr)}${escapeHtml(detailsStr)}`;
       }else if(tn){
-        partiesHtml=`→ <span class="owner-addr" data-addr="${escapeHtml(e.to)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(tn)}</span>${escapeHtml(qtyStr)}`;
+        partiesHtml=`→ <span class="owner-addr" data-addr="${escapeHtml(e.to)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(tn)}</span>${escapeHtml(qtyStr)}${escapeHtml(detailsStr)}`;
       }else if(fn){
-        partiesHtml=`<span class="owner-addr" data-addr="${escapeHtml(e.from)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(fn)}</span>${escapeHtml(qtyStr)}`;
+        partiesHtml=`<span class="owner-addr" data-addr="${escapeHtml(e.from)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(fn)}</span>${escapeHtml(qtyStr)}${escapeHtml(detailsStr)}`;
       }else{
-        partiesHtml=escapeHtml(e.action||'');
+        partiesHtml=`${escapeHtml(e.action||'')}${escapeHtml(detailsStr)}`;
       }
       partiesText.innerHTML=partiesHtml;
       partiesText.querySelectorAll('.owner-addr').forEach(el=>el.addEventListener('click',()=>navigateTo('profile',{profile:el.dataset.addr,mainnet})));
@@ -2987,7 +2999,7 @@ const _renderActivityEntries=(feedEl,allEntries,mainnet)=>{
 };
 
 // ── Profile view ───────────────────────────────────────────────────────
-const showProfileView=async(identifier,mainnet=true)=>{
+const showProfileView=async(identifier,mainnet=true,initialProfileState={})=>{
   setView('profile');
   const loadEl=document.getElementById('profileLoading');
   const errEl=document.getElementById('profileError');
@@ -3008,6 +3020,14 @@ const showProfileView=async(identifier,mainnet=true)=>{
   if(state.profileMsgObserver){state.profileMsgObserver.disconnect();state.profileMsgObserver=null;}
 
   try{
+    const requestedTabRaw=String(initialProfileState?.tab||'').toLowerCase();
+    const requestedCategoryRaw=String(initialProfileState?.category||'').toLowerCase();
+    const validObjectTabs=['owned','created','associated'];
+    const validProfileTabs=['messages','owned','created','associated','activity'];
+    const requestedCategory=validObjectTabs.includes(requestedCategoryRaw)?requestedCategoryRaw:'';
+    const requestedTab=validProfileTabs.includes(requestedTabRaw)?requestedTabRaw:'messages';
+    const initialActivityCategory=requestedCategory||(requestedTab==='activity'?'associated':'');
+
     let profile=null;
     let address='';
     if(isAddress(identifier)){
@@ -3043,9 +3063,18 @@ const showProfileView=async(identifier,mainnet=true)=>{
     const displayName=profile.DisplayName||profile.URN||'Unknown Profile';
     updateMetaTags(displayName,profile.Bio||`On-chain profile on bitFossil`,imgUrl!==fallbackImage?imgUrl:'https://p2fk.io/bitfossil.png');
 
+    let _activeProfileTab='messages';
+    let _lastObjCategory=initialActivityCategory;
+
     // Build profile panel
     innerEl.innerHTML='';
-    const shareBtn=makeShareBtn('profile',{id:profile.URN||identifier,mainnet});
+    const shareBtn=makeShareBtn('profile',()=>{
+      const params={id:profile.URN||identifier,mainnet};
+      if(_activeProfileTab&&_activeProfileTab!=='messages') params.profileTab=_activeProfileTab;
+      if(_activeProfileTab==='activity') params.profileCategory=_lastObjCategory||'associated';
+      else if(validObjectTabs.includes(_activeProfileTab)) params.profileCategory=_activeProfileTab;
+      return params;
+    });
     innerEl.appendChild(shareBtn);
 
     const imgEl=document.createElement('img');imgEl.className='profile-panel-img';imgEl.src=fallbackImage;imgEl.alt=displayName;
@@ -3142,8 +3171,10 @@ const showProfileView=async(identifier,mainnet=true)=>{
     }
 
     // ── Profile tab wiring ────────────────────────────────────────────
-    let _activeProfileTab='messages';
-    let _lastObjCategory=''; // track last category for activity tab
+    if(_lastObjCategory){
+      const actBtnInit=document.getElementById('tabActivity');
+      if(actBtnInit) actBtnInit.style.display='';
+    }
     const setProfileMsgObserverEnabled=(enabled)=>{
       state.profileMsgAutoLoadEnabled=!!enabled;
       if(state.profileMsgObserver){state.profileMsgObserver.disconnect();state.profileMsgObserver=null;}
@@ -3170,6 +3201,7 @@ const showProfileView=async(identifier,mainnet=true)=>{
       const gridEl=document.getElementById('profileObjGrid');
       const statusEl=document.getElementById('profileObjStatus');
       const activityEl=document.getElementById('profileActivityFeed');
+      const objMoreBtn=gridEl?.parentNode?.querySelector('.poc-load-more');
       if(tab==='messages'){
         setProfileMsgObserverEnabled(true);
         if(sortWrap) sortWrap.style.display='none';
@@ -3178,6 +3210,7 @@ const showProfileView=async(identifier,mainnet=true)=>{
         if(gridEl) gridEl.style.display='none';
         if(statusEl) statusEl.style.display='none';
         if(activityEl) activityEl.style.display='none';
+        if(objMoreBtn) objMoreBtn.remove();
       }else if(tab==='activity'){
         setProfileMsgObserverEnabled(false);
         if(sortWrap) sortWrap.style.display='none';
@@ -3186,6 +3219,7 @@ const showProfileView=async(identifier,mainnet=true)=>{
         if(gridEl) gridEl.style.display='none';
         if(statusEl) statusEl.style.display='none';
         if(activityEl) activityEl.style.display='block';
+        if(objMoreBtn) objMoreBtn.remove();
         await loadProfileActivity(_lastObjCategory,address,mainnet);
       }else{
         setProfileMsgObserverEnabled(false);
@@ -3223,6 +3257,11 @@ const showProfileView=async(identifier,mainnet=true)=>{
 
     if(address){
       await loadProfileMessages();
+      if(requestedTab==='activity'&&_lastObjCategory){
+        await _switchProfileTab('activity');
+      }else if(validObjectTabs.includes(requestedTab)){
+        await _switchProfileTab(requestedTab);
+      }
     }else{
       const msgsBtn2=document.getElementById('tabMessages');if(msgsBtn2) msgsBtn2.textContent='Messages (0)';
     }
@@ -3633,7 +3672,7 @@ const setView=(name)=>{
 const navigateTo=(view,params={})=>{
   const url=new URL(window.location.href);
   // Clear previous view params
-  ['search','profile','object','message','mainnet','blockchain'].forEach(k=>url.searchParams.delete(k));
+  ['search','profile','object','message','mainnet','blockchain','profileTab','profileCategory'].forEach(k=>url.searchParams.delete(k));
   Object.entries(params).forEach(([k,v])=>{if(v!==undefined&&v!==null&&v!=='') url.searchParams.set(k,String(v));});
   history.pushState({view,params},'',(url.searchParams.toString()?'?'+url.searchParams.toString():'/'));
   loadFromParams(url.searchParams);
@@ -3646,11 +3685,13 @@ const loadFromParams=(sp)=>{
   const search=sp.get('search');
   const mainnet=sp.get('mainnet')!=='false'; // default true
   const blockchain=(sp.get('blockchain')||'BTC').toUpperCase();
+  const profileTab=sp.get('profileTab');
+  const profileCategory=sp.get('profileCategory');
 
   if(message){
     showMessageView(message,mainnet,blockchain);
   }else if(profile){
-    showProfileView(profile,mainnet);
+    showProfileView(profile,mainnet,{tab:profileTab,category:profileCategory});
   }else if(object){
     showObjectView(object,mainnet);
   }else{
