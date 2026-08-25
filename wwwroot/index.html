@@ -2844,37 +2844,47 @@ const loadProfileActivity=async(type,address,mainnet)=>{
     let done=0;
     const updateProgress=()=>{done++;const el=feedEl.querySelector('.activity-loading');if(el) el.textContent=`Fetching provenance data… (${done} / ${objs.length})`;};
 
-    const resolvedObjs=await Promise.all(objs.map(async obj=>{
-      const objAddr=Object.keys(obj.Creators||{})[0]||'';
-      const changelog=obj.ChangeLog||[];
-      // Check if we need a verbose fetch
-      let needVerbose=false;
-      if(!changelog.length){
-        needVerbose=true;
-      }else{
-        // Get the date of the last provenance entry
-        try{
-          const last=changelog[changelog.length-1];
-          let lastDate='';
-          if(typeof last==='string'){const parts=JSON.parse(last);lastDate=parts[6]||'';}
-          else{lastDate=last.Date||'';}
-          const changeDate=obj.ChangeDate||'';
-          if(changeDate&&!isNullDate(changeDate)&&lastDate){
-            const cd=new Date(changeDate);const ld=new Date(lastDate);
-            if(cd>ld) needVerbose=true;
+    // Process verbose fetches with a concurrency limit to avoid overwhelming the API
+    const ACTIVITY_CONCURRENCY=5;
+    const resolvedObjs=await (async()=>{
+      const results=new Array(objs.length);
+      let idx=0;
+      const worker=async()=>{
+        while(idx<objs.length){
+          const i=idx++;
+          const obj=objs[i];
+          const objAddr=Object.keys(obj.Creators||{})[0]||'';
+          const changelog=obj.ChangeLog||[];
+          let needVerbose=false;
+          if(!changelog.length){
+            needVerbose=true;
+          }else{
+            try{
+              const last=changelog[changelog.length-1];
+              let lastDate='';
+              if(typeof last==='string'){const parts=JSON.parse(last);lastDate=parts[6]||'';}
+              else{lastDate=last.Date||'';}
+              const changeDate=obj.ChangeDate||'';
+              if(changeDate&&!isNullDate(changeDate)&&lastDate){
+                const cd=new Date(changeDate);const ld=new Date(lastDate);
+                if(cd>ld) needVerbose=true;
+              }
+            }catch{needVerbose=true;}
           }
-        }catch{needVerbose=true;}
-      }
-      if(needVerbose&&objAddr){
-        try{
-          const fresh=await fetchAPI(`${BASE_URL}/GetObjectByAddress/${encodeURIComponent(objAddr)}?mainnet=${mainnet}&verbose=true`,'',null,15000);
-          const fo=fresh?.Object||fresh?.object||fresh;
-          if(fo&&!Array.isArray(fo)){updateProgress();return fo;}
-        }catch{}
-      }
-      updateProgress();
-      return obj;
-    }));
+          if(needVerbose&&objAddr){
+            try{
+              const fresh=await fetchAPI(`${BASE_URL}/GetObjectByAddress/${encodeURIComponent(objAddr)}?mainnet=${mainnet}&verbose=true`,'',null,60000);
+              const fo=fresh?.Object||fresh?.object||fresh;
+              if(fo&&!Array.isArray(fo)){updateProgress();results[i]=fo;continue;}
+            }catch{}
+          }
+          updateProgress();
+          results[i]=obj;
+        }
+      };
+      await Promise.all(Array.from({length:Math.min(ACTIVITY_CONCURRENCY,objs.length)},worker));
+      return results;
+    })();
 
     // Build flat list of all provenance entries with object reference
     const allEntries=[];
