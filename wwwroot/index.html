@@ -2854,7 +2854,7 @@ const getActivityIcon=(action,qty,isFailed)=>{
 };
 const getSuccessAmount=(status)=>{
   const s=String(status||'').trim();
-  const m=s.match(/^success\b\s+([0-9]*\.?[0-9]+)$/i);
+  const m=s.match(/^success\b(?:\s+-\s+|\s+)([0-9]*\.?[0-9]+)$/i);
   return m&&m[1]?m[1].trim():'';
 };
 
@@ -2862,7 +2862,7 @@ const formatActionSuffix=(action,qty,details,status)=>{
   const q=String(qty??'').trim();
   const a=(action||'').toLowerCase();
   const rawDetails=String(details??'').trim();
-  const amount=a==='buy'?(getSuccessAmount(status)||rawDetails):rawDetails;
+  const amount=(a==='buy'||a==='offer')?(getSuccessAmount(status)||rawDetails):rawDetails;
   if(!q&&!amount) return '';
   return `${q?` ×${q}`:''}${amount?` (${amount})`:''}`;
 };
@@ -3042,7 +3042,9 @@ const _renderActivityEntries=(feedEl,allEntries,mainnet)=>{
       if(fn&&tn){
         partiesHtml=`<span class="owner-addr" data-addr="${escapeHtml(e.from)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(fn)}</span> → <span class="owner-addr" data-addr="${escapeHtml(e.to)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(tn)}</span>${escapeHtml(suffixStr)}`;
       }else if(tn){
-        partiesHtml=`→ <span class="owner-addr" data-addr="${escapeHtml(e.to)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(tn)}</span>${escapeHtml(suffixStr)}`;
+        const isCreate=canonicalAction(e.action,e.qty)==='create';
+        const unsignedPrefix=(!e.from&&isCreate)?`<span style="color:#888;font-style:italic">unsigned</span> → `:'→ ';
+        partiesHtml=`${unsignedPrefix}<span class="owner-addr" data-addr="${escapeHtml(e.to)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(tn)}</span>${escapeHtml(suffixStr)}`;
       }else if(fn){
         partiesHtml=`<span class="owner-addr" data-addr="${escapeHtml(e.from)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(fn)}</span>${escapeHtml(suffixStr)}`;
       }else{
@@ -3632,7 +3634,9 @@ const showObjectView=async(identifier,mainnet=true)=>{
               const df=formatDateFull(rowDate)||rowDate||'';
               const dateHtml=ds?`<span class="col-date" title="${escapeHtml(df)}">${escapeHtml(ds)}</span>`:`<span class="col-date"></span>`;
               const suffix=formatActionSuffix(action,qty,details,status);
-              const parties=`<span class="owner-addr" data-addr="${escapeHtml(from)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(fn)}</span> → <span class="owner-addr" data-addr="${escapeHtml(to)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(tn)}</span>${escapeHtml(suffix)}`;
+              const isCreate=canonicalAction(action,qty)==='create';
+              const fromHtml=from?`<span class="owner-addr" data-addr="${escapeHtml(from)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(fn)}</span>`:(isCreate?`<span style="color:#888;font-style:italic">unsigned</span>`:'');
+              const parties=`${fromHtml}${fromHtml?' → ':''}<span class="owner-addr" data-addr="${escapeHtml(to)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(tn)}</span>${escapeHtml(suffix)}`;
               return `<div class="obj-list-row ${statusCls}"><span class="col-name">${parties}</span>${dateHtml}<span class="col-action"><span title="${statusTitle}" style="cursor:default">${icon}</span> ${escapeHtml(actionLabel||'')}</span></div>`;
             }
             const d=entry.Date||'';
