@@ -745,15 +745,11 @@
               <option value="buy">Buy</option>
               <option value="list">List</option>
               <option value="delist">Delist</option>
-              <option value="clearalllistings">Clear All Listings</option>
               <option value="offer">Offer</option>
               <option value="burn">Burn</option>
               <option value="claim">Claim</option>
               <option value="grant">Grant</option>
-              <option value="transfer">Transfer</option>
-              <option value="mint">Mint</option>
               <option value="lock">Lock</option>
-              <option value="edit">Edit</option>
               <option value="create">Create</option>
               <option value="give">Give</option>
             </select>
@@ -2817,12 +2813,43 @@ const loadProfileObjects=async(type,address,mainnet)=>{
 
 // ── Profile activity (provenance) feed ─────────────────────────────────
 const ACTIVITY_PAGE=30;
-const _activityIcons={mint:'🪙',transfer:'↔️',list:'🏷️',delist:'✖️',lock:'🔒',burn:'🔥',edit:'✏️',create:'✨',claim:'⚓',buy:'💰',give:'🎁',grant:'🔓',offer:'💍',clearalllistings:'👋',clearalllisting:'👋',clearlistings:'👋',clearlisting:'👋'};
+const _activityIcons={list:'🏷️',delist:'👋',lock:'🔒',burn:'🔥',create:'✨',claim:'⚓',buy:'💰',give:'🎁',grant:'🔓',offer:'💍'};
 const _activityCache=new Map(); // key: `${mainnet}:${address}:${type}` → allEntries[]
 const normalizeAction=(action)=>String(action||'').toLowerCase().replace(/[^a-z0-9]/g,'');
-const getActivityIcon=(action,isFailed)=>{
+const isFailedStatus=(status)=>{
+  const s=String(status||'').trim().toLowerCase();
+  if(!s) return false;
+  return s.includes('fail')||s.includes('error')||s.includes('revert');
+};
+const isZeroQty=(qty)=>{
+  const q=String(qty??'').trim();
+  if(!q) return false;
+  const n=Number(q);
+  return Number.isFinite(n)&&n===0;
+};
+const canonicalAction=(action,qty)=>{
+  let a=normalizeAction(action);
+  if(a==='transfer') a='give';
+  if(a==='mint') a='create';
+  if(a==='clearalllistings'||a==='clearalllisting'||a==='clearlistings'||a==='clearlisting') a='delist';
+  if(a==='list'&&isZeroQty(qty)) a='delist';
+  return a;
+};
+const displayActionLabel=(action,qty)=>{
+  const a=canonicalAction(action,qty);
+  return a||String(action||'');
+};
+const getActivityDate=(entry,obj)=>{
+  const a=canonicalAction(entry?.action,entry?.qty);
+  if(a==='create'){
+    const cd=obj?.CreatedDate||'';
+    if(cd&&!isNullDate(cd)) return cd;
+  }
+  return entry?.date||'';
+};
+const getActivityIcon=(action,qty,isFailed)=>{
   if(isFailed) return '🚫';
-  const key=normalizeAction(action);
+  const key=canonicalAction(action,qty);
   return _activityIcons[key]||'⚙️';
 };
 const getSuccessAmount=(status)=>{
@@ -2922,9 +2949,11 @@ const loadProfileActivity=async(type,address,mainnet)=>{
         try{
           if(typeof entry==='string'){
             const [from,to,action,qty,details,status,date]=JSON.parse(entry);
-            allEntries.push({obj,objAddr,imgUrl,from,to,action,qty,details,status,date});
+            const resolvedDate=getActivityDate({action,qty,date},obj);
+            allEntries.push({obj,objAddr,imgUrl,from,to,action,qty,details,status,date:resolvedDate});
           }else if(entry.Date){
-            allEntries.push({obj,objAddr,imgUrl,from:'',to:'',action:entry.Description||'',qty:'',details:'',status:'success',date:entry.Date});
+            const resolvedDate=getActivityDate({action:entry.Description||'',qty:'',date:entry.Date},obj);
+            allEntries.push({obj,objAddr,imgUrl,from:'',to:'',action:entry.Description||'',qty:'',details:'',status:'success',date:resolvedDate});
           }
         }catch{}
       }
@@ -2953,7 +2982,7 @@ const _renderActivityEntries=(feedEl,allEntries,mainnet)=>{
   const selectedNormalized=normalizeAction(selectedAction);
   const entriesToRender=selectedAction==='all'
     ? allEntries
-    : allEntries.filter(e=>normalizeAction(e.action)===selectedNormalized);
+    : allEntries.filter(e=>canonicalAction(e.action,e.qty)===selectedNormalized);
 
   if(!entriesToRender.length){
     feedEl.innerHTML='<div class="activity-loading">No activity entries found for this action.</div>';
@@ -3017,7 +3046,7 @@ const _renderActivityEntries=(feedEl,allEntries,mainnet)=>{
       }else if(fn){
         partiesHtml=`<span class="owner-addr" data-addr="${escapeHtml(e.from)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(fn)}</span>${escapeHtml(suffixStr)}`;
       }else{
-        partiesHtml=`${escapeHtml(e.action||'')}${escapeHtml(suffixStr)}`;
+        partiesHtml=`${escapeHtml(displayActionLabel(e.action,e.qty)||'')}${escapeHtml(suffixStr)}`;
       }
       partiesText.innerHTML=partiesHtml;
       partiesText.querySelectorAll('.owner-addr').forEach(el=>el.addEventListener('click',()=>navigateTo('profile',{profile:el.dataset.addr,mainnet})));
@@ -3032,10 +3061,11 @@ const _renderActivityEntries=(feedEl,allEntries,mainnet)=>{
       row.appendChild(dateCol);
 
       // Action
-      const isFailed=e.status&&!e.status.toLowerCase().startsWith('success');
-      const icon=getActivityIcon(e.action,isFailed);
+      const actionLabel=displayActionLabel(e.action,e.qty);
+      const isFailed=isFailedStatus(e.status);
+      const icon=getActivityIcon(e.action,e.qty,isFailed);
       const actionCol=document.createElement('span');actionCol.className='act-col-action';
-      actionCol.innerHTML=`<span title="${isFailed?escapeHtml(e.status||'Failed'):'Success'}" style="cursor:default">${icon}</span> ${escapeHtml(e.action||'')}`;
+      actionCol.innerHTML=`<span title="${isFailed?escapeHtml(e.status||'Failed'):'Success'}" style="cursor:default">${icon}</span> ${escapeHtml(actionLabel||'')}`;
       row.appendChild(actionCol);
 
       feedEl.appendChild(row);
@@ -3592,16 +3622,18 @@ const showObjectView=async(identifier,mainnet=true)=>{
               const [fp,tp]=await Promise.all([fetchProfileByAddress(from,mainnet,null),fetchProfileByAddress(to,mainnet,null)]);
               const fn=fp?(fp.DisplayName||fp.URN||abbreviateAddress(from)):abbreviateAddress(from);
               const tn=tp?(tp.DisplayName||tp.URN||abbreviateAddress(to)):abbreviateAddress(to);
-              const isFailed=!!(status&&!status.toLowerCase().startsWith('success'));
-              const icon=getActivityIcon(action,isFailed);
+              const actionLabel=displayActionLabel(action,qty);
+              const isFailed=isFailedStatus(status);
+              const icon=getActivityIcon(action,qty,isFailed);
               const statusTitle=isFailed?escapeHtml(status||'Failed'):'Success';
               const statusCls=isFailed?'status-failed':'status-success';
-              const ds=formatDateShort(date)||'';
-              const df=formatDateFull(date)||date||'';
+              const rowDate=getActivityDate({action,qty,date},obj);
+              const ds=formatDateShort(rowDate)||'';
+              const df=formatDateFull(rowDate)||rowDate||'';
               const dateHtml=ds?`<span class="col-date" title="${escapeHtml(df)}">${escapeHtml(ds)}</span>`:`<span class="col-date"></span>`;
               const suffix=formatActionSuffix(action,qty,details,status);
               const parties=`<span class="owner-addr" data-addr="${escapeHtml(from)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(fn)}</span> → <span class="owner-addr" data-addr="${escapeHtml(to)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(tn)}</span>${escapeHtml(suffix)}`;
-              return `<div class="obj-list-row ${statusCls}"><span class="col-name">${parties}</span>${dateHtml}<span class="col-action"><span title="${statusTitle}" style="cursor:default">${icon}</span> ${escapeHtml(action||'')}</span></div>`;
+              return `<div class="obj-list-row ${statusCls}"><span class="col-name">${parties}</span>${dateHtml}<span class="col-action"><span title="${statusTitle}" style="cursor:default">${icon}</span> ${escapeHtml(actionLabel||'')}</span></div>`;
             }
             const d=entry.Date||'';
             const ds=formatDateShort(d)||'';
