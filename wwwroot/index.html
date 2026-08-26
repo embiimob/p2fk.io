@@ -2854,7 +2854,7 @@ const getActivityIcon=(action,qty,isFailed)=>{
 };
 const getSuccessAmount=(status)=>{
   const s=String(status||'').trim();
-  const m=s.match(/^success\b[\s-]+([0-9]*\.?[0-9]+)$/i);
+  const m=s.match(/^success\b(?:\s+-\s+|\s+)([0-9]*\.?[0-9]+)$/i);
   return m&&m[1]?m[1].trim():'';
 };
 
