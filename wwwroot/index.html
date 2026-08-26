@@ -3042,7 +3042,9 @@ const _renderActivityEntries=(feedEl,allEntries,mainnet)=>{
       if(fn&&tn){
         partiesHtml=`<span class="owner-addr" data-addr="${escapeHtml(e.from)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(fn)}</span> → <span class="owner-addr" data-addr="${escapeHtml(e.to)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(tn)}</span>${escapeHtml(suffixStr)}`;
       }else if(tn){
-        partiesHtml=`→ <span class="owner-addr" data-addr="${escapeHtml(e.to)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(tn)}</span>${escapeHtml(suffixStr)}`;
+        const isCreate=canonicalAction(e.action,e.qty)==='create';
+        const unsignedPrefix=(!e.from&&isCreate)?`<span style="color:#888;font-style:italic">unsigned</span> → `:'→ ';
+        partiesHtml=`${unsignedPrefix}<span class="owner-addr" data-addr="${escapeHtml(e.to)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(tn)}</span>${escapeHtml(suffixStr)}`;
       }else if(fn){
         partiesHtml=`<span class="owner-addr" data-addr="${escapeHtml(e.from)}" style="cursor:pointer;color:#bb86fc">${escapeHtml(fn)}</span>${escapeHtml(suffixStr)}`;
       }else{
