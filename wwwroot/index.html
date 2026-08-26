@@ -738,6 +738,26 @@
               <option value="highestActivity">Most Active</option>
             </select>
           </div>
+          <div class="profile-sort-wrap" id="profileActivitySortWrap" style="display:none;">
+            <label style="font-size:0.78em;color:#888;">Sort:</label>
+            <select class="profile-sort-select" id="profileActivitySort">
+              <option value="all">All Actions</option>
+              <option value="buy">Buy</option>
+              <option value="list">List</option>
+              <option value="delist">Delist</option>
+              <option value="clearalllistings">Clear All Listings</option>
+              <option value="offer">Offer</option>
+              <option value="burn">Burn</option>
+              <option value="claim">Claim</option>
+              <option value="grant">Grant</option>
+              <option value="transfer">Transfer</option>
+              <option value="mint">Mint</option>
+              <option value="lock">Lock</option>
+              <option value="edit">Edit</option>
+              <option value="create">Create</option>
+              <option value="give">Give</option>
+            </select>
+          </div>
         </div>
         <h3 id="profileMsgHeading" style="display:none;">Messages</h3>
         <div id="profileMsgFeed"></div>
@@ -2797,8 +2817,14 @@ const loadProfileObjects=async(type,address,mainnet)=>{
 
 // ── Profile activity (provenance) feed ─────────────────────────────────
 const ACTIVITY_PAGE=30;
-const _activityIcons={mint:'🪙',transfer:'↔️',list:'🏷️',delist:'✖️',lock:'🔒',burn:'🔥',edit:'✏️',create:'✨',claim:'⚓',buy:'💰',give:'🎁',grant:'🔓'};
+const _activityIcons={mint:'🪙',transfer:'↔️',list:'🏷️',delist:'✖️',lock:'🔒',burn:'🔥',edit:'✏️',create:'✨',claim:'⚓',buy:'💰',give:'🎁',grant:'🔓',offer:'💍',clearalllistings:'👋',clearalllisting:'👋',clearlistings:'👋',clearlisting:'👋'};
 const _activityCache=new Map(); // key: `${mainnet}:${address}:${type}` → allEntries[]
+const normalizeAction=(action)=>String(action||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+const getActivityIcon=(action,isFailed)=>{
+  if(isFailed) return '🚫';
+  const key=normalizeAction(action);
+  return _activityIcons[key]||'⚙️';
+};
 const getSuccessAmount=(status)=>{
   const s=String(status||'').trim();
   const m=s.match(/^success\b\s+([0-9]*\.?[0-9]+)$/i);
@@ -2922,6 +2948,18 @@ const loadProfileActivity=async(type,address,mainnet)=>{
 
 const _renderActivityEntries=(feedEl,allEntries,mainnet)=>{
   feedEl.innerHTML='';
+  const actionSel=document.getElementById('profileActivitySort');
+  const selectedAction=actionSel?String(actionSel.value||'all').toLowerCase():'all';
+  const selectedNormalized=normalizeAction(selectedAction);
+  const entriesToRender=selectedAction==='all'
+    ? allEntries
+    : allEntries.filter(e=>normalizeAction(e.action)===selectedNormalized);
+
+  if(!entriesToRender.length){
+    feedEl.innerHTML='<div class="activity-loading">No activity entries found for this action.</div>';
+    return;
+  }
+
   // Header row
   const hdr=document.createElement('div');hdr.className='activity-feed-header';
   hdr.innerHTML='<span class="act-col-thumb"></span><span class="act-col-parties">Parties</span><span class="act-col-date">Date</span><span class="act-col-action">Action</span>';
@@ -2930,8 +2968,8 @@ const _renderActivityEntries=(feedEl,allEntries,mainnet)=>{
   // Paginated rendering
   let shown=0;
   const renderBatch=async()=>{
-    const end=Math.min(shown+ACTIVITY_PAGE,allEntries.length);
-    const batch=allEntries.slice(shown,end);
+    const end=Math.min(shown+ACTIVITY_PAGE,entriesToRender.length);
+    const batch=entriesToRender.slice(shown,end);
     shown=end;
 
     // Resolve profile names for this batch in parallel
@@ -2995,7 +3033,7 @@ const _renderActivityEntries=(feedEl,allEntries,mainnet)=>{
 
       // Action
       const isFailed=e.status&&!e.status.toLowerCase().startsWith('success');
-      const icon=isFailed?'🚫':(_activityIcons[(e.action||'').toLowerCase()]||'⚙️');
+      const icon=getActivityIcon(e.action,isFailed);
       const actionCol=document.createElement('span');actionCol.className='act-col-action';
       actionCol.innerHTML=`<span title="${isFailed?escapeHtml(e.status||'Failed'):'Success'}" style="cursor:default">${icon}</span> ${escapeHtml(e.action||'')}`;
       row.appendChild(actionCol);
@@ -3003,9 +3041,9 @@ const _renderActivityEntries=(feedEl,allEntries,mainnet)=>{
       feedEl.appendChild(row);
     }
 
-    if(shown<allEntries.length){
+    if(shown<entriesToRender.length){
       const moreBtn=document.createElement('button');moreBtn.className='activity-load-more-btn';
-      moreBtn.textContent=`Load more (${allEntries.length-shown} remaining)`;
+      moreBtn.textContent=`Load more (${entriesToRender.length-shown} remaining)`;
       moreBtn.onclick=()=>renderBatch();
       feedEl.appendChild(moreBtn);
     }
@@ -3028,6 +3066,8 @@ const showProfileView=async(identifier,mainnet=true,initialProfileState={})=>{
   if(activityTabBtn) activityTabBtn.style.display='none';
   const activityFeedEl=document.getElementById('profileActivityFeed');
   if(activityFeedEl){activityFeedEl.innerHTML='';activityFeedEl.style.display='none';}
+  const activitySortEl=document.getElementById('profileActivitySort');
+  if(activitySortEl) activitySortEl.value='all';
   _activityCache.clear();
   // Reset tab bar to Messages active
   document.querySelectorAll('.profile-obj-tab').forEach(b=>b.classList.toggle('active',b.dataset.tab==='messages'));
@@ -3211,6 +3251,7 @@ const showProfileView=async(identifier,mainnet=true,initialProfileState={})=>{
       _activeProfileTab=tab;
       document.querySelectorAll('.profile-obj-tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));
       const sortWrap=document.getElementById('profileSortWrap');
+      const activitySortWrap=document.getElementById('profileActivitySortWrap');
       const feedEl2=document.getElementById('profileMsgFeed');
       const moreBtn2=document.getElementById('profileMsgLoadMore');
       const gridEl=document.getElementById('profileObjGrid');
@@ -3220,6 +3261,7 @@ const showProfileView=async(identifier,mainnet=true,initialProfileState={})=>{
       if(tab==='messages'){
         setProfileMsgObserverEnabled(true);
         if(sortWrap) sortWrap.style.display='none';
+        if(activitySortWrap) activitySortWrap.style.display='none';
         if(feedEl2) feedEl2.style.display='';
         if(moreBtn2) moreBtn2.style.display='';
         if(gridEl) gridEl.style.display='none';
@@ -3229,6 +3271,7 @@ const showProfileView=async(identifier,mainnet=true,initialProfileState={})=>{
       }else if(tab==='activity'){
         setProfileMsgObserverEnabled(false);
         if(sortWrap) sortWrap.style.display='none';
+        if(activitySortWrap) activitySortWrap.style.display='flex';
         if(feedEl2) feedEl2.style.display='none';
         if(moreBtn2) moreBtn2.style.display='none';
         if(gridEl) gridEl.style.display='none';
@@ -3239,6 +3282,7 @@ const showProfileView=async(identifier,mainnet=true,initialProfileState={})=>{
       }else{
         setProfileMsgObserverEnabled(false);
         if(sortWrap) sortWrap.style.display='flex';
+        if(activitySortWrap) activitySortWrap.style.display='none';
         if(feedEl2) feedEl2.style.display='none';
         if(moreBtn2) moreBtn2.style.display='none';
         if(gridEl){ gridEl.style.display='none'; }
@@ -3256,6 +3300,8 @@ const showProfileView=async(identifier,mainnet=true,initialProfileState={})=>{
     });
     const sortSel=document.getElementById('profileObjSort');
     if(sortSel) sortSel.onchange=()=>{if(_activeProfileTab!=='messages'&&_activeProfileTab!=='activity') loadProfileObjects(_activeProfileTab,address,mainnet);};
+    const activitySortSel=document.getElementById('profileActivitySort');
+    if(activitySortSel) activitySortSel.onchange=()=>{if(_activeProfileTab==='activity') loadProfileActivity(_lastObjCategory,address,mainnet);};
 
     // Load messages
     state.profileMsgSkip=0;
@@ -3538,7 +3584,6 @@ const showObjectView=async(identifier,mainnet=true)=>{
       const secEl=document.createElement('div');secEl.className='obj-section';
       secEl.innerHTML=`<p class="obj-section-title">Provenance</p><div class="obj-list changelog"><div class="obj-list-header"><span class="col-name">Parties</span><span class="col-date">Date</span><span class="col-action">Action</span></div><div id="objChangelog"><div class="obj-list-row" style="color:#888">Loading…</div></div></div>`;
       card.appendChild(secEl);
-      const actionIcons={mint:'🪙',transfer:'↔️',list:'🏷️',delist:'✖️',lock:'🔒',burn:'🔥',edit:'✏️',create:'✨',claim:'⚓',buy:'💰',give:'🎁',grant:'🔓'};
       (async()=>{
         const rows=await Promise.all(changelog.map(async entry=>{
           try{
@@ -3547,8 +3592,8 @@ const showObjectView=async(identifier,mainnet=true)=>{
               const [fp,tp]=await Promise.all([fetchProfileByAddress(from,mainnet,null),fetchProfileByAddress(to,mainnet,null)]);
               const fn=fp?(fp.DisplayName||fp.URN||abbreviateAddress(from)):abbreviateAddress(from);
               const tn=tp?(tp.DisplayName||tp.URN||abbreviateAddress(to)):abbreviateAddress(to);
-              const isFailed=!status||!status.toLowerCase().startsWith('success');
-              const icon=isFailed?'🚫':(actionIcons[(action||'').toLowerCase()]||'⚙️');
+              const isFailed=!!(status&&!status.toLowerCase().startsWith('success'));
+              const icon=getActivityIcon(action,isFailed);
               const statusTitle=isFailed?escapeHtml(status||'Failed'):'Success';
               const statusCls=isFailed?'status-failed':'status-success';
               const ds=formatDateShort(date)||'';
