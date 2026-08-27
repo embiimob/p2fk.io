@@ -66,8 +66,11 @@ namespace P2FK.IO.Services
 
         public async Task RunGarbageCollectionAsync(CancellationToken cancellationToken = default)
         {
-            using var response = await CreateClient().PostAsync(BuildApiUri("/api/v0/repo/gc"), content: null, cancellationToken);
-            string payload = await response.Content.ReadAsStringAsync(cancellationToken);
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(TimeSpan.FromMinutes(5));
+
+            using var response = await CreateClient().PostAsync(BuildApiUri("/api/v0/repo/gc"), content: null, timeoutCts.Token);
+            string payload = await response.Content.ReadAsStringAsync(timeoutCts.Token);
             if (!response.IsSuccessStatusCode)
                 throw new InvalidOperationException($"Kubo garbage collection failed: {payload}");
         }
@@ -106,12 +109,7 @@ namespace P2FK.IO.Services
                 throw new InvalidOperationException($"Kubo request failed for {relativeUrl}: {payload}");
         }
 
-        private HttpClient CreateClient()
-        {
-            var client = _httpClientFactory.CreateClient(nameof(KuboIngressService));
-            client.Timeout = Timeout.InfiniteTimeSpan;
-            return client;
-        }
+        private HttpClient CreateClient() => _httpClientFactory.CreateClient(nameof(KuboIngressService));
 
         private Uri BuildApiUri(string relativeUrl) => new(_kuboApiBaseUri, relativeUrl.TrimStart('/'));
 

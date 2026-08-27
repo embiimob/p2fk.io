@@ -85,8 +85,7 @@ namespace P2FK.IO.Services
                 {
                     try
                     {
-                        await _kuboIngressService.UnpinAsync(addResult.Hash, cancellationToken);
-                        await _kuboIngressService.RunGarbageCollectionAsync(cancellationToken);
+                        await _kuboIngressService.UnpinAsync(addResult.Hash, CancellationToken.None);
                     }
                     catch (Exception cleanupEx)
                     {
