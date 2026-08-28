@@ -3120,8 +3120,10 @@ const showProfileView=async(identifier,mainnet=true,initialProfileState={})=>{
   const activitySortEl=document.getElementById('profileActivitySort');
   if(activitySortEl) activitySortEl.value='all';
   _activityCache.clear();
-  // Reset tab bar to Messages active
+  // Reset tab bar to Messages active and clear stale counts from previous profile
   document.querySelectorAll('.profile-obj-tab').forEach(b=>b.classList.toggle('active',b.dataset.tab==='messages'));
+  const _tabResetLabels={tabMessages:'Messages',tabOwned:'Owned',tabCreated:'Created',tabAssoc:'Associated'};
+  Object.entries(_tabResetLabels).forEach(([id,label])=>{const el=document.getElementById(id);if(el) el.textContent=label;});
   // Disconnect any previous message scroll observer
   if(state.profileMsgObserver){state.profileMsgObserver.disconnect();state.profileMsgObserver=null;}
 
