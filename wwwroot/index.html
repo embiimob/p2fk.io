@@ -596,6 +596,9 @@
     .profile-sort-wrap { margin-left: auto; display: flex; align-items: center; gap: 6px; }
     .profile-sort-select { background: #1a1a1a; border: 1px solid #333; color: #b0b0b0; border-radius: 4px; padding: 3px 8px; font-size: 0.78em; cursor: pointer; }
     .profile-sort-select:focus { outline: none; border-color: #bb86fc; }
+    .profile-focus-toggle { background:#1a1a1a; border:1px solid #333; color:#666; border-radius:4px; padding:2px 7px; font-size:0.9em; line-height:1; cursor:pointer; transition:all 0.2s; }
+    .profile-focus-toggle:hover { border-color:#bb86fc; color:#999; }
+    .profile-focus-toggle.active { border-color:#bb86fc; color:#bb86fc; background:#bb86fc20; }
     /* Activity feed */
     #profileActivityFeed { margin-top:10px; }
     .activity-feed-header { display:flex; gap:10px; padding:6px 4px; font-size:0.75em; color:#666; border-bottom:1px solid #2a2a2a; font-weight:bold; }
@@ -739,6 +742,7 @@
             </select>
           </div>
           <div class="profile-sort-wrap" id="profileActivitySortWrap" style="display:none;">
+            <button class="profile-focus-toggle" id="profileActivityFocusToggle" title="Focused" aria-label="Focused filter" aria-pressed="false">◎</button>
             <label style="font-size:0.78em;color:#888;">Sort:</label>
             <select class="profile-sort-select" id="profileActivitySort">
               <option value="all">All Actions</option>
@@ -2815,7 +2819,15 @@ const loadProfileObjects=async(type,address,mainnet)=>{
 const ACTIVITY_PAGE=30;
 const _activityIcons={list:'🏷️',delist:'👋',lock:'🔒',burn:'🔥',create:'✨',claim:'⚓',buy:'💰',give:'🎁',grant:'🔓',offer:'💍'};
 const _activityCache=new Map(); // key: `${mainnet}:${address}:${type}` → allEntries[]
+let _activityFocusEnabled=false;
 const normalizeAction=(action)=>String(action||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+const normalizeAddress=(addr)=>String(addr||'').trim().toLowerCase();
+const syncActivityFocusToggle=()=>{
+  const focusBtn=document.getElementById('profileActivityFocusToggle');
+  if(!focusBtn) return;
+  focusBtn.classList.toggle('active',_activityFocusEnabled);
+  focusBtn.setAttribute('aria-pressed',_activityFocusEnabled?'true':'false');
+};
 const isFailedStatus=(status)=>{
   const s=String(status||'').trim().toLowerCase();
   if(!s) return false;
@@ -2874,7 +2886,7 @@ const loadProfileActivity=async(type,address,mainnet)=>{
   // Use cached entries if available for this type/address/mainnet combo
   const cacheKey=`${mainnet?1:0}:${address}:${type}`;
   if(_activityCache.has(cacheKey)){
-    _renderActivityEntries(feedEl,_activityCache.get(cacheKey),mainnet);
+    _renderActivityEntries(feedEl,_activityCache.get(cacheKey),mainnet,address);
     return;
   }
 
@@ -2969,20 +2981,24 @@ const loadProfileActivity=async(type,address,mainnet)=>{
 
     // Cache the results for subsequent tab visits
     _activityCache.set(cacheKey,allEntries);
-    _renderActivityEntries(feedEl,allEntries,mainnet);
+    _renderActivityEntries(feedEl,allEntries,mainnet,address);
   }catch(e){
     feedEl.innerHTML='<div class="activity-loading" style="color:#cf6679">Failed to load activity: '+escapeHtml(e.message)+'</div>';
   }
 };
 
-const _renderActivityEntries=(feedEl,allEntries,mainnet)=>{
+const _renderActivityEntries=(feedEl,allEntries,mainnet,profileAddress)=>{
   feedEl.innerHTML='';
   const actionSel=document.getElementById('profileActivitySort');
   const selectedAction=actionSel?String(actionSel.value||'all').toLowerCase():'all';
   const selectedNormalized=normalizeAction(selectedAction);
-  const entriesToRender=selectedAction==='all'
+  let entriesToRender=selectedAction==='all'
     ? allEntries
     : allEntries.filter(e=>canonicalAction(e.action,e.qty)===selectedNormalized);
+  const normalizedProfileAddress=normalizeAddress(profileAddress);
+  if(_activityFocusEnabled&&normalizedProfileAddress){
+    entriesToRender=entriesToRender.filter(e=>normalizeAddress(e.from)===normalizedProfileAddress||normalizeAddress(e.to)===normalizedProfileAddress);
+  }
 
   if(!entriesToRender.length){
     feedEl.innerHTML='<div class="activity-loading">No activity entries found for this action.</div>';
@@ -3304,6 +3320,7 @@ const showProfileView=async(identifier,mainnet=true,initialProfileState={})=>{
         setProfileMsgObserverEnabled(false);
         if(sortWrap) sortWrap.style.display='none';
         if(activitySortWrap) activitySortWrap.style.display='flex';
+        syncActivityFocusToggle();
         if(feedEl2) feedEl2.style.display='none';
         if(moreBtn2) moreBtn2.style.display='none';
         if(gridEl) gridEl.style.display='none';
@@ -3334,6 +3351,15 @@ const showProfileView=async(identifier,mainnet=true,initialProfileState={})=>{
     if(sortSel) sortSel.onchange=()=>{if(_activeProfileTab!=='messages'&&_activeProfileTab!=='activity') loadProfileObjects(_activeProfileTab,address,mainnet);};
     const activitySortSel=document.getElementById('profileActivitySort');
     if(activitySortSel) activitySortSel.onchange=()=>{if(_activeProfileTab==='activity') loadProfileActivity(_lastObjCategory,address,mainnet);};
+    const activityFocusBtn=document.getElementById('profileActivityFocusToggle');
+    if(activityFocusBtn){
+      syncActivityFocusToggle();
+      activityFocusBtn.onclick=()=>{
+        _activityFocusEnabled=!_activityFocusEnabled;
+        syncActivityFocusToggle();
+        if(_activeProfileTab==='activity') loadProfileActivity(_lastObjCategory,address,mainnet);
+      };
+    }
 
     // Load messages
     state.profileMsgSkip=0;
