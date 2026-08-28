@@ -3001,7 +3001,10 @@ const _renderActivityEntries=(feedEl,allEntries,mainnet,profileAddress)=>{
   }
 
   if(!entriesToRender.length){
-    feedEl.innerHTML='<div class="activity-loading">No activity entries found for this action.</div>';
+    const noResultsMsg=(_activityFocusEnabled||selectedAction!=='all')
+      ? 'No activity entries found for the selected filters.'
+      : 'No activity entries found for this action.';
+    feedEl.innerHTML='<div class="activity-loading">'+noResultsMsg+'</div>';
     return;
   }
 
