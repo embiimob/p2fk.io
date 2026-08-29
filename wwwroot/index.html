@@ -1124,6 +1124,7 @@ const buildShareUrl=(type,params)=>{
   if(params.blockchain&&params.blockchain!=='BTC') p.set('blockchain',params.blockchain);
   if(params.profileTab) p.set('profileTab',params.profileTab);
   if(params.profileCategory) p.set('profileCategory',params.profileCategory);
+  if(params.profileActivitySort) p.set('profileActivitySort',params.profileActivitySort);
   return base+'?'+p.toString();
 };
 
@@ -2443,28 +2444,43 @@ const getUrnMediaType=(urn)=>{
 
 // ── Fetch text content for text-only URNs ───────────────────────────
 const _textUrnCache=new Map();
+const getUrnRootRef=(urn,mainnet)=>{
+  if(!urn) return null;
+  const u=String(urn).replace(/\\/g,'/').trim();
+  if(!u||/^IPFS:/i.test(u)||/^ipfs[:/]+/i.test(u)) return null;
+  const chainMatch=u.match(/^(BTC|TBTC|LTC|DOG|MZC):([0-9a-fA-F]{64})(?:\/.*)?$/i);
+  if(chainMatch) return {blockchain:chainMatch[1].toUpperCase(),txid:chainMatch[2]};
+  const plainMatch=u.match(/^([0-9a-fA-F]{64})(?:\/.*)?$/);
+  if(plainMatch) return {blockchain:mainnet?'BTC':'TBTC',txid:plainMatch[1]};
+  return null;
+};
+const fetchUrnRootMessage=async(urn,mainnet)=>{
+  const root=getUrnRootRef(urn,mainnet);
+  if(!root) return null;
+  const {txid,blockchain}=root;
+  let data=getCachedTransaction(txid,mainnet,blockchain);
+  if(!data){
+    const isBtcFamily=blockchain==='BTC'||blockchain==='TBTC';
+    const url=isBtcFamily
+      ?`${BASE_URL}/GetRootByTransactionID/${encodeURIComponent(txid)}?mainnet=${!!mainnet}`
+      :`${BASE_URL}/GetRootByTransactionID/${encodeURIComponent(txid)}?blockchain=${blockchain}`;
+    data=await fetchAPI(url,'',null,15000);
+    if(data){
+      const bd=data['Block Date']??data.BlockDate??'';
+      if(bd&&!isNullDate(bd)) cacheTransaction(txid,mainnet,blockchain,data);
+    }
+  }
+  if(data&&data.Message!=null){
+    return Array.isArray(data.Message)?data.Message.join('\n'):String(data.Message);
+  }
+  return null;
+};
 const fetchTextForUrn=async(urn,mainnet)=>{
   const cacheKey=`text_${urn}_${mainnet}`;
   if(_textUrnCache.has(cacheKey)) return _textUrnCache.get(cacheKey);
   let text=null;
   try{
-    const u=urn.replace(/\\/g,'/').trim();
-    let txid,blockchain;
-    const chainMatch=u.match(/^(BTC|TBTC|LTC|DOG|MZC):([0-9a-fA-F]{64})$/i);
-    if(chainMatch){blockchain=chainMatch[1].toUpperCase();txid=chainMatch[2];}
-    else{blockchain='BTC';txid=u;}
-    const isBtcFamily=blockchain==='BTC'||blockchain==='TBTC';
-    let data=getCachedTransaction(txid,mainnet,blockchain);
-    if(!data){
-      const url=isBtcFamily
-        ?`${BASE_URL}/GetRootByTransactionID/${encodeURIComponent(txid)}?mainnet=${!!mainnet}`
-        :`${BASE_URL}/GetRootByTransactionID/${encodeURIComponent(txid)}?blockchain=${blockchain}`;
-      data=await fetchAPI(url,'',null,15000);
-      if(data){const bd=data['Block Date']??data.BlockDate??'';if(bd&&!isNullDate(bd)) cacheTransaction(txid,mainnet,blockchain,data);}
-    }
-    if(data&&data.Message!=null){
-      text=Array.isArray(data.Message)?data.Message.join('\n'):String(data.Message);
-    }
+    text=await fetchUrnRootMessage(urn,mainnet);
   }catch{}
   if(text!=null) _textUrnCache.set(cacheKey,text);
   return text;
@@ -3134,11 +3150,17 @@ const showProfileView=async(identifier,mainnet=true,initialProfileState={})=>{
   try{
     const requestedTabRaw=String(initialProfileState?.tab||'').toLowerCase();
     const requestedCategoryRaw=String(initialProfileState?.category||'').toLowerCase();
+    const requestedActivitySortRaw=String(initialProfileState?.activitySort||'').toLowerCase();
     const validObjectTabs=['owned','created','associated'];
     const validProfileTabs=['messages','owned','created','associated','activity'];
+    const validActivitySorts=['all','buy','list','delist','offer','burn','claim','grant','lock','create','give'];
     const requestedCategory=validObjectTabs.includes(requestedCategoryRaw)?requestedCategoryRaw:'';
-    const requestedTab=validProfileTabs.includes(requestedTabRaw)?requestedTabRaw:'messages';
+    const requestedActivitySort=validActivitySorts.includes(requestedActivitySortRaw)?requestedActivitySortRaw:'all';
+    const requestedTab=requestedTabRaw==='activity'
+      ?'activity'
+      :(validProfileTabs.includes(requestedTabRaw)?requestedTabRaw:(requestedCategory||'messages'));
     const initialActivityCategory=requestedCategory||(requestedTab==='activity'?'associated':'');
+    if(activitySortEl) activitySortEl.value=requestedActivitySort;
 
     let profile=null;
     let address='';
@@ -3182,8 +3204,13 @@ const showProfileView=async(identifier,mainnet=true,initialProfileState={})=>{
     innerEl.innerHTML='';
     const shareBtn=makeShareBtn('profile',()=>{
       const params={id:profile.URN||identifier,mainnet};
-      if(_activeProfileTab&&_activeProfileTab!=='messages') params.profileTab=_activeProfileTab;
-      if(_activeProfileTab==='activity') params.profileCategory=_lastObjCategory||'associated';
+      if(_activeProfileTab==='activity'){
+        params.profileTab='activity';
+        params.profileCategory=_lastObjCategory||'associated';
+        const activitySortSel=document.getElementById('profileActivitySort');
+        const activitySortValue=String(activitySortSel?.value||'all').toLowerCase();
+        if(activitySortValue&&activitySortValue!=='all') params.profileActivitySort=activitySortValue;
+      }
       else if(validObjectTabs.includes(_activeProfileTab)) params.profileCategory=_activeProfileTab;
       return params;
     });
@@ -3527,8 +3554,13 @@ const showObjectView=async(identifier,mainnet=true)=>{
     const txm=imgUrl.match(/\/root\/([0-9a-fA-F]{64})\//i)?.[1];
     if(txm) state.txidMeta.set(txm,chainToMeta(mainnet?'BTC':'TBTC'));
 
+    const hasDescription=typeof obj.Description==='string'&&obj.Description.trim()!=='';
+    const isTextOnlyObject=isTextOnlyUrn(obj.URN);
+    const fallbackDescription=(!hasDescription&&!isTextOnlyObject)?await fetchUrnRootMessage(obj.URN,mainnet):null;
+    const resolvedDescription=hasDescription?obj.Description:(fallbackDescription||'');
+
     // Update meta tags for sharing
-    updateMetaTags(obj.Name||'Object',obj.Description||'On-chain digital object on bitFossil',imgUrl!==fallbackImage?imgUrl:'https://p2fk.io/bitfossil.png');
+    updateMetaTags(obj.Name||'Object',resolvedDescription||'On-chain digital object on bitFossil',imgUrl!==fallbackImage?imgUrl:'https://p2fk.io/bitfossil.png');
 
     const objectAddress=Object.keys(obj.Creators||{})[0]||identifier||'';
     const card=document.createElement('div');card.className='object-detail-card';
@@ -3555,7 +3587,7 @@ const showObjectView=async(identifier,mainnet=true)=>{
     const urnBlockchain=urnBlockchainLabel(obj.URN||'',mainnet);
     const urnBlockchainHtml=urnBlockchain?`<div class="urn-blockchain-row">Blockchain: <span>${escapeHtml(urnBlockchain)}</span></div>`:'';
     const urnLinkHtml=obj.URN?`<div class="urn-link-row">URN: ${renderUrnLinkForObj(obj.URN)}</div>`:'';
-    const descHtml=obj.Description?`<p class="desc">${escapeHtml(obj.Description)}</p>`:'';
+    const descHtml=resolvedDescription?`<p class="desc">${escapeHtml(resolvedDescription)}</p>`:'';
     const keyHtml=obj.Keyword?`<p>Keywords: <span style="color:#03dac6">${escapeHtml(Array.isArray(obj.Keyword)?obj.Keyword.join(', '):String(obj.Keyword))}</span></p>`:'';
     const dateHtml=createdShort?`<p title="${escapeHtml(createdFull||'')}">Created: ${escapeHtml(createdShort)}</p>`:'';
     const lockIcon=isLocked?'🔒':'🔓';
@@ -3804,7 +3836,7 @@ const setView=(name)=>{
 const navigateTo=(view,params={})=>{
   const url=new URL(window.location.href);
   // Clear previous view params
-  ['search','profile','object','message','mainnet','blockchain','profileTab','profileCategory'].forEach(k=>url.searchParams.delete(k));
+  ['search','profile','object','message','mainnet','blockchain','profileTab','profileCategory','profileActivitySort'].forEach(k=>url.searchParams.delete(k));
   Object.entries(params).forEach(([k,v])=>{if(v!==undefined&&v!==null&&v!=='') url.searchParams.set(k,String(v));});
   history.pushState({view,params},'',(url.searchParams.toString()?'?'+url.searchParams.toString():'/'));
   loadFromParams(url.searchParams);
@@ -3819,11 +3851,12 @@ const loadFromParams=(sp)=>{
   const blockchain=(sp.get('blockchain')||'BTC').toUpperCase();
   const profileTab=sp.get('profileTab');
   const profileCategory=sp.get('profileCategory');
+  const profileActivitySort=sp.get('profileActivitySort');
 
   if(message){
     showMessageView(message,mainnet,blockchain);
   }else if(profile){
-    showProfileView(profile,mainnet,{tab:profileTab,category:profileCategory});
+    showProfileView(profile,mainnet,{tab:profileTab,category:profileCategory,activitySort:profileActivitySort});
   }else if(object){
     showObjectView(object,mainnet);
   }else{
