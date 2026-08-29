@@ -958,7 +958,7 @@ const getCachedObject=(id,mainnet)=>{try{const c=sessionStorage.getItem(`obj_${i
 const cacheObject=(id,mainnet,data)=>{try{sessionStorage.setItem(`obj_${id}_${mainnet}`,JSON.stringify(data));}catch{}};
 
 // ── Image helpers ──────────────────────────────────────────────────────
-const IPFS_GWS=['https://gateway.pinata.cloud/ipfs/','https://4everland.io/ipfs/','https://ipfs.filebase.io/ipfs/','https://hardbin.com/ipfs/'];
+const IPFS_GWS=['https://ipfs.filebase.io/ipfs/','https://cloudflare-ipfs.com/ipfs/','https://dweb.link/ipfs/','https://w3s.link/ipfs/'];
 const MAX_IMG_CACHE=100;
 const cacheImage=(url,res)=>{if(state.imageCache.size>=MAX_IMG_CACHE){state.imageCache.delete(state.imageCache.keys().next().value);}state.imageCache.set(url,res);};
 
@@ -3120,8 +3120,10 @@ const showProfileView=async(identifier,mainnet=true,initialProfileState={})=>{
   const activitySortEl=document.getElementById('profileActivitySort');
   if(activitySortEl) activitySortEl.value='all';
   _activityCache.clear();
-  // Reset tab bar to Messages active
+  // Reset tab bar to Messages active and clear stale counts from previous profile
   document.querySelectorAll('.profile-obj-tab').forEach(b=>b.classList.toggle('active',b.dataset.tab==='messages'));
+  const _tabResetLabels={tabMessages:'Messages',tabOwned:'Owned',tabCreated:'Created',tabAssoc:'Associated'};
+  Object.entries(_tabResetLabels).forEach(([id,label])=>{const el=document.getElementById(id);if(el) el.textContent=label;});
   // Disconnect any previous message scroll observer
   if(state.profileMsgObserver){state.profileMsgObserver.disconnect();state.profileMsgObserver=null;}
 
