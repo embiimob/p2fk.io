@@ -2446,7 +2446,7 @@ const getUrnRootRef=(urn,mainnet)=>{
   if(!urn) return null;
   const u=String(urn).replace(/\\/g,'/').trim();
   if(!u||/^IPFS:/i.test(u)||/^ipfs[:/]+/i.test(u)) return null;
-  const chainMatch=u.match(/^([A-Za-z]+):([0-9a-fA-F]{64})(?:\/.*)?$/);
+  const chainMatch=u.match(/^(BTC|TBTC|LTC|DOG|MZC):([0-9a-fA-F]{64})(?:\/.*)?$/i);
   if(chainMatch) return {blockchain:chainMatch[1].toUpperCase(),txid:chainMatch[2]};
   const plainMatch=u.match(/^([0-9a-fA-F]{64})(?:\/.*)?$/);
   if(plainMatch) return {blockchain:mainnet?'BTC':'TBTC',txid:plainMatch[1]};
@@ -3151,7 +3151,9 @@ const showProfileView=async(identifier,mainnet=true,initialProfileState={})=>{
     const validObjectTabs=['owned','created','associated'];
     const validProfileTabs=['messages','owned','created','associated','activity'];
     const requestedCategory=validObjectTabs.includes(requestedCategoryRaw)?requestedCategoryRaw:'';
-    const requestedTab=requestedCategory||(validProfileTabs.includes(requestedTabRaw)?requestedTabRaw:'messages');
+    const requestedTab=requestedTabRaw==='activity'
+      ?'activity'
+      :(requestedCategory||(validProfileTabs.includes(requestedTabRaw)?requestedTabRaw:'messages'));
     const initialActivityCategory=requestedCategory||(requestedTab==='activity'?'associated':'');
 
     let profile=null;
