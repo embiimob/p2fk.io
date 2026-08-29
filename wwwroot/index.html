@@ -958,7 +958,11 @@ const getCachedObject=(id,mainnet)=>{try{const c=sessionStorage.getItem(`obj_${i
 const cacheObject=(id,mainnet,data)=>{try{sessionStorage.setItem(`obj_${id}_${mainnet}`,JSON.stringify(data));}catch{}};
 
 // ── Image helpers ──────────────────────────────────────────────────────
-const IPFS_GWS=['https://ipfs.filebase.io/ipfs/','https://cloudflare-ipfs.com/ipfs/','https://dweb.link/ipfs/','https://w3s.link/ipfs/'];
+const IPFS_GWS = [
+      'https://ipfs.filebase.io/ipfs/',
+      'https://gateway.pinata.cloud/ipfs/',
+      'https://hardbin.com/ipfs/'
+    ];
 const MAX_IMG_CACHE=100;
 const cacheImage=(url,res)=>{if(state.imageCache.size>=MAX_IMG_CACHE){state.imageCache.delete(state.imageCache.keys().next().value);}state.imageCache.set(url,res);};
 
