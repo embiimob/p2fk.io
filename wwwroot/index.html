@@ -3209,7 +3209,7 @@ const showProfileView=async(identifier,mainnet=true,initialProfileState={})=>{
         params.profileCategory=_lastObjCategory||'associated';
         const activitySortSel=document.getElementById('profileActivitySort');
         const activitySortValue=String(activitySortSel?.value||'all').toLowerCase();
-        if(activitySortValue) params.profileActivitySort=activitySortValue;
+        if(activitySortValue&&activitySortValue!=='all') params.profileActivitySort=activitySortValue;
       }
       else if(validObjectTabs.includes(_activeProfileTab)) params.profileCategory=_activeProfileTab;
       return params;
