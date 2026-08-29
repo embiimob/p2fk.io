@@ -1122,7 +1122,9 @@ const buildShareUrl=(type,params)=>{
   const p=new URLSearchParams({[type]:params.id});
   if(params.mainnet===false||params.mainnet==='false') p.set('mainnet','false');
   if(params.blockchain&&params.blockchain!=='BTC') p.set('blockchain',params.blockchain);
+  if(params.profileTab) p.set('profileTab',params.profileTab);
   if(params.profileCategory) p.set('profileCategory',params.profileCategory);
+  if(params.profileActivitySort) p.set('profileActivitySort',params.profileActivitySort);
   return base+'?'+p.toString();
 };
 
@@ -3148,13 +3150,17 @@ const showProfileView=async(identifier,mainnet=true,initialProfileState={})=>{
   try{
     const requestedTabRaw=String(initialProfileState?.tab||'').toLowerCase();
     const requestedCategoryRaw=String(initialProfileState?.category||'').toLowerCase();
+    const requestedActivitySortRaw=String(initialProfileState?.activitySort||'').toLowerCase();
     const validObjectTabs=['owned','created','associated'];
     const validProfileTabs=['messages','owned','created','associated','activity'];
+    const validActivitySorts=['all','buy','list','delist','offer','burn','claim','grant','lock','create','give'];
     const requestedCategory=validObjectTabs.includes(requestedCategoryRaw)?requestedCategoryRaw:'';
+    const requestedActivitySort=validActivitySorts.includes(requestedActivitySortRaw)?requestedActivitySortRaw:'all';
     const requestedTab=requestedTabRaw==='activity'
       ?'activity'
       :(requestedCategory||(validProfileTabs.includes(requestedTabRaw)?requestedTabRaw:'messages'));
     const initialActivityCategory=requestedCategory||(requestedTab==='activity'?'associated':'');
+    if(activitySortEl) activitySortEl.value=requestedActivitySort;
 
     let profile=null;
     let address='';
@@ -3198,7 +3204,13 @@ const showProfileView=async(identifier,mainnet=true,initialProfileState={})=>{
     innerEl.innerHTML='';
     const shareBtn=makeShareBtn('profile',()=>{
       const params={id:profile.URN||identifier,mainnet};
-      if(_activeProfileTab==='activity') params.profileCategory=_lastObjCategory||'associated';
+      if(_activeProfileTab==='activity'){
+        params.profileTab='activity';
+        params.profileCategory=_lastObjCategory||'associated';
+        const activitySortSel=document.getElementById('profileActivitySort');
+        const activitySortValue=String(activitySortSel?.value||'all').toLowerCase();
+        if(activitySortValue) params.profileActivitySort=activitySortValue;
+      }
       else if(validObjectTabs.includes(_activeProfileTab)) params.profileCategory=_activeProfileTab;
       return params;
     });
@@ -3824,7 +3836,7 @@ const setView=(name)=>{
 const navigateTo=(view,params={})=>{
   const url=new URL(window.location.href);
   // Clear previous view params
-  ['search','profile','object','message','mainnet','blockchain','profileTab','profileCategory'].forEach(k=>url.searchParams.delete(k));
+  ['search','profile','object','message','mainnet','blockchain','profileTab','profileCategory','profileActivitySort'].forEach(k=>url.searchParams.delete(k));
   Object.entries(params).forEach(([k,v])=>{if(v!==undefined&&v!==null&&v!=='') url.searchParams.set(k,String(v));});
   history.pushState({view,params},'',(url.searchParams.toString()?'?'+url.searchParams.toString():'/'));
   loadFromParams(url.searchParams);
@@ -3839,11 +3851,12 @@ const loadFromParams=(sp)=>{
   const blockchain=(sp.get('blockchain')||'BTC').toUpperCase();
   const profileTab=sp.get('profileTab');
   const profileCategory=sp.get('profileCategory');
+  const profileActivitySort=sp.get('profileActivitySort');
 
   if(message){
     showMessageView(message,mainnet,blockchain);
   }else if(profile){
-    showProfileView(profile,mainnet,{tab:profileTab,category:profileCategory});
+    showProfileView(profile,mainnet,{tab:profileTab,category:profileCategory,activitySort:profileActivitySort});
   }else if(object){
     showObjectView(object,mainnet);
   }else{
