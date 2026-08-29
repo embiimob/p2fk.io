@@ -3158,7 +3158,7 @@ const showProfileView=async(identifier,mainnet=true,initialProfileState={})=>{
     const requestedActivitySort=validActivitySorts.includes(requestedActivitySortRaw)?requestedActivitySortRaw:'all';
     const requestedTab=requestedTabRaw==='activity'
       ?'activity'
-      :(requestedCategory||(validProfileTabs.includes(requestedTabRaw)?requestedTabRaw:'messages'));
+      :(validProfileTabs.includes(requestedTabRaw)?requestedTabRaw:(requestedCategory||'messages'));
     const initialActivityCategory=requestedCategory||(requestedTab==='activity'?'associated':'');
     if(activitySortEl) activitySortEl.value=requestedActivitySort;
 
