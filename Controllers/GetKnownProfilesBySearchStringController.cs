@@ -46,7 +46,12 @@ namespace P2FK.IO.Controllers
             // map directly to the blockchain value.
             string effectiveChain = (blockchain == "BTC" && !mainnet) ? "BTC-testnet" : blockchain;
 
-            var results = await _searchService.SearchProfilesAsync(searchString, qty, skip, effectiveChain);
+            var results = await _searchService.SearchProfilesAsync(
+                searchString,
+                qty,
+                skip,
+                effectiveChain,
+                cancellationToken: HttpContext.RequestAborted);
             return new JsonResult(results);
         }
     }

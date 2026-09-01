@@ -1751,7 +1751,8 @@ const resetEngagementCounts=(engagementEl)=>{
 };
 
 // ── Message card renderer ──────────────────────────────────────────────
-const renderMessageCard=async(normalized,signal,blockchain,shareParams)=>{
+const renderMessageCard=async(normalized,signal,blockchain,shareParams,options={})=>{
+  const loadThreadData=options.loadThreadData!==false;
   const chainUpper=(blockchain||'').toUpperCase();
   const mainnet=(chainUpper==='BTC-TESTNET'||chainUpper==='TBTC')?false:true;
   const{cleanMessage,attachments,links}=await parseMessage(normalized.message,mainnet,signal);
@@ -1832,7 +1833,7 @@ const renderMessageCard=async(normalized,signal,blockchain,shareParams)=>{
   threadEl.className='message-thread-wrap';
   threadEl.style.display='none';
   card.appendChild(threadEl);
-  if(normalized.txId){
+  if(normalized.txId&&loadThreadData){
     loadMessageThreadUI(normalized.txId,mainnet,engagement,threadEl,signal,blockchain).catch(()=>{
       threadEl.style.display='none';
       engagement.style.display='none';
@@ -2042,7 +2043,7 @@ const appendResultItems=async(objectResults,profileResults,rootResults,searchId,
     let card;
     if(item.type==='object') card=renderObjectCard(item.raw,item.blockchain);
     else if(item.type==='profile') card=renderProfileCard(item.raw,item.blockchain);
-    else{ card=await renderMessageCard(item.data,signal,item.blockchain); if(state.currentSearchId!==searchId) break; }
+    else{ card=await renderMessageCard(item.data,signal,item.blockchain,null,{loadThreadData:false}); if(state.currentSearchId!==searchId) break; }
     card.dataset.chain=ch;
     feed.appendChild(card);
   }
