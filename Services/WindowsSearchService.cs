@@ -417,8 +417,9 @@ namespace P2FK.IO.Services
 
         public async Task<List<SearchResultRoot>> SearchRootsAsync(
             string searchString, int qty, int skip, string? blockchain = null, bool showSystemFiles = true,
-            bool forceRefresh = false)
+            bool forceRefresh = false, CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             qty = Math.Clamp(qty, 1, 5000);
             skip = Math.Clamp(skip, 0, 4999);
             qty = Math.Min(qty, 5000 - skip);
@@ -485,7 +486,7 @@ namespace P2FK.IO.Services
             List<SearchRow> rows;
             if (isWildcard)
             {
-                rows = await DirectFolderScanAsync("ROOT.json");
+                rows = await DirectFolderScanAsync("ROOT.json", cancellationToken);
             }
             else
             {
@@ -510,10 +511,10 @@ namespace P2FK.IO.Services
                         ORDER BY System.DateModified DESC
                         """;
 
-                rows = await Task.Run(() => ExecuteSearchQuery(sql));
+                rows = await Task.Run(() => ExecuteSearchQuery(sql), cancellationToken);
 
                 if (rows.Count == 0)
-                    rows = await FallbackScanAsync(hasSearch ? "*" : "ROOT.json", sanitized);
+                    rows = await FallbackScanAsync(hasSearch ? "*" : "ROOT.json", sanitized, cancellationToken);
             }
 
             // When filtering system files, do one fast pass over the rows Windows Search already
@@ -526,6 +527,7 @@ namespace P2FK.IO.Services
             {
                 foreach (var row in rows)
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     string ext = Path.GetExtension(row.Path).TrimStart('.').ToUpperInvariant();
                     string name = Path.GetFileNameWithoutExtension(row.Path).ToUpperInvariant();
 
@@ -544,6 +546,7 @@ namespace P2FK.IO.Services
             var txMap = new Dictionary<string, SearchRow>(StringComparer.OrdinalIgnoreCase);
             foreach (var row in rows)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 string? txId = ExtractTransactionId(row.Path);
                 if (txId == null) continue;
 
@@ -563,6 +566,7 @@ namespace P2FK.IO.Services
 
             foreach (var kvp in txMap.OrderByDescending(x => x.Value.Modified))
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 string txId = kvp.Key;
 
                 // Incremental refresh optimization: wildcard warm scans are ordered newest
@@ -582,7 +586,7 @@ namespace P2FK.IO.Services
                 // Read raw JSON text — store the string in the cache rather than a deserialized
                 // JsonElement so the backing JsonDocument is not pinned for the full cache TTL.
                 string rawJson;
-                try { rawJson = await File.ReadAllTextAsync(rootJsonPath); }
+                try { rawJson = await File.ReadAllTextAsync(rootJsonPath, cancellationToken); }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { continue; }
 
                 // Parse transiently to validate required fields; the JsonElement (and its
@@ -710,8 +714,10 @@ namespace P2FK.IO.Services
         }
 
         public async Task<List<SearchResultObject>> SearchObjectsAsync(
-            string searchString, int qty, int skip, string? blockchain = null, bool forceRefresh = false)
+            string searchString, int qty, int skip, string? blockchain = null, bool forceRefresh = false,
+            CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             qty = Math.Clamp(qty, 1, 5000);
             skip = Math.Clamp(skip, 0, 4999);
             qty = Math.Min(qty, 5000 - skip);
@@ -753,7 +759,7 @@ namespace P2FK.IO.Services
             List<SearchRow> rows;
             if (isWildcard)
             {
-                rows = await DirectFolderScanAsync("OBJ.json");
+                rows = await DirectFolderScanAsync("OBJ.json", cancellationToken);
             }
             else
             {
@@ -778,10 +784,10 @@ namespace P2FK.IO.Services
                         ORDER BY System.DateModified DESC
                         """;
 
-                rows = await Task.Run(() => ExecuteSearchQuery(sql));
+                rows = await Task.Run(() => ExecuteSearchQuery(sql), cancellationToken);
 
                 if (rows.Count == 0)
-                    rows = await FallbackScanAsync(hasSearch ? "*" : "OBJ.json", sanitized);
+                    rows = await FallbackScanAsync(hasSearch ? "*" : "OBJ.json", sanitized, cancellationToken);
             }
 
             // Deduplicate by address (parent folder) so multiple file hits from the same
@@ -789,6 +795,7 @@ namespace P2FK.IO.Services
             var newestByAddress = new Dictionary<string, SearchRow>(StringComparer.OrdinalIgnoreCase);
             foreach (var row in rows)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 string key = ExtractAddressFromPath(row.Path) ?? row.Path;
                 if (!newestByAddress.TryGetValue(key, out var existing) || row.Modified > existing.Modified)
                     newestByAddress[key] = row;
@@ -806,6 +813,7 @@ namespace P2FK.IO.Services
 
             foreach (var row in ordered)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 string? address = ExtractAddressFromPath(row.Path);
                 if (address == null) continue;
 
@@ -824,7 +832,7 @@ namespace P2FK.IO.Services
                 if (!File.Exists(objJsonPath)) continue;
 
                 string rawJson;
-                try { rawJson = await File.ReadAllTextAsync(objJsonPath); }
+                try { rawJson = await File.ReadAllTextAsync(objJsonPath, cancellationToken); }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { continue; }
 
                 JsonElement objEl;
@@ -870,8 +878,10 @@ namespace P2FK.IO.Services
         }
 
         public async Task<List<SearchResultProfile>> SearchProfilesAsync(
-            string searchString, int qty, int skip, string? blockchain = null, bool forceRefresh = false)
+            string searchString, int qty, int skip, string? blockchain = null, bool forceRefresh = false,
+            CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             qty = Math.Clamp(qty, 1, 5000);
             skip = Math.Clamp(skip, 0, 4999);
             qty = Math.Min(qty, 5000 - skip);
@@ -913,7 +923,7 @@ namespace P2FK.IO.Services
             List<SearchRow> rows;
             if (isWildcard)
             {
-                rows = await DirectFolderScanAsync("GetProfileByAddress.json");
+                rows = await DirectFolderScanAsync("GetProfileByAddress.json", cancellationToken);
             }
             else
             {
@@ -938,10 +948,10 @@ namespace P2FK.IO.Services
                         ORDER BY System.DateModified DESC
                         """;
 
-                rows = await Task.Run(() => ExecuteSearchQuery(sql));
+                rows = await Task.Run(() => ExecuteSearchQuery(sql), cancellationToken);
 
                 if (rows.Count == 0)
-                    rows = await FallbackScanAsync(hasSearch ? "*" : "GetProfileByAddress.json", sanitized);
+                    rows = await FallbackScanAsync(hasSearch ? "*" : "GetProfileByAddress.json", sanitized, cancellationToken);
             }
 
             // Deduplicate by address (parent folder) so multiple file hits from the same
@@ -949,6 +959,7 @@ namespace P2FK.IO.Services
             var newestByAddress = new Dictionary<string, SearchRow>(StringComparer.OrdinalIgnoreCase);
             foreach (var row in rows)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 string key = ExtractAddressFromPath(row.Path) ?? row.Path;
                 if (!newestByAddress.TryGetValue(key, out var existing) || row.Modified > existing.Modified)
                     newestByAddress[key] = row;
@@ -966,6 +977,7 @@ namespace P2FK.IO.Services
 
             foreach (var row in ordered)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 string? address = ExtractAddressFromPath(row.Path);
                 if (address == null) continue;
 
@@ -984,7 +996,7 @@ namespace P2FK.IO.Services
                 if (!File.Exists(profileJsonPath)) continue;
 
                 string rawJson;
-                try { rawJson = await File.ReadAllTextAsync(profileJsonPath); }
+                try { rawJson = await File.ReadAllTextAsync(profileJsonPath, cancellationToken); }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { continue; }
 
                 JsonElement profileEl;
@@ -1044,7 +1056,7 @@ namespace P2FK.IO.Services
         /// </list>
         /// Results are returned sorted newest-modified first.
         /// </summary>
-        private Task<List<SearchRow>> DirectFolderScanAsync(string jsonFileName)
+        private Task<List<SearchRow>> DirectFolderScanAsync(string jsonFileName, CancellationToken cancellationToken)
         {
             return Task.Run(() =>
             {
@@ -1055,6 +1067,7 @@ namespace P2FK.IO.Services
 
                 foreach (string dir in Directory.EnumerateDirectories(_rootPath))
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     string jsonPath = Path.Combine(dir, jsonFileName);
                     if (!File.Exists(jsonPath)) continue;
 
@@ -1068,7 +1081,7 @@ namespace P2FK.IO.Services
 
                 rows.Sort((a, b) => b.Modified.CompareTo(a.Modified));
                 return rows;
-            });
+            }, cancellationToken);
         }
 
         // ── Fallback filesystem scan (text queries when Windows Search unavailable) ──
@@ -1081,7 +1094,7 @@ namespace P2FK.IO.Services
         /// files are returned without a content check.
         /// Used for text searches when Windows Search has not yet indexed the files.
         /// </summary>
-        private Task<List<SearchRow>> FallbackScanAsync(string fileName, string searchString)
+        private Task<List<SearchRow>> FallbackScanAsync(string fileName, string searchString, CancellationToken cancellationToken)
         {
             return Task.Run(() =>
             {
@@ -1096,6 +1109,7 @@ namespace P2FK.IO.Services
                 foreach (string filePath in Directory.EnumerateFiles(
                     _rootPath, fileName, SearchOption.AllDirectories))
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     // Hard cap: prevent the in-memory list from growing without bound
                     // when the index is cold and the tree is large.
                     if (rows.Count >= 100_000) break;
@@ -1123,7 +1137,7 @@ namespace P2FK.IO.Services
                 }
 
                 return rows;
-            });
+            }, cancellationToken);
         }
 
         // ── Path helpers ───────────────────────────────────────────────────────
