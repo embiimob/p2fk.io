@@ -1360,9 +1360,9 @@ const renderAttachments=(container,attachments,links,blockchain)=>{
     else if(isImg){el.innerHTML=`<img src="${fallbackImage}" alt="Image" style="max-width:100%;max-height:280px;border-radius:5px;">`;imgEls.push({img:el.querySelector('img'),url});}
     else{
       let display=url;try{const u=new URL(url);display=u.hostname+(u.pathname!=='/'?u.pathname:'');}catch{}
-      const isExternal=/^https?:\/\//i.test(url);
-      el.innerHTML=`<div class="file-card"><div class="file-card-icon">${ext==='pdf'?'📄':getFileCardIcon(ext)}</div><div class="file-card-info"><div class="file-card-name" title="${escapeHtml(url)}">${escapeHtml(display)}</div><div class="file-card-meta"><span>${escapeHtml(ext?ext.toUpperCase()+' File':'Link')}</span>${isExternal?'':` · <span class="file-card-size">Fetching…</span>`}</div></div><a class="file-card-download" href="${escapeHtml(url)}" target="_blank" rel="noopener">Open</a></div>`;
-      if(!isExternal) fetchFileSize(url,el.querySelector('.file-card-size'));
+      let isCrossOrigin=false;try{isCrossOrigin=new URL(url).origin!==window.location.origin;}catch{}
+      el.innerHTML=`<div class="file-card"><div class="file-card-icon">${ext==='pdf'?'📄':getFileCardIcon(ext)}</div><div class="file-card-info"><div class="file-card-name" title="${escapeHtml(url)}">${escapeHtml(display)}</div><div class="file-card-meta"><span>${escapeHtml(ext?ext.toUpperCase()+' File':'Link')}</span>${isCrossOrigin?'':` · <span class="file-card-size">Fetching…</span>`}</div></div><a class="file-card-download" href="${escapeHtml(url)}" target="_blank" rel="noopener">Open</a></div>`;
+      if(!isCrossOrigin) fetchFileSize(url,el.querySelector('.file-card-size'));
     }
     container.appendChild(el);
   }
