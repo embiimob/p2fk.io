@@ -411,6 +411,61 @@
     .file-card-meta { font-size: 0.72em; color: #888; margin-top: 2px; }
     .file-card-download { flex-shrink: 0; padding: 5px 10px; background: #6200ea; color: #fff; border-radius: 4px; font-size: 0.78em; text-decoration: none; }
     .file-card-download:hover { background: #bb86fc; color: #121212; }
+    .link-card {
+      display: flex;
+      margin: 8px 0;
+      max-height: 140px;
+      overflow: hidden;
+      border: 1px solid #333;
+      border-radius: 8px;
+      background: #181818;
+      text-decoration: none;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .link-card:hover { border-color: #bb86fc; background: #202020; }
+    .link-card-img {
+      width: 130px;
+      min-width: 130px;
+      object-fit: cover;
+      display: block;
+      background: #111;
+    }
+    .link-card-body {
+      flex: 1;
+      min-width: 0;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+    .link-card-domain {
+      font-size: 0.72em;
+      color: #888;
+      margin-bottom: 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .link-card-title {
+      font-size: 0.85em;
+      font-weight: bold;
+      line-height: 1.3;
+      color: #e0e0e0;
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+    }
+    .link-card-desc {
+      font-size: 0.78em;
+      color: #b0b0b0;
+      margin-top: 4px;
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+    }
 
     /* ── Poll cards ────────────────────────────────────────────────── */
     .poll-card { background: #181818; border: 1px solid #444; border-radius: 8px; padding: 12px 14px; }
@@ -1115,6 +1170,101 @@ const getFileCardIcon=(ext)=>{
 };
 const formatBytes=(n)=>{n=Number(n);if(!isFinite(n)||n<0)return null;if(!n)return '0 B';const mb=n/1048576,kb=n/1024;return mb>=1?`${mb.toFixed(1)} MB`:kb>=1?`${kb.toFixed(1)} KB`:`${n} B`;};
 const fetchFileSize=async(url,el)=>{try{const r=await fetch(url,{method:'HEAD',signal:AbortSignal.timeout(8000)});const l=r.headers.get('content-length');el.textContent=l?(formatBytes(parseInt(l,10))||'Size unknown'):'Size unknown';}catch{el.textContent='Size unavailable';}};
+const _ogCache=new Map();
+const getLinkPreviewDomain=(url)=>{try{return new URL(url).hostname.replace(/^www\./i,'');}catch{return String(url||'');}};
+const getLinkPreviewDisplay=(url)=>{
+  try{
+    const u=new URL(url);
+    const path=(u.pathname&&u.pathname!=='/')?u.pathname:'';
+    return `${u.hostname}${path}${u.search||''}`;
+  }catch{
+    return String(url||'');
+  }
+};
+const ogFetchCandidates=(rawUrl)=>{
+  try{
+    const u=new URL(rawUrl);
+    const abs=u.toString();
+    return [...new Set([
+      abs,
+      `https://cors.isomorphic-git.org/${abs}`,
+      `https://api.allorigins.win/raw?url=${encodeURIComponent(abs)}`,
+      `https://r.jina.ai/${u.protocol}//${u.host}${u.pathname}${u.search}${u.hash}`
+    ])];
+  }catch{
+    return [rawUrl];
+  }
+};
+const resolveOgUrl=(pageUrl,value)=>{
+  const raw=String(value||'').trim();
+  if(!raw) return '';
+  if(raw.startsWith('data:')) return raw;
+  try{return new URL(raw,pageUrl).toString();}catch{return raw;}
+};
+const fetchOgHtml=async(url,signal)=>{
+  let lastErr;
+  for(const target of ogFetchCandidates(url)){
+    try{
+      const res=await fetch(target,{signal,cache:'no-store',headers:{Accept:'text/html,application/xhtml+xml'}});
+      if(!res.ok) throw new Error(`HTTP ${res.status}`);
+      const html=await res.text();
+      if(html) return html;
+    }catch(err){
+      lastErr=err;
+    }
+  }
+  throw lastErr||new Error('Unable to fetch OG HTML');
+};
+const fetchOgData=async(url)=>{
+  if(_ogCache.has(url)) return _ogCache.get(url);
+  const pending={_pending:true};
+  _ogCache.set(url,pending);
+  const ctrl=new AbortController();
+  const timer=setTimeout(()=>ctrl.abort(),6000);
+  try{
+    const html=await fetchOgHtml(url,ctrl.signal);
+    const doc=new DOMParser().parseFromString(html,'text/html');
+    const meta=(selector,attr='content')=>{
+      const el=doc.querySelector(selector);
+      if(!el) return '';
+      return (attr==='textContent'?el.textContent:el.getAttribute(attr)||'').trim();
+    };
+    const data={
+      title:meta('meta[property="og:title"]')||meta('meta[name="twitter:title"]')||meta('title','textContent'),
+      description:meta('meta[property="og:description"]')||meta('meta[name="description"]')||meta('meta[name="twitter:description"]'),
+      image:resolveOgUrl(url,meta('meta[property="og:image"]')||meta('meta[name="twitter:image"]')||meta('meta[name="twitter:image:src"]')),
+      domain:getLinkPreviewDomain(url)
+    };
+    _ogCache.set(url,data);
+    return data;
+  }catch{
+    const fallback={title:'',description:'',image:'',domain:getLinkPreviewDomain(url)};
+    _ogCache.set(url,fallback);
+    return fallback;
+  }finally{
+    clearTimeout(timer);
+  }
+};
+const renderLinkFallback=(slot,url)=>{
+  const display=escapeHtml(getLinkPreviewDisplay(url));
+  slot.innerHTML=`<div class="file-card"><div class="file-card-icon">🔗</div><div class="file-card-info"><div class="file-card-name" title="${escapeHtml(url)}">${display}</div><div class="file-card-meta"><span>Link</span></div></div><a class="file-card-download" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">Open</a></div>`;
+};
+const loadLinkCards=(containerOrSlot)=>{
+  const slots=containerOrSlot?.classList?.contains('link-card-slot')?[containerOrSlot]:[...(containerOrSlot?.querySelectorAll?.('.link-card-slot')||[])];
+  slots.forEach(slot=>{
+    const url=slot?.dataset?.url;
+    if(!url) return;
+    renderLinkFallback(slot,url);
+    fetchOgData(url).then(data=>{
+      if(!slot.isConnected||!data||data._pending||(!data.title&&!data.description&&!data.image)) return;
+      const domain=escapeHtml(data.domain||getLinkPreviewDomain(url));
+      const title=data.title?`<div class="link-card-title">${escapeHtml(data.title)}</div>`:'';
+      const desc=data.description?`<div class="link-card-desc">${escapeHtml(data.description)}</div>`:'';
+      const img=data.image?`<img class="link-card-img" src="${escapeHtml(data.image)}" alt="" loading="lazy" onerror="this.style.display='none'">`:'';
+      slot.innerHTML=`<a class="link-card" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${img}<div class="link-card-body"><div class="link-card-domain">${domain}</div>${title}${desc}</div></a>`;
+    }).catch(()=>{});
+  });
+};
 
 // ── Share link helpers ─────────────────────────────────────────────────
 const buildShareUrl=(type,params)=>{
@@ -1359,14 +1509,13 @@ const renderAttachments=(container,attachments,links,blockchain)=>{
     if(yt){el.innerHTML=`<iframe class="video-embed" src="https://www.youtube.com/embed/${yt[1]}" title="YouTube" allow="accelerometer;autoplay;clipboard-write;encrypted-media;gyroscope;picture-in-picture" allowfullscreen></iframe>`;}
     else if(isImg){el.innerHTML=`<img src="${fallbackImage}" alt="Image" style="max-width:100%;max-height:280px;border-radius:5px;">`;imgEls.push({img:el.querySelector('img'),url});}
     else{
-      let display=url;try{const u=new URL(url);display=u.hostname+(u.pathname!=='/'?u.pathname:'');}catch{}
-      let isCrossOrigin=false;try{isCrossOrigin=new URL(url).origin!==window.location.origin;}catch{}
-      el.innerHTML=`<div class="file-card"><div class="file-card-icon">${ext==='pdf'?'📄':getFileCardIcon(ext)}</div><div class="file-card-info"><div class="file-card-name" title="${escapeHtml(url)}">${escapeHtml(display)}</div><div class="file-card-meta"><span>${escapeHtml(ext?ext.toUpperCase()+' File':'Link')}</span>${isCrossOrigin?'':` · <span class="file-card-size">Fetching…</span>`}</div></div><a class="file-card-download" href="${escapeHtml(url)}" target="_blank" rel="noopener">Open</a></div>`;
-      if(!isCrossOrigin) fetchFileSize(url,el.querySelector('.file-card-size'));
+      el.className='link-card-slot';
+      el.dataset.url=url;
     }
     container.appendChild(el);
   }
   for(const{img,url}of imgEls) loadImageWithTimeout(url).then(r=>{img.src=r;}).catch(()=>{});
+  if(links.length) loadLinkCards(container);
 };
 
 // ── Root normalizer ────────────────────────────────────────────────────
