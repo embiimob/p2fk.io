@@ -1,6 +1,6 @@
 # P2FK.IO
 
-**P2FK.IO** is the official **bitfossil / Sunnsetter** an open-source API — .NET web service that exposes on-chain data etched in the [P2FK](https://github.com/embiimob/Sup/tree/master/P2FK/contracts) metaprotocol format across Bitcoin (mainnet & testnet3), Litecoin, Dogecoin, and Mazacoin through a standard REST/Swagger interface.
+**P2FK.IO** is the official **bitfossil / Sunsetter** an open-source API — .NET web service that exposes on-chain data etched in the [P2FK](https://github.com/embiimob/Sup/tree/master/P2FK/contracts) metaprotocol format across Bitcoin (mainnet & testnet3), Litecoin, Dogecoin, and Mazacoin through a standard REST/Swagger interface.
 
 The live site at **https://p2fk.io** is a public demo running this exact codebase and the latest release of Sup!?.  The old bitfossil.org site now uses p2fk.io as its demo, so this repository is the real thing — fork it, self-host it, and build on it.
 
