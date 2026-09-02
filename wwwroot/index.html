@@ -1123,6 +1123,9 @@ const getPrefixedSearchMainnet=()=>{
   return btcChecked;
 };
 
+const countSearchResultSet=({objectResults=[],profileResults=[],rootResults=[]}={})=>
+  objectResults.length+profileResults.length+rootResults.length;
+
 const fetchProfileByURN=async(urn,mainnet,signal,init=null)=>{
   const key=`urn_${urn}_${!!mainnet}`;
   const bypassCache=!!init;
@@ -1141,6 +1144,24 @@ const fetchProfileByURN=async(urn,mainnet,signal,init=null)=>{
   })();
   if(!bypassCache) profileRequestInflight.set(key,run);
   return run;
+};
+
+const fetchAddressSearchResults=async(address,mainnet,signal,qty,profileOverride=null)=>{
+  if(!address||typeof address!=='string') return{objectResults:[],profileResults:[],rootResults:[]};
+  const chainKey=mainnet?'BTC':'BTC-TESTNET';
+  const wantObjects=document.getElementById('chkObjects').checked;
+  const wantProfiles=document.getElementById('chkProfiles').checked;
+  const wantMessages=document.getElementById('chkMessages').checked;
+  const [objects,profile,roots]=await Promise.all([
+    wantObjects?fetchAPI(`${BASE_URL}/GetObjectsByAddress/${encodeURIComponent(address)}?mainnet=${mainnet}&skip=0&qty=${qty}&verbose=false`,'',signal,30000).catch(()=>null):Promise.resolve(null),
+    wantProfiles?(profileOverride?Promise.resolve(profileOverride):fetchAPI(`${BASE_URL}/GetProfileByAddress/${encodeURIComponent(address)}?mainnet=${mainnet}`,'',signal,30000).catch(()=>null)):Promise.resolve(null),
+    wantMessages?fetchAPI(`${BASE_URL}/GetPublicMessagesByAddress/${encodeURIComponent(address)}?mainnet=${mainnet}&skip=0&qty=${qty}`,'',signal,30000).catch(()=>null):Promise.resolve(null)
+  ]);
+  const objectResults=(Array.isArray(objects)?objects:[]).map(item=>{const o=item.Object||item.object||item;return{Object:o,Blockchain:chainKey};});
+  const resolvedProfile=profile&&typeof profile==='object'&&!Array.isArray(profile)?profile:null;
+  const profileResults=resolvedProfile?[{Profile:resolvedProfile,Blockchain:chainKey,Address:address}]:[];
+  const rootResults=(Array.isArray(roots)?roots:[]).map(item=>{const root=item.Root||item.root||item;return{Root:root,Blockchain:chainKey};});
+  return{objectResults,profileResults,rootResults};
 };
 
 // Extract the owner address from any profile object (handles both array and object Creators shapes)
@@ -2316,7 +2337,7 @@ const performKeywordSearch=async(keyword)=>{
     loadEl.textContent='Loading…';
     const{objectResults,profileResults,rootResults}=await fetchNextPage(signal);
     if(state.currentSearchId!==searchId) return;
-    const keywordResultCount=objectResults.length+profileResults.length+rootResults.length;
+    const keywordResultCount=countSearchResultSet({objectResults,profileResults,rootResults});
     if(keywordResultCount>0){
       await fetchAPI(`${BASE_URL}/GetPublicAddressByKeyword/${encodeURIComponent(keyword)}?mainnet=${isMainnet}`,'',signal,15000,{
         headers:{
@@ -2436,24 +2457,10 @@ const fetchTrendingKeywordPage=async(keyword,signal)=>{
   const mainnet=getPrefixedSearchMainnet();
   if(mainnet===null) return{objectResults:[],profileResults:[],rootResults:[]};
   const addr=await getPublicAddressByKeywordLocal(keyword,mainnet);
-  if(!addr||typeof addr!=='string') return{objectResults:[],profileResults:[],rootResults:[]};
-  const chainKey=mainnet?'BTC':'BTC-TESTNET';
-  const wantObjects=document.getElementById('chkObjects').checked;
-  const wantProfiles=document.getElementById('chkProfiles').checked;
-  const wantMessages=document.getElementById('chkMessages').checked;
-  const [objects,profile,roots]=await Promise.all([
-    wantObjects?fetchAPI(`${BASE_URL}/GetObjectsByAddress/${encodeURIComponent(addr)}?mainnet=${mainnet}&skip=0&qty=${TRENDING_RESULTS_PER_TERM}&verbose=false`,'',signal,30000).catch(()=>null):Promise.resolve(null),
-    wantProfiles?fetchAPI(`${BASE_URL}/GetProfileByAddress/${encodeURIComponent(addr)}?mainnet=${mainnet}`,'',signal,30000).catch(()=>null):Promise.resolve(null),
-    wantMessages?fetchAPI(`${BASE_URL}/GetPublicMessagesByAddress/${encodeURIComponent(addr)}?mainnet=${mainnet}&skip=0&qty=${TRENDING_RESULTS_PER_TERM}`,'',signal,30000).catch(()=>null):Promise.resolve(null)
-  ]);
-  const objectResults=(Array.isArray(objects)?objects:[]).map(item=>{const o=item.Object||item.object||item;return{Object:o,Blockchain:chainKey};});
-  const profileResults=profile&&typeof profile==='object'&&!Array.isArray(profile)?[{Profile:profile,Blockchain:chainKey,Address:addr}]:[];
-  const rootResults=(Array.isArray(roots)?roots:[]).map(item=>{const root=item.Root||item.root||item;return{Root:root,Blockchain:chainKey};});
-  return{objectResults,profileResults,rootResults};
+  return fetchAddressSearchResults(addr,mainnet,signal,TRENDING_RESULTS_PER_TERM);
 };
 
 const fetchTrendingProfilePage=async(urn,signal)=>{
-  if(!document.getElementById('chkProfiles').checked) return{objectResults:[],profileResults:[],rootResults:[]};
   const requestedMainnet=getPrefixedSearchMainnet();
   if(requestedMainnet===null) return{objectResults:[],profileResults:[],rootResults:[]};
   let mainnet=requestedMainnet;
@@ -2464,7 +2471,7 @@ const fetchTrendingProfilePage=async(urn,signal)=>{
   }
   if(!profile) return{objectResults:[],profileResults:[],rootResults:[]};
   const address=_getProfileCreatorAddr(profile)||profile.Address||'';
-  return{objectResults:[],profileResults:[{Profile:profile,Blockchain:mainnet?'BTC':'BTC-TESTNET',Address:address}],rootResults:[]};
+  return fetchAddressSearchResults(address,mainnet,signal,TRENDING_RESULTS_PER_TERM,profile);
 };
 
 const fetchNextTrendingPage=async(signal)=>{
@@ -4110,14 +4117,21 @@ const handleNavSearch=async()=>{
       return;
     }
     let isMainnet=prefixedSearchMainnet;
-    let profile=await fetchProfileByURN(urnTarget,isMainnet,null,{
-      headers:{'X-Track-Trending-Search':'@'+urnTarget}
-    });
+    let profile=await fetchProfileByURN(urnTarget,isMainnet,null);
     if(!profile){
-      profile=await fetchProfileByURN(urnTarget,!isMainnet,null,{
-        headers:{'X-Track-Trending-Search':'@'+urnTarget}
-      });
+      profile=await fetchProfileByURN(urnTarget,!isMainnet,null);
       if(profile) isMainnet=!isMainnet;
+    }
+    const address=_getProfileCreatorAddr(profile)||profile?.Address||'';
+    const profileSearchResults=await fetchAddressSearchResults(address,isMainnet,null,API_FETCH_BATCH_SIZE,profile);
+    const profileResultCount=countSearchResultSet(profileSearchResults);
+    if(profileResultCount>0){
+      await fetchProfileByURN(urnTarget,isMainnet,null,{
+        headers:{
+          'X-Track-Trending-Search':'@'+urnTarget,
+          'X-Trending-Result-Count':String(profileResultCount)
+        }
+      }).catch(()=>null);
     }
     navigateTo('profile',{profile:urnTarget,mainnet:isMainnet});
     return;

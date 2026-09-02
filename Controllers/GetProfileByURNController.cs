@@ -50,7 +50,12 @@ namespace P2FK.IO.Controllers
                         {
                             using var document = JsonDocument.Parse(result);
                             if (document.RootElement.ValueKind == JsonValueKind.Object)
-                                _trendService.RecordSuccessfulSearch(trackedSearch, 1);
+                            {
+                                int resultCount = 1;
+                                if (Request.Headers.TryGetValue("X-Trending-Result-Count", out var resultCountValues))
+                                    int.TryParse(resultCountValues.ToString(), out resultCount);
+                                _trendService.RecordSuccessfulSearch(trackedSearch, Math.Max(1, resultCount));
+                            }
                         }
                         catch (JsonException)
                         {
