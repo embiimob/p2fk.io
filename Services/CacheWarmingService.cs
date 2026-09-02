@@ -145,6 +145,8 @@ namespace P2FK.IO.Services
                 foreach (var trend in trending)
                 {
                     if (ct.IsCancellationRequested) return;
+                    if (trend.SearchString.StartsWith('#') || trend.SearchString.StartsWith('@'))
+                        continue;
                     await _searchService.SearchRootsAsync(
                         trend.SearchString, WarmQty, 0, blockchain: null, showSystemFiles: false, forceRefresh: true);
                 }

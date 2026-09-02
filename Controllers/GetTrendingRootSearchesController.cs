@@ -15,9 +15,10 @@ namespace P2FK.IO.Controllers
             _trendService = trendService;
         }
 
-        /// <summary>Returns the top successful free-text root searches from the last 24 hours.</summary>
+        /// <summary>Returns the top successful searches from the last 24 hours.</summary>
         /// <remarks>
-        /// Only successful non-empty, non-wildcard root searches are tracked.
+        /// Tracks successful free-text root searches plus explicit <c>#keyword</c> and
+        /// <c>@profile</c> searches.
         /// Entries expire after 24 hours without another successful search.
         /// Ranking blends recency, repeat successful use, and result volume while
         /// damping spammy repeat searches with logarithmic weighting.
