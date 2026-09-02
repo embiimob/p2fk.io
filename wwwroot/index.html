@@ -1079,29 +1079,17 @@ const loadImageWithTimeout=async(url,timeout=180000)=>{
 };
 
 // ── API fetch helper ───────────────────────────────────────────────────
-const fetchAPI=async(url,errMsg,signal,timeout=15000)=>{
+const fetchAPI=async(url,errMsg,signal,timeout=15000,init=null)=>{
   const ctrl=new AbortController();
   const tid=setTimeout(()=>ctrl.abort(),timeout);
   // Forward external signal into our own controller so both the timeout
   // AND an upstream cancel will abort the fetch.
   if(signal&&!signal.aborted) signal.addEventListener('abort',()=>ctrl.abort(),{once:true});
   try{
-    const res=await fetch(url,{signal:ctrl.signal});
+    const res=await fetch(url,{...(init||{}),signal:ctrl.signal});
     clearTimeout(tid);
     if(!res.ok) throw new Error(errMsg||`HTTP ${res.status}`);
     return res.json();
-  }catch(e){clearTimeout(tid);if(e.name==='AbortError') return null;throw e;}
-};
-
-const postJSON=async(url,body,signal,timeout=15000)=>{
-  const ctrl=new AbortController();
-  const tid=setTimeout(()=>ctrl.abort(),timeout);
-  if(signal&&!signal.aborted) signal.addEventListener('abort',()=>ctrl.abort(),{once:true});
-  try{
-    const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:ctrl.signal});
-    clearTimeout(tid);
-    if(!res.ok) throw new Error(`HTTP ${res.status}`);
-    return res.headers.get('content-type')?.includes('application/json')?res.json():null;
   }catch(e){clearTimeout(tid);if(e.name==='AbortError') return null;throw e;}
 };
 
@@ -1135,27 +1123,23 @@ const getPrefixedSearchMainnet=()=>{
   return btcChecked;
 };
 
-const trackTrendingSearch=async(searchString,resultCount,signal)=>{
-  if(!searchString||resultCount<=0) return;
-  try{
-    await postJSON(`${BASE_URL}/GetTrendingRootSearches/record`,{searchString,resultCount},signal,5000);
-  }catch{}
-};
-
-const fetchProfileByURN=async(urn,mainnet,signal)=>{
+const fetchProfileByURN=async(urn,mainnet,signal,init=null)=>{
   const key=`urn_${urn}_${!!mainnet}`;
+  const bypassCache=!!init;
+  if(!bypassCache){
   const cached=getCachedProfile(key);
   if(cached) return cached;
   if(profileRequestInflight.has(key)) return profileRequestInflight.get(key);
+  }
   const run=(async()=>{
     try{
-      const p=await fetchAPI(`${BASE_URL}/GetProfileByURN/${encodeURIComponent(urn)}?mainnet=${mainnet}`,'',signal);
+      const p=await fetchAPI(`${BASE_URL}/GetProfileByURN/${encodeURIComponent(urn)}?mainnet=${mainnet}`,'',signal,15000,init);
       if(p) cacheProfile(key,p);
       return p;
     }catch{return null;}
     finally{profileRequestInflight.delete(key);}
   })();
-  profileRequestInflight.set(key,run);
+  if(!bypassCache) profileRequestInflight.set(key,run);
   return run;
 };
 
@@ -2320,7 +2304,7 @@ const performKeywordSearch=async(keyword)=>{
   scrollObserver.unobserve(document.getElementById('loadSentinel'));
   let addedInRound=0;
   try{
-    const addr=await getPublicAddressByKeywordLocal(keyword,isMainnet);
+    const addr=await fetchAPI(`${BASE_URL}/GetPublicAddressByKeyword/${encodeURIComponent(keyword)}?mainnet=${isMainnet}`,'',signal);
     if(!addr||typeof addr!=='string') throw new Error(`No address found for keyword: ${keyword}`);
     const chainKey=isMainnet?'BTC':'TBTC';
     const pagination={};
@@ -2332,7 +2316,15 @@ const performKeywordSearch=async(keyword)=>{
     loadEl.textContent='Loading…';
     const{objectResults,profileResults,rootResults}=await fetchNextPage(signal);
     if(state.currentSearchId!==searchId) return;
-    await trackTrendingSearch('#'+keyword,objectResults.length+profileResults.length+rootResults.length,signal);
+    const keywordResultCount=objectResults.length+profileResults.length+rootResults.length;
+    if(keywordResultCount>0){
+      await fetchAPI(`${BASE_URL}/GetPublicAddressByKeyword/${encodeURIComponent(keyword)}?mainnet=${isMainnet}`,'',signal,15000,{
+        headers:{
+          'X-Track-Trending-Search':'#'+keyword,
+          'X-Trending-Result-Count':String(keywordResultCount)
+        }
+      }).catch(()=>null);
+    }
     loadEl.style.display='none';
     const added=await appendResultItems(objectResults,profileResults,rootResults,searchId,signal);
     if(state.currentSearchId!==searchId) return;
@@ -4118,12 +4110,15 @@ const handleNavSearch=async()=>{
       return;
     }
     let isMainnet=prefixedSearchMainnet;
-    let profile=await fetchProfileByURN(urnTarget,isMainnet,null);
+    let profile=await fetchProfileByURN(urnTarget,isMainnet,null,{
+      headers:{'X-Track-Trending-Search':'@'+urnTarget}
+    });
     if(!profile){
-      profile=await fetchProfileByURN(urnTarget,!isMainnet,null);
+      profile=await fetchProfileByURN(urnTarget,!isMainnet,null,{
+        headers:{'X-Track-Trending-Search':'@'+urnTarget}
+      });
       if(profile) isMainnet=!isMainnet;
     }
-    if(profile) await trackTrendingSearch('@'+urnTarget,1,null);
     navigateTo('profile',{profile:urnTarget,mainnet:isMainnet});
     return;
   }

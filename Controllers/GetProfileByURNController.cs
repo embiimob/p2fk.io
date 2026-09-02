@@ -1,4 +1,6 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using P2FK.IO.Services;
+using System.Text.Json;
 
 // For more information on enabling Web API for empty projects, visit https://go.microsoft.com/fwlink/?LinkID=397860
 
@@ -9,10 +11,12 @@ namespace P2FK.IO.Controllers
     public class GetProfileByURNController : ControllerBase
     {
         private readonly Wrapper _wrapper;
+        private readonly RootSearchTrendService _trendService;
 
-        public GetProfileByURNController(Wrapper wrapper)
+        public GetProfileByURNController(Wrapper wrapper, RootSearchTrendService trendService)
         {
             _wrapper = wrapper;
+            _trendService = trendService;
         }
 
         // GET <GetProfileByURNController>/5
@@ -35,6 +39,23 @@ namespace P2FK.IO.Controllers
                 }
                 else { arguments = "--versionbyte " + _wrapper.TestVersionByte + " --getprofilebyurn --password " + _wrapper.TestRPCPassword + " --url " + _wrapper.TestRPCURL + " --username " + _wrapper.TestRPCUser + " --urn \"" + urn.Replace("%2F", "/") + "\"";
                 result = await _wrapper.RunCommandAsync(_wrapper.TestCLIPath, arguments, HttpContext.RequestAborted);
+                }
+
+                if (Request.Headers.TryGetValue("X-Track-Trending-Search", out var trackedSearchValues))
+                {
+                    string trackedSearch = trackedSearchValues.ToString().Trim();
+                    if (trackedSearch == "@" + urn)
+                    {
+                        try
+                        {
+                            using var document = JsonDocument.Parse(result);
+                            if (document.RootElement.ValueKind == JsonValueKind.Object)
+                                _trendService.RecordSuccessfulSearch(trackedSearch, 1);
+                        }
+                        catch (JsonException)
+                        {
+                        }
+                    }
                 }
 
                 return Content(result, "application/json");
