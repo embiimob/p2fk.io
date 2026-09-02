@@ -1093,6 +1093,18 @@ const fetchAPI=async(url,errMsg,signal,timeout=15000)=>{
   }catch(e){clearTimeout(tid);if(e.name==='AbortError') return null;throw e;}
 };
 
+const postJSON=async(url,body,signal,timeout=15000)=>{
+  const ctrl=new AbortController();
+  const tid=setTimeout(()=>ctrl.abort(),timeout);
+  if(signal&&!signal.aborted) signal.addEventListener('abort',()=>ctrl.abort(),{once:true});
+  try{
+    const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:ctrl.signal});
+    clearTimeout(tid);
+    if(!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.headers.get('content-type')?.includes('application/json')?res.json():null;
+  }catch(e){clearTimeout(tid);if(e.name==='AbortError') return null;throw e;}
+};
+
 const calculateProfileMsgBackoff=(retryCount)=>Math.min(
   PROFILE_MSG_RETRY_MAX_MS,
   PROFILE_MSG_RETRY_BASE_MS*(2**(Math.max(0,retryCount-1)))
@@ -1114,6 +1126,20 @@ const fetchProfileByAddress=async(address,mainnet,signal)=>{
   })();
   profileRequestInflight.set(key,run);
   return run;
+};
+
+const getPrefixedSearchMainnet=()=>{
+  const btcChecked=document.getElementById('chkBitcoin').checked;
+  const tbtcChecked=document.getElementById('chkTestnet3').checked;
+  if(btcChecked&&tbtcChecked) return null;
+  return btcChecked;
+};
+
+const trackTrendingSearch=async(searchString,resultCount,signal)=>{
+  if(!searchString||resultCount<=0) return;
+  try{
+    await postJSON(`${BASE_URL}/GetTrendingRootSearches/record`,{searchString,resultCount},signal,5000);
+  }catch{}
 };
 
 const fetchProfileByURN=async(urn,mainnet,signal)=>{
@@ -2224,7 +2250,8 @@ const loadMoreBatch=async()=>{
     let objectResults=[],profileResults=[],rootResults=[];
     if(state.buffer.length===0){
       if(state.isTrendingMode){
-        rootResults=await fetchNextTrendingPage(signal);
+        const fetched=await fetchNextTrendingPage(signal);
+        objectResults=fetched.objectResults;profileResults=fetched.profileResults;rootResults=fetched.rootResults;
         if(state.currentSearchId!==searchId) return;
       }else{
         const fetched=await fetchNextPage(signal);
@@ -2264,13 +2291,12 @@ const loadMoreBatch=async()=>{
 // ── Keyword object search ─────────────────────────────────────────────
 const performKeywordSearch=async(keyword)=>{
   // #keyword is only for BTC mainnet or TBTC; validate single-network selection
-  const btcChecked=document.getElementById('chkBitcoin').checked;
-  const tbtcChecked=document.getElementById('chkTestnet3').checked;
-  if(btcChecked&&tbtcChecked){
+  const prefixedSearchMainnet=getPrefixedSearchMainnet();
+  if(prefixedSearchMainnet===null){
     showSearchError('#keyword search requires selecting only BTC or TBTC, not both.');
     return;
   }
-  const isMainnet=btcChecked;
+  const isMainnet=prefixedSearchMainnet;
   const wantObjects=document.getElementById('chkObjects').checked;
   const wantProfiles=document.getElementById('chkProfiles').checked;
   const wantMessages=document.getElementById('chkMessages').checked;
@@ -2306,6 +2332,7 @@ const performKeywordSearch=async(keyword)=>{
     loadEl.textContent='Loading…';
     const{objectResults,profileResults,rootResults}=await fetchNextPage(signal);
     if(state.currentSearchId!==searchId) return;
+    await trackTrendingSearch('#'+keyword,objectResults.length+profileResults.length+rootResults.length,signal);
     loadEl.style.display='none';
     const added=await appendResultItems(objectResults,profileResults,rootResults,searchId,signal);
     if(state.currentSearchId!==searchId) return;
@@ -2413,12 +2440,49 @@ const performSearch=async(searchText)=>{
 };
 
 // ── Trending page fetch (deduplicates by TxID, called by loadMoreBatch) ─
+const fetchTrendingKeywordPage=async(keyword,signal)=>{
+  const mainnet=getPrefixedSearchMainnet();
+  if(mainnet===null) return{objectResults:[],profileResults:[],rootResults:[]};
+  const addr=await getPublicAddressByKeywordLocal(keyword,mainnet);
+  if(!addr||typeof addr!=='string') return{objectResults:[],profileResults:[],rootResults:[]};
+  const chainKey=mainnet?'BTC':'BTC-TESTNET';
+  const wantObjects=document.getElementById('chkObjects').checked;
+  const wantProfiles=document.getElementById('chkProfiles').checked;
+  const wantMessages=document.getElementById('chkMessages').checked;
+  const [objects,profile,roots]=await Promise.all([
+    wantObjects?fetchAPI(`${BASE_URL}/GetObjectsByAddress/${encodeURIComponent(addr)}?mainnet=${mainnet}&skip=0&qty=${TRENDING_RESULTS_PER_TERM}&verbose=false`,'',signal,30000).catch(()=>null):Promise.resolve(null),
+    wantProfiles?fetchAPI(`${BASE_URL}/GetProfileByAddress/${encodeURIComponent(addr)}?mainnet=${mainnet}`,'',signal,30000).catch(()=>null):Promise.resolve(null),
+    wantMessages?fetchAPI(`${BASE_URL}/GetPublicMessagesByAddress/${encodeURIComponent(addr)}?mainnet=${mainnet}&skip=0&qty=${TRENDING_RESULTS_PER_TERM}`,'',signal,30000).catch(()=>null):Promise.resolve(null)
+  ]);
+  const objectResults=(Array.isArray(objects)?objects:[]).map(item=>{const o=item.Object||item.object||item;return{Object:o,Blockchain:chainKey};});
+  const profileResults=profile&&typeof profile==='object'&&!Array.isArray(profile)?[{Profile:profile,Blockchain:chainKey,Address:addr}]:[];
+  const rootResults=(Array.isArray(roots)?roots:[]).map(item=>{const root=item.Root||item.root||item;return{Root:root,Blockchain:chainKey};});
+  return{objectResults,profileResults,rootResults};
+};
+
+const fetchTrendingProfilePage=async(urn,signal)=>{
+  if(!document.getElementById('chkProfiles').checked) return{objectResults:[],profileResults:[],rootResults:[]};
+  const requestedMainnet=getPrefixedSearchMainnet();
+  if(requestedMainnet===null) return{objectResults:[],profileResults:[],rootResults:[]};
+  let mainnet=requestedMainnet;
+  let profile=await fetchProfileByURN(urn,mainnet,signal);
+  if(!profile){
+    profile=await fetchProfileByURN(urn,!mainnet,signal);
+    if(profile) mainnet=!mainnet;
+  }
+  if(!profile) return{objectResults:[],profileResults:[],rootResults:[]};
+  const address=_getProfileCreatorAddr(profile)||profile.Address||'';
+  return{objectResults:[],profileResults:[{Profile:profile,Blockchain:mainnet?'BTC':'BTC-TESTNET',Address:address}],rootResults:[]};
+};
+
 const fetchNextTrendingPage=async(signal)=>{
-  if(state.trendingTermIndex>=state.trendingTerms.length) return [];
+  if(state.trendingTermIndex>=state.trendingTerms.length) return{objectResults:[],profileResults:[],rootResults:[]};
   const term=state.trendingTerms[state.trendingTermIndex++];
+  if(term.startsWith('#')) return fetchTrendingKeywordPage(term.slice(1).trim(),signal);
+  if(term.startsWith('@')) return fetchTrendingProfilePage(term.slice(1).trim(),signal);
   const seenTxIds=state.trendingSeenTxIds;
   const showSystem=String(document.getElementById('chkSystem')?.checked??false);
-  const results=[];
+  const rootResults=[];
   for(const chain of state.trendingActiveChains){
     const qs=new URLSearchParams({searchString:term,qty:String(TRENDING_RESULTS_PER_TERM),skip:'0',showSystemFiles:showSystem});
     const chainQs=new URLSearchParams(chain.params);
@@ -2430,10 +2494,10 @@ const fetchNextTrendingPage=async(signal)=>{
       const txId=getRootTxId(root);
       if(!txId||seenTxIds.has(txId)) continue;
       seenTxIds.add(txId);
-      results.push(r);
+      rootResults.push(r);
     }
   }
-  return results;
+  return{objectResults:[],profileResults:[],rootResults};
 };
 
 // ── Trending search (top searches → combined top results) ───────────────
@@ -2483,21 +2547,23 @@ const performTrendingSearch=async()=>{
     document.getElementById('searchLoading').textContent='Loading trending results…';
 
     // Pre-fetch enough deduplicated results to fill the initial display page
-    const initialResults=[];
-    while(state.trendingTermIndex<state.trendingTerms.length&&initialResults.length<DISPLAY_BATCH_SIZE){
+    let objectResults=[],profileResults=[],rootResults=[];
+    while(state.trendingTermIndex<state.trendingTerms.length&&(objectResults.length+profileResults.length+rootResults.length)<DISPLAY_BATCH_SIZE){
       if(state.currentSearchId!==searchId) return;
       const termResults=await fetchNextTrendingPage(signal);
       if(state.currentSearchId!==searchId) return;
-      initialResults.push(...termResults);
+      objectResults.push(...termResults.objectResults);
+      profileResults.push(...termResults.profileResults);
+      rootResults.push(...termResults.rootResults);
     }
 
-    if(!initialResults.length){
+    if(!objectResults.length&&!profileResults.length&&!rootResults.length){
       document.getElementById('feed').innerHTML=TRENDING_EMPTY_HTML;
       return;
     }
 
     document.getElementById('searchLoading').style.display='none';
-    const added=await appendResultItems([],[],initialResults,searchId,signal);
+    const added=await appendResultItems(objectResults,profileResults,rootResults,searchId,signal);
     if(state.currentSearchId!==searchId) return;
     addedInRound=added;
     state.totalDisplayed+=added;
@@ -4045,14 +4111,19 @@ const handleNavSearch=async()=>{
   if(raw.startsWith('@')){
     const urnTarget=raw.slice(1).trim();
     if(!urnTarget) return;
-    const btcChk=document.getElementById('chkBitcoin').checked;
-    const tbtcChk=document.getElementById('chkTestnet3').checked;
-    if(btcChk&&tbtcChk){
+    const prefixedSearchMainnet=getPrefixedSearchMainnet();
+    if(prefixedSearchMainnet===null){
       showSearchError('@profile search requires selecting only BTC or TBTC, not both.');
       setView('search');
       return;
     }
-    const isMainnet=btcChk&&!tbtcChk;
+    let isMainnet=prefixedSearchMainnet;
+    let profile=await fetchProfileByURN(urnTarget,isMainnet,null);
+    if(!profile){
+      profile=await fetchProfileByURN(urnTarget,!isMainnet,null);
+      if(profile) isMainnet=!isMainnet;
+    }
+    if(profile) await trackTrendingSearch('@'+urnTarget,1,null);
     navigateTo('profile',{profile:urnTarget,mainnet:isMainnet});
     return;
   }

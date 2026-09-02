@@ -4,8 +4,8 @@ using System.Text.RegularExpressions;
 namespace P2FK.IO.Services
 {
     /// <summary>
-    /// Tracks successful free-text root searches for a rolling 24-hour window and
-    /// exposes a spam-resistant trending list for the API.
+    /// Tracks successful root, <c>#keyword</c>, and <c>@profile</c> searches for a
+    /// rolling 24-hour window and exposes a spam-resistant trending list for the API.
     /// </summary>
     public class RootSearchTrendService
     {
