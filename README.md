@@ -22,6 +22,7 @@ The live site at **https://p2fk.io** is a public demo running this exact codebas
 - **Root content hosting** that serves indexed files from `/root/{txid}/{filename}` through the API host.
 - **Temporary IPFS ingress relay** backed by a dedicated Kubo node for upload, queue/status visibility, timed pin retention, and cleanup.
 - **Automatic IPFS artifact preservation from live roots** that scans newly discovered root messages for `IPFS:` URNs and pins the referenced CIDs indefinitely.
+- **IPFS cache transfer folders** that can import or remove CID-named folders from the configured Kubo repo path.
 - **Operational endpoints** including Swagger docs (`/API`) and ingress health probe (`/health/ipfs`).
 
 ---
@@ -224,6 +225,39 @@ Set the `IpfsIngress` section in `appsettings.json` (or environment-specific ove
 
 Set `KuboExecutablePath` to an absolute or repository-relative binary path if you want to override the bundled binary.
 
+### IPFS cache transfer folders
+
+P2FK.IO now also manages two helper folders inside the configured `IpfsIngress:RepoPath`:
+
+- `import`
+- `remove`
+
+If either folder does not exist, the service creates it automatically.
+
+#### Import behavior
+
+Inside `import`, create subfolders whose folder name is the target CID.
+
+For each CID folder, P2FK.IO will:
+
+- Try to fetch that CID from Kubo and pin it.
+- If the fetch fails, find the largest file anywhere inside that CID folder.
+- Import that file directly into Kubo and pin the returned CID.
+- Delete the CID folder and all of its contents after a successful import.
+
+This is intended to help migrate a pre-existing SUP IPFS cache into the current Kubo repo.
+
+#### Remove behavior
+
+Inside `remove`, create subfolders whose folder name is the CID to remove.
+
+For each CID folder, P2FK.IO will:
+
+- Check whether the CID is pinned.
+- Unpin it when present.
+- Delete the CID folder and all of its contents after successful processing.
+- Run Kubo garbage collection after successful removals.
+
 ### Bundled Kubo source
 
 - Upstream project: `https://github.com/ipfs/kubo`
@@ -279,6 +313,8 @@ curl https://p2fk.io/health/ipfs
 - The ingress repo is capped at **500 GB** of active cached content.
 - Public ingress uploads remain temporary and expire after `IpfsIngress:PinLifetimeMinutes` (60 minutes by default).
 - Live-monitor-discovered IPFS CIDs are fetched and pinned separately from public ingress uploads and remain pinned until you remove them manually.
+- CID folders placed in `IpfsIngress:RepoPath\\import` are imported into the active Kubo repo by a background worker.
+- CID folders placed in `IpfsIngress:RepoPath\\remove` are treated as removal requests and cleaned up after processing.
 - Uploads stay pinned for **1 hour** and are cleaned by `IngressExpirationWorker` every **5 minutes**.
 - Queue and status endpoints expose active CID visibility without turning the API into a permanent recursive gateway.
 
