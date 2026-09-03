@@ -47,6 +47,20 @@ namespace P2FK.IO.Services
             return result;
         }
 
+        public async Task FetchAsync(string cid, CancellationToken cancellationToken = default)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, BuildApiUri($"/api/v0/cat?arg={Uri.EscapeDataString(cid)}"));
+            using var response = await CreateClient().SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                string payload = await response.Content.ReadAsStringAsync(cancellationToken);
+                throw new InvalidOperationException($"Kubo fetch failed for CID {cid}: {payload}");
+            }
+
+            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            await stream.CopyToAsync(Stream.Null, cancellationToken);
+        }
+
         public Task PinAsync(string cid, CancellationToken cancellationToken = default) => PostNoContentAsync($"/api/v0/pin/add?arg={Uri.EscapeDataString(cid)}", cancellationToken);
 
         public Task UnpinAsync(string cid, CancellationToken cancellationToken = default) => PostNoContentAsync($"/api/v0/pin/rm?arg={Uri.EscapeDataString(cid)}", cancellationToken);

@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Runtime.Versioning;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace P2FK.IO.Services
 {
@@ -12,21 +13,28 @@ namespace P2FK.IO.Services
         private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(5);
         private const int MaxTransactionsPerCycle = 8;
         private const int MaxRetryAttempts = 3;
+        private static readonly Regex IpfsUrnRegex = new(
+            @"IPFS:\s*<?<?(?<cid>[A-Za-z0-9]+)(?:[\\/][^<>\s]*)?",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
         private readonly Wrapper _wrapper;
         private readonly WindowsSearchService _searchService;
+        private readonly IKuboIngressService _kuboIngressService;
         private readonly HttpClient _httpClient;
         private readonly ILogger<LiveMempoolMonitorService> _logger;
         private readonly Dictionary<string, MonitorState> _networkStates = new(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> _pinnedLiveIpfsCids = new(StringComparer.OrdinalIgnoreCase);
 
         public LiveMempoolMonitorService(
             Wrapper wrapper,
             WindowsSearchService searchService,
+            IKuboIngressService kuboIngressService,
             IHttpClientFactory httpClientFactory,
             ILogger<LiveMempoolMonitorService> logger)
         {
             _wrapper = wrapper;
             _searchService = searchService;
+            _kuboIngressService = kuboIngressService;
             _httpClient = httpClientFactory.CreateClient();
             _logger = logger;
         }
@@ -158,7 +166,77 @@ namespace P2FK.IO.Services
                     : ProcessTransactionResult.Ignore;
 
             _searchService.QueueRootCacheRefresh(txId, result, network.Mainnet, network.Blockchain);
+            if (!await TryPinMessageIpfsCidsAsync(result, cancellationToken))
+                return ProcessTransactionResult.Retry;
+
             return ProcessTransactionResult.Success;
+        }
+
+        private async Task<bool> TryPinMessageIpfsCidsAsync(string rawJson, CancellationToken cancellationToken)
+        {
+            try
+            {
+                foreach (string cid in ExtractIpfsCids(rawJson))
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    if (_pinnedLiveIpfsCids.Contains(cid))
+                        continue;
+
+                    await _kuboIngressService.FetchAsync(cid, cancellationToken);
+                    await _kuboIngressService.PinAsync(cid, cancellationToken);
+                    _pinnedLiveIpfsCids.Add(cid);
+                    _logger.LogInformation("Pinned live-monitor IPFS CID {Cid}", cid);
+                }
+
+                return true;
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or TaskCanceledException)
+            {
+                _logger.LogWarning(ex, "Failed to fetch/pin live-monitor IPFS content");
+                return false;
+            }
+        }
+
+        private static IEnumerable<string> ExtractIpfsCids(string rawJson)
+        {
+            using var document = JsonDocument.Parse(rawJson);
+            if (!document.RootElement.TryGetProperty("Message", out var messageEl))
+                yield break;
+
+            foreach (string message in EnumerateMessageStrings(messageEl))
+            {
+                foreach (Match match in IpfsUrnRegex.Matches(message))
+                {
+                    string cid = match.Groups["cid"].Value.Trim('<', '>', ' ', '\t', '\r', '\n');
+                    if (!string.IsNullOrWhiteSpace(cid))
+                        yield return cid;
+                }
+            }
+        }
+
+        private static IEnumerable<string> EnumerateMessageStrings(JsonElement messageEl)
+        {
+            if (messageEl.ValueKind == JsonValueKind.String)
+            {
+                string? message = messageEl.GetString();
+                if (!string.IsNullOrWhiteSpace(message))
+                    yield return message;
+                yield break;
+            }
+
+            if (messageEl.ValueKind != JsonValueKind.Array)
+                yield break;
+
+            foreach (JsonElement item in messageEl.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.String)
+                    continue;
+
+                string? message = item.GetString();
+                if (!string.IsNullOrWhiteSpace(message))
+                    yield return message;
+            }
         }
 
         private static bool LooksLikeRootJson(string rawJson)
