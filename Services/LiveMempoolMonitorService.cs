@@ -63,8 +63,6 @@ namespace P2FK.IO.Services
             {
                 state = new MonitorState(currentMempool);
                 _networkStates[network.Key] = state;
-                foreach (string txId in currentMempool.Distinct(StringComparer.OrdinalIgnoreCase))
-                    state.Enqueue(txId);
             }
 
             foreach (string txId in currentMempool.Where(txId => !state.KnownSnapshot.Contains(txId)).Distinct(StringComparer.OrdinalIgnoreCase))

@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using static System.Net.WebRequestMethods;
@@ -289,10 +290,40 @@ namespace P2FK.IO
 
         private static IReadOnlyList<string> SplitArguments(string arguments)
         {
-            var values = new List<string>();
             if (string.IsNullOrWhiteSpace(arguments))
-                return values;
+                return Array.Empty<string>();
 
+            if (OperatingSystem.IsWindows())
+            {
+                nint argv = CommandLineToArgvW(arguments, out int argc);
+                if (argv != 0)
+                {
+                    try
+                    {
+                        var values = new List<string>(argc);
+                        for (int i = 0; i < argc; i++)
+                        {
+                            nint argPtr = Marshal.ReadIntPtr(argv, i * IntPtr.Size);
+                            string? value = Marshal.PtrToStringUni(argPtr);
+                            if (!string.IsNullOrEmpty(value))
+                                values.Add(value);
+                        }
+
+                        return values;
+                    }
+                    finally
+                    {
+                        _ = LocalFree(argv);
+                    }
+                }
+            }
+
+            return SplitArgumentsFallback(arguments);
+        }
+
+        private static IReadOnlyList<string> SplitArgumentsFallback(string arguments)
+        {
+            var values = new List<string>();
             var current = new StringBuilder();
             bool inQuotes = false;
 
@@ -303,19 +334,18 @@ namespace P2FK.IO
                     inQuotes = !inQuotes;
                     continue;
                 }
-
-                if (char.IsWhiteSpace(ch) && !inQuotes)
+                else if (char.IsWhiteSpace(ch) && !inQuotes)
                 {
                     if (current.Length > 0)
                     {
                         values.Add(current.ToString());
                         current.Clear();
                     }
-
-                    continue;
                 }
-
-                current.Append(ch);
+                else
+                {
+                    current.Append(ch);
+                }
             }
 
             if (current.Length > 0)
@@ -323,5 +353,11 @@ namespace P2FK.IO
 
             return values;
         }
+
+        [DllImport("shell32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        private static extern nint CommandLineToArgvW(string lpCmdLine, out int pNumArgs);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern nint LocalFree(nint hMem);
     }
 }
