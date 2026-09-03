@@ -48,7 +48,6 @@ namespace P2FK.IO
 
         public const int MaxTimeoutSeconds = 420;
         private const int ForegroundAcquireRetryMilliseconds = 50;
-        private const int BackgroundAcquireRetryMilliseconds = 500;
         private static readonly TimeSpan BackgroundAcquireTimeout = TimeSpan.FromSeconds(10);
 
         // Global concurrency cap: at most 8 CLI processes running simultaneously.
@@ -194,21 +193,11 @@ namespace P2FK.IO
                 {
                     await _backgroundMonitorSemaphore.WaitAsync(linkedCts.Token);
                     backgroundPermitAcquired = true;
-                    DateTime backgroundAcquireDeadlineUtc = DateTime.UtcNow.Add(BackgroundAcquireTimeout);
 
-                    while (!linkedCts.Token.IsCancellationRequested)
-                    {
-                        if (await _sharedSemaphore.WaitAsync(TimeSpan.Zero, linkedCts.Token))
-                        {
-                            acquiredShared = true;
-                            break;
-                        }
+                    if (!await _sharedSemaphore.WaitAsync(BackgroundAcquireTimeout, linkedCts.Token))
+                        return "[\"error: request deferred\"]";
 
-                        if (DateTime.UtcNow >= backgroundAcquireDeadlineUtc)
-                            return "[\"error: request deferred\"]";
-
-                        await Task.Delay(BackgroundAcquireRetryMilliseconds, linkedCts.Token);
-                    }
+                    acquiredShared = true;
                 }
                 else
                 {

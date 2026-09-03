@@ -14,7 +14,7 @@ namespace P2FK.IO.Services
         private const int MaxTransactionsPerCycle = 8;
         private const int MaxRetryAttempts = 3;
         private static readonly Regex IpfsUrnRegex = new(
-            @"IPFS:\s*<?<?(?<cid>[A-Za-z0-9]+)(?:[\\/][^<>\s]*)?",
+            @"IPFS:\s*(?<cid>[A-Za-z0-9]+)(?:[\\/][^<>\s]*)?",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
         private readonly Wrapper _wrapper;
@@ -209,10 +209,19 @@ namespace P2FK.IO.Services
                 foreach (Match match in IpfsUrnRegex.Matches(message))
                 {
                     string cid = match.Groups["cid"].Value.Trim('<', '>', ' ', '\t', '\r', '\n');
-                    if (!string.IsNullOrWhiteSpace(cid))
+                    if (IsValidIpfsCid(cid))
                         yield return cid;
                 }
             }
+        }
+
+        private static bool IsValidIpfsCid(string cid)
+        {
+            if (string.IsNullOrWhiteSpace(cid))
+                return false;
+
+            return Regex.IsMatch(cid, @"^Qm[1-9A-HJ-NP-Za-km-z]{44}$", RegexOptions.CultureInvariant) ||
+                   Regex.IsMatch(cid, @"^[bB][a-z2-7]{20,}$", RegexOptions.CultureInvariant);
         }
 
         private static IEnumerable<string> EnumerateMessageStrings(JsonElement messageEl)
