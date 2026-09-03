@@ -97,7 +97,7 @@ namespace P2FK.IO.Services
 
         private async Task ProcessRemovalsAsync(string removePath, CancellationToken cancellationToken)
         {
-            bool removedAny = false;
+            var foldersAwaitingGc = new List<string>();
 
             foreach (string cidFolderPath in Directory.EnumerateDirectories(removePath))
             {
@@ -118,9 +118,7 @@ namespace P2FK.IO.Services
                     }
 
                     await _kuboIngressService.UnpinAsync(cid, cancellationToken);
-
-                    DeleteDirectoryIfExists(cidFolderPath);
-                    removedAny = true;
+                    foldersAwaitingGc.Add(cidFolderPath);
                     _logger.LogInformation("IPFS cache removal complete for folder {CidFolder} pinned={WasPinned}", cid, isPinned);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -133,8 +131,12 @@ namespace P2FK.IO.Services
                 }
             }
 
-            if (removedAny)
-                await _kuboIngressService.RunGarbageCollectionAsync(cancellationToken);
+            if (foldersAwaitingGc.Count == 0)
+                return;
+
+            await _kuboIngressService.RunGarbageCollectionAsync(cancellationToken);
+            foreach (string path in foldersAwaitingGc)
+                DeleteDirectoryIfExists(path);
         }
 
         private async Task<bool> TryFetchAndPinAsync(string cid, CancellationToken cancellationToken)

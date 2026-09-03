@@ -255,7 +255,7 @@ For each CID folder, P2FK.IO will:
 
 - Check whether the CID is pinned.
 - Unpin it when present.
-- Delete the CID folder and all of its contents only after a successful unpin.
+- Delete the CID folder and all of its contents after the CID is confirmed absent or after a successful unpin.
 - Run Kubo garbage collection after successful removals.
 
 ### Bundled Kubo source

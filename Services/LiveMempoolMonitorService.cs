@@ -174,6 +174,14 @@ namespace P2FK.IO.Services
                 {
                     cancellationToken.ThrowIfCancellationRequested();
 
+                    if (_pinnedLiveIpfsCids.ContainsKey(cid))
+                    {
+                        if (await _kuboIngressService.IsPinnedAsync(cid, cancellationToken))
+                            continue;
+
+                        _pinnedLiveIpfsCids.TryRemove(cid, out _);
+                    }
+
                     if (!_pinnedLiveIpfsCids.TryAdd(cid, 0))
                         continue;
 
