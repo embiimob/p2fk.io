@@ -120,6 +120,7 @@ if (OperatingSystem.IsWindows())
 
 builder.Services.AddHostedService<ManagedKuboService>();
 builder.Services.AddHostedService<IngressExpirationWorker>();
+builder.Services.AddHostedService<IpfsCacheTransferWorker>();
 builder.Services.AddRequestTimeouts(options =>
     options.DefaultPolicy = new RequestTimeoutPolicy
     {
