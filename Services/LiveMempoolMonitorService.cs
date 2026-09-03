@@ -23,7 +23,7 @@ namespace P2FK.IO.Services
         private readonly IKuboIngressService _kuboIngressService;
         private readonly HttpClient _httpClient;
         private readonly ILogger<LiveMempoolMonitorService> _logger;
-        private readonly Dictionary<string, MonitorState> _networkStates = new(StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentDictionary<string, MonitorState> _networkStates = new(StringComparer.OrdinalIgnoreCase);
         private readonly ConcurrentDictionary<string, byte> _pinnedLiveIpfsCids = new(StringComparer.OrdinalIgnoreCase);
 
         public LiveMempoolMonitorService(
@@ -68,11 +68,7 @@ namespace P2FK.IO.Services
             if (currentMempool == null)
                 return;
 
-            if (!_networkStates.TryGetValue(network.Key, out var state))
-            {
-                state = new MonitorState(currentMempool);
-                _networkStates[network.Key] = state;
-            }
+            MonitorState state = _networkStates.GetOrAdd(network.Key, _ => new MonitorState(currentMempool));
 
             foreach (string txId in currentMempool.Where(txId => !state.KnownSnapshot.Contains(txId)).Distinct(StringComparer.OrdinalIgnoreCase))
                 state.Enqueue(txId);
@@ -199,7 +195,9 @@ namespace P2FK.IO.Services
 
                 return true;
             }
-            catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or TaskCanceledException or JsonException)
+            catch (Exception ex) when (
+                ex is InvalidOperationException or HttpRequestException or JsonException ||
+                (ex is TaskCanceledException && !cancellationToken.IsCancellationRequested))
             {
                 _logger.LogWarning(ex, "Failed to fetch/pin live-monitor IPFS content");
                 return false;
