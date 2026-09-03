@@ -1,9 +1,11 @@
 using System.Net.Http.Headers;
+using System.Runtime.Versioning;
 using System.Text;
 using System.Text.Json;
 
 namespace P2FK.IO.Services
 {
+    [SupportedOSPlatform("windows")]
     public sealed class LiveMempoolMonitorService : BackgroundService
     {
         private static readonly TimeSpan StartupDelay = TimeSpan.FromSeconds(5);
