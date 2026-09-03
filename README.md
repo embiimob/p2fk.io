@@ -146,16 +146,16 @@ Open **http://localhost:5000/API** in your browser to see the interactive Swagge
 
 When running on Windows, P2FK.IO starts a background live monitor alongside the API host.
 
-- it polls each configured blockchain RPC mempool continuously while the service is running
-- it detects newly seen transaction IDs and resolves them through the Sup!? CLI
-- it uses a lower-priority CLI path so normal API traffic keeps precedence
-- it updates the in-memory root refresh pipeline with newly discovered live roots
+- It polls each configured blockchain RPC mempool continuously while the service is running.
+- It detects newly seen transaction IDs and resolves them through the Sup!? CLI.
+- It uses a lower-priority CLI path so normal API traffic keeps precedence.
+- It updates the in-memory root refresh pipeline with newly discovered live roots.
 
 If a newly discovered root message contains URNs such as `IPFS:CID/file.jpg` or `IPFS:CID\file.jpg`, the live monitor now:
 
-- extracts the **CID only**
-- fetches the CID through the local Kubo node without using the filename suffix
-- pins that CID indefinitely
+- Extracts the **CID only**.
+- Fetches the CID through the local Kubo node without using the filename suffix.
+- Pins that CID indefinitely.
 
 These live-monitor IPFS pins are **not** stored in the temporary ingress-expiration queue, so they are not automatically purged after one hour.
 

@@ -166,10 +166,10 @@ namespace P2FK.IO.Services
                     ? ProcessTransactionResult.Retry
                     : ProcessTransactionResult.Ignore;
 
-            _searchService.QueueRootCacheRefresh(txId, result, network.Mainnet, network.Blockchain);
             if (!await TryPinMessageIpfsCidsAsync(result, cancellationToken))
                 return ProcessTransactionResult.Retry;
 
+            _searchService.QueueRootCacheRefresh(txId, result, network.Mainnet, network.Blockchain);
             return ProcessTransactionResult.Success;
         }
 
