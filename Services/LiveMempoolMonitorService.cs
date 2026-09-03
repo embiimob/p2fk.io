@@ -11,6 +11,7 @@ namespace P2FK.IO.Services
         private static readonly TimeSpan StartupDelay = TimeSpan.FromSeconds(5);
         private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(5);
         private const int MaxTransactionsPerCycle = 8;
+        private const int MaxRetryAttempts = 3;
 
         private readonly Wrapper _wrapper;
         private readonly WindowsSearchService _searchService;
@@ -62,6 +63,8 @@ namespace P2FK.IO.Services
             {
                 state = new MonitorState(currentMempool);
                 _networkStates[network.Key] = state;
+                foreach (string txId in currentMempool.Distinct(StringComparer.OrdinalIgnoreCase))
+                    state.Enqueue(txId);
             }
 
             foreach (string txId in currentMempool.Where(txId => !state.KnownSnapshot.Contains(txId)).Distinct(StringComparer.OrdinalIgnoreCase))
@@ -79,7 +82,9 @@ namespace P2FK.IO.Services
 
                 ProcessTransactionResult processed = await ProcessTransactionAsync(network, txId, cancellationToken);
                 if (processed == ProcessTransactionResult.Retry)
-                    state.Requeue(txId);
+                    state.Requeue(txId, MaxRetryAttempts);
+                else
+                    state.MarkComplete(txId);
             }
         }
 
@@ -175,10 +180,33 @@ namespace P2FK.IO.Services
             }
         }
 
-        private static bool IsTransientCliFailure(string result) =>
-            result.Contains("request timed out", StringComparison.OrdinalIgnoreCase) ||
-            result.Contains("request deferred", StringComparison.OrdinalIgnoreCase) ||
-            result.StartsWith("Error:", StringComparison.OrdinalIgnoreCase);
+        private static bool IsTransientCliFailure(string result)
+        {
+            if (string.IsNullOrWhiteSpace(result))
+                return false;
+
+            if (result.Contains("request timed out", StringComparison.OrdinalIgnoreCase) ||
+                result.Contains("request deferred", StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            if (result.StartsWith("Error:", StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            try
+            {
+                using var document = JsonDocument.Parse(result);
+                if (document.RootElement.ValueKind != JsonValueKind.Array || document.RootElement.GetArrayLength() == 0)
+                    return false;
+
+                string? first = document.RootElement[0].GetString();
+                return !string.IsNullOrWhiteSpace(first) &&
+                       first.StartsWith("error:", StringComparison.OrdinalIgnoreCase);
+            }
+            catch (JsonException)
+            {
+                return false;
+            }
+        }
 
         private IEnumerable<Wrapper.BlockchainNode> GetNetworks() => _wrapper.GetBlockchainNodes();
 
@@ -193,6 +221,7 @@ namespace P2FK.IO.Services
         {
             private readonly Queue<string> _pendingQueue = new();
             private readonly HashSet<string> _pendingSet = new(StringComparer.OrdinalIgnoreCase);
+            private readonly Dictionary<string, int> _retryCounts = new(StringComparer.OrdinalIgnoreCase);
 
             public MonitorState(IEnumerable<string> knownSnapshot)
             {
@@ -222,11 +251,21 @@ namespace P2FK.IO.Services
                 return null;
             }
 
-            public void Requeue(string txId)
+            public void Requeue(string txId, int maxRetryAttempts)
             {
+                int retryCount = _retryCounts.TryGetValue(txId, out int current) ? current + 1 : 1;
+                if (retryCount > maxRetryAttempts)
+                {
+                    _retryCounts.Remove(txId);
+                    return;
+                }
+
+                _retryCounts[txId] = retryCount;
                 if (_pendingSet.Add(txId))
                     _pendingQueue.Enqueue(txId);
             }
+
+            public void MarkComplete(string txId) => _retryCounts.Remove(txId);
         }
     }
 }
