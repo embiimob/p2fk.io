@@ -164,6 +164,9 @@ namespace P2FK.IO.Services
             var added = await _kuboIngressService.AddAsync(stream, largestFile.Name, cancellationToken);
             if (!string.Equals(added.Hash, requestedCid, StringComparison.Ordinal))
             {
+                if (await _kuboIngressService.IsPinnedAsync(added.Hash, cancellationToken))
+                    await _kuboIngressService.UnpinAsync(added.Hash, cancellationToken);
+
                 await _kuboIngressService.RunGarbageCollectionAsync(cancellationToken);
                 _logger.LogWarning(
                     "IPFS cache import fallback CID mismatch requestedCid={RequestedCid} importedCid={ImportedCid} file={FileName}",
