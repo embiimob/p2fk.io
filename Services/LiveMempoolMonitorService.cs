@@ -203,29 +203,22 @@ namespace P2FK.IO.Services
 
         private static List<string> ExtractIpfsCids(string rawJson)
         {
-            try
-            {
-                using var document = JsonDocument.Parse(rawJson);
-                if (!document.RootElement.TryGetProperty("Message", out var messageEl))
-                    return [];
-
-                var cids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                foreach (string message in EnumerateMessageStrings(messageEl))
-                {
-                    foreach (Match match in IpfsUrnRegex.Matches(message))
-                    {
-                        string cid = match.Groups["cid"].Value.Trim('<', '>', ' ', '\t', '\r', '\n');
-                        if (IsValidIpfsCid(cid))
-                            cids.Add(cid);
-                    }
-                }
-
-                return cids.ToList();
-            }
-            catch (JsonException)
-            {
+            using var document = JsonDocument.Parse(rawJson);
+            if (!document.RootElement.TryGetProperty("Message", out var messageEl))
                 return [];
+
+            var cids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string message in EnumerateMessageStrings(messageEl))
+            {
+                foreach (Match match in IpfsUrnRegex.Matches(message))
+                {
+                    string cid = match.Groups["cid"].Value.Trim('<', '>', ' ', '\t', '\r', '\n');
+                    if (IsValidIpfsCid(cid))
+                        cids.Add(cid);
+                }
             }
+
+            return cids.ToList();
         }
 
         private static bool IsValidIpfsCid(string cid)

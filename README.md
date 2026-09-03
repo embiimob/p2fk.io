@@ -242,7 +242,7 @@ For each CID folder, P2FK.IO will:
 
 - Try to fetch that CID from Kubo and pin it.
 - If the fetch fails, find the largest file anywhere inside that CID folder.
-- Import that file directly into Kubo and pin the returned CID.
+- Import that file directly into Kubo and require the returned CID to match the folder name before treating the import as successful.
 - Delete the CID folder and all of its contents after a successful import.
 
 This is intended to help migrate a pre-existing SUP IPFS cache into the current Kubo repo.

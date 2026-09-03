@@ -76,7 +76,7 @@ namespace P2FK.IO.Services
                 {
                     bool imported = await TryFetchAndPinAsync(cid, cancellationToken);
                     if (!imported)
-                        imported = await TryImportLargestFileAsync(cidFolderPath, cancellationToken);
+                        imported = await TryImportLargestFileAsync(cid, cidFolderPath, cancellationToken);
 
                     if (!imported)
                         continue;
@@ -146,7 +146,7 @@ namespace P2FK.IO.Services
             }
         }
 
-        private async Task<bool> TryImportLargestFileAsync(string cidFolderPath, CancellationToken cancellationToken)
+        private async Task<bool> TryImportLargestFileAsync(string requestedCid, string cidFolderPath, CancellationToken cancellationToken)
         {
             FileInfo? largestFile = GetLargestFile(cidFolderPath);
             if (largestFile == null)
@@ -154,6 +154,16 @@ namespace P2FK.IO.Services
 
             await using var stream = largestFile.OpenRead();
             var added = await _kuboIngressService.AddAsync(stream, largestFile.Name, cancellationToken);
+            if (!string.Equals(added.Hash, requestedCid, StringComparison.Ordinal))
+            {
+                _logger.LogWarning(
+                    "IPFS cache import fallback CID mismatch requestedCid={RequestedCid} importedCid={ImportedCid} file={FileName}",
+                    requestedCid,
+                    added.Hash,
+                    largestFile.FullName);
+                return false;
+            }
+
             await _kuboIngressService.PinAsync(added.Hash, cancellationToken);
 
             _logger.LogInformation(
@@ -164,11 +174,17 @@ namespace P2FK.IO.Services
             return true;
         }
 
-        private static FileInfo? GetLargestFile(string cidFolderPath) =>
-            new DirectoryInfo(cidFolderPath)
-                .EnumerateFiles("*", SearchOption.AllDirectories)
-                .OrderByDescending(file => file.Length)
-                .FirstOrDefault();
+        private static FileInfo? GetLargestFile(string cidFolderPath)
+        {
+            FileInfo? largest = null;
+            foreach (FileInfo file in new DirectoryInfo(cidFolderPath).EnumerateFiles("*", SearchOption.AllDirectories))
+            {
+                if (largest == null || file.Length > largest.Length)
+                    largest = file;
+            }
+
+            return largest;
+        }
 
         private static void DeleteDirectoryIfExists(string path)
         {
