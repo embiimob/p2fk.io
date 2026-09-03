@@ -110,8 +110,13 @@ namespace P2FK.IO.Services
                 try
                 {
                     bool isPinned = await _kuboIngressService.IsPinnedAsync(cid, cancellationToken);
-                    if (isPinned)
-                        await _kuboIngressService.UnpinAsync(cid, cancellationToken);
+                    if (!isPinned)
+                    {
+                        _logger.LogDebug("IPFS cache removal skipped for folder {CidFolder} because the CID is not pinned", cid);
+                        continue;
+                    }
+
+                    await _kuboIngressService.UnpinAsync(cid, cancellationToken);
 
                     DeleteDirectoryIfExists(cidFolderPath);
                     removedAny = true;
@@ -156,6 +161,7 @@ namespace P2FK.IO.Services
             var added = await _kuboIngressService.AddAsync(stream, largestFile.Name, cancellationToken);
             if (!string.Equals(added.Hash, requestedCid, StringComparison.Ordinal))
             {
+                await _kuboIngressService.RunGarbageCollectionAsync(cancellationToken);
                 _logger.LogWarning(
                     "IPFS cache import fallback CID mismatch requestedCid={RequestedCid} importedCid={ImportedCid} file={FileName}",
                     requestedCid,
