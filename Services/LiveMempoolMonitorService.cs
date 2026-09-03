@@ -14,7 +14,7 @@ namespace P2FK.IO.Services
 
         private readonly Wrapper _wrapper;
         private readonly WindowsSearchService _searchService;
-        private readonly IHttpClientFactory _httpClientFactory;
+        private readonly HttpClient _httpClient;
         private readonly ILogger<LiveMempoolMonitorService> _logger;
         private readonly Dictionary<string, MonitorState> _networkStates = new(StringComparer.OrdinalIgnoreCase);
 
@@ -26,7 +26,7 @@ namespace P2FK.IO.Services
         {
             _wrapper = wrapper;
             _searchService = searchService;
-            _httpClientFactory = httpClientFactory;
+            _httpClient = httpClientFactory.CreateClient();
             _logger = logger;
         }
 
@@ -98,8 +98,7 @@ namespace P2FK.IO.Services
                 string auth = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{network.RpcUser}:{network.RpcPassword}"));
                 request.Headers.Authorization = new AuthenticationHeaderValue("Basic", auth);
 
-                using var client = _httpClientFactory.CreateClient();
-                using var response = await client.SendAsync(request, cancellationToken);
+                using var response = await _httpClient.SendAsync(request, cancellationToken);
                 if (!response.IsSuccessStatusCode)
                 {
                     _logger.LogDebug("Live mempool RPC returned HTTP {StatusCode} for {Network}", (int)response.StatusCode, network.Key);
