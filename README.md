@@ -18,8 +18,10 @@ The live site at **https://p2fk.io** is a public demo running this exact codebas
 - **Keyword/address mapping endpoints** for cross-referencing public addresses and P2FK keyword identity mappings.
 - **Inquiry endpoints** for listing and resolving inquiry records by transaction and wallet address.
 - **Search and cache services** including known-root/object/profile search endpoints, trending root search visibility, and cache status reporting.
+- **Live mempool monitoring** that watches configured chain mempools, resolves newly seen root transactions through the Sup!? CLI, and updates in-process caches in near real time.
 - **Root content hosting** that serves indexed files from `/root/{txid}/{filename}` through the API host.
 - **Temporary IPFS ingress relay** backed by a dedicated Kubo node for upload, queue/status visibility, timed pin retention, and cleanup.
+- **Automatic IPFS artifact preservation from live roots** that scans newly discovered root messages for `IPFS:` URNs and pins the referenced CIDs indefinitely.
 - **Operational endpoints** including Swagger docs (`/API`) and ingress health probe (`/health/ipfs`).
 
 ---
@@ -140,6 +142,23 @@ Open **http://localhost:5000/API** in your browser to see the interactive Swagge
 
 > To change the port, edit `Properties\launchSettings.json` or pass `--urls http://localhost:8080` to `dotnet run`.
 
+### Live monitor behavior
+
+When running on Windows, P2FK.IO starts a background live monitor alongside the API host.
+
+- it polls each configured blockchain RPC mempool continuously while the service is running
+- it detects newly seen transaction IDs and resolves them through the Sup!? CLI
+- it uses a lower-priority CLI path so normal API traffic keeps precedence
+- it updates the in-memory root refresh pipeline with newly discovered live roots
+
+If a newly discovered root message contains URNs such as `IPFS:CID/file.jpg` or `IPFS:CID\file.jpg`, the live monitor now:
+
+- extracts the **CID only**
+- fetches the CID through the local Kubo node without using the filename suffix
+- pins that CID indefinitely
+
+These live-monitor IPFS pins are **not** stored in the temporary ingress-expiration queue, so they are not automatically purged after one hour.
+
 ### Step 5 — Build and validate
 
 ```powershell
@@ -258,6 +277,8 @@ curl https://p2fk.io/health/ipfs
 - Each ingress upload request supports files up to **500 MB** by default (`IpfsIngress:MaxUploadBytes`).
 - Each client IP is limited to **5 GB** of uploads over a rolling 24-hour window.
 - The ingress repo is capped at **500 GB** of active cached content.
+- Public ingress uploads remain temporary and expire after `IpfsIngress:PinLifetimeMinutes` (60 minutes by default).
+- Live-monitor-discovered IPFS CIDs are fetched and pinned separately from public ingress uploads and remain pinned until you remove them manually.
 - Uploads stay pinned for **1 hour** and are cleaned by `IngressExpirationWorker` every **5 minutes**.
 - Queue and status endpoints expose active CID visibility without turning the API into a permanent recursive gateway.
 
