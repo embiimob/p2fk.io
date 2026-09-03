@@ -3,6 +3,7 @@ using System.Runtime.Versioning;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Collections.Concurrent;
 
 namespace P2FK.IO.Services
 {
@@ -23,7 +24,7 @@ namespace P2FK.IO.Services
         private readonly HttpClient _httpClient;
         private readonly ILogger<LiveMempoolMonitorService> _logger;
         private readonly Dictionary<string, MonitorState> _networkStates = new(StringComparer.OrdinalIgnoreCase);
-        private readonly HashSet<string> _pinnedLiveIpfsCids = new(StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentDictionary<string, byte> _pinnedLiveIpfsCids = new(StringComparer.OrdinalIgnoreCase);
 
         public LiveMempoolMonitorService(
             Wrapper wrapper,
@@ -180,18 +181,25 @@ namespace P2FK.IO.Services
                 {
                     cancellationToken.ThrowIfCancellationRequested();
 
-                    if (_pinnedLiveIpfsCids.Contains(cid))
+                    if (!_pinnedLiveIpfsCids.TryAdd(cid, 0))
                         continue;
 
-                    await _kuboIngressService.FetchAsync(cid, cancellationToken);
-                    await _kuboIngressService.PinAsync(cid, cancellationToken);
-                    _pinnedLiveIpfsCids.Add(cid);
-                    _logger.LogInformation("Pinned live-monitor IPFS CID {Cid}", cid);
+                    try
+                    {
+                        await _kuboIngressService.FetchAsync(cid, cancellationToken);
+                        await _kuboIngressService.PinAsync(cid, cancellationToken);
+                        _logger.LogInformation("Pinned live-monitor IPFS CID {Cid}", cid);
+                    }
+                    catch
+                    {
+                        _pinnedLiveIpfsCids.TryRemove(cid, out _);
+                        throw;
+                    }
                 }
 
                 return true;
             }
-            catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or TaskCanceledException)
+            catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or TaskCanceledException or JsonException)
             {
                 _logger.LogWarning(ex, "Failed to fetch/pin live-monitor IPFS content");
                 return false;
