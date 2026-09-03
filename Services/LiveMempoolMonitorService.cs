@@ -70,10 +70,7 @@ namespace P2FK.IO.Services
 
             MonitorState state = _networkStates.GetOrAdd(network.Key, _ => new MonitorState(currentMempool));
 
-            foreach (string txId in currentMempool.Where(txId => !state.KnownSnapshot.Contains(txId)).Distinct(StringComparer.OrdinalIgnoreCase))
-                state.Enqueue(txId);
-
-            state.ReplaceKnownSnapshot(currentMempool);
+            state.EnqueueNewTransactions(currentMempool);
 
             for (int i = 0; i < MaxTransactionsPerCycle; i++)
             {
@@ -237,7 +234,7 @@ namespace P2FK.IO.Services
                 return false;
 
             return Regex.IsMatch(cid, @"^Qm[1-9A-HJ-NP-Za-km-z]{44}$", RegexOptions.CultureInvariant) ||
-                   Regex.IsMatch(cid, @"^[bB][A-Za-z0-9]{20,}$", RegexOptions.CultureInvariant);
+                   Regex.IsMatch(cid, @"^[bB][A-Za-z2-7]{20,}$", RegexOptions.CultureInvariant);
         }
 
         private static IEnumerable<string> EnumerateMessageStrings(JsonElement messageEl)
@@ -287,7 +284,6 @@ namespace P2FK.IO.Services
                 return false;
 
             if (result.Contains("request timed out", StringComparison.OrdinalIgnoreCase) ||
-                result.Contains("request cancelled", StringComparison.OrdinalIgnoreCase) ||
                 result.Contains("request deferred", StringComparison.OrdinalIgnoreCase))
                 return true;
 
@@ -321,6 +317,7 @@ namespace P2FK.IO.Services
 
         private sealed class MonitorState
         {
+            private readonly object _sync = new();
             private readonly Queue<string> _pendingQueue = new();
             private readonly HashSet<string> _pendingSet = new(StringComparer.OrdinalIgnoreCase);
             private readonly Dictionary<string, int> _retryCounts = new(StringComparer.OrdinalIgnoreCase);
@@ -332,42 +329,60 @@ namespace P2FK.IO.Services
 
             public HashSet<string> KnownSnapshot { get; private set; }
 
-            public void Enqueue(string txId)
+            public void EnqueueNewTransactions(IEnumerable<string> currentMempool)
             {
-                if (_pendingSet.Add(txId))
-                    _pendingQueue.Enqueue(txId);
-            }
+                lock (_sync)
+                {
+                    var current = new HashSet<string>(currentMempool, StringComparer.OrdinalIgnoreCase);
+                    foreach (string txId in current.Where(txId => !KnownSnapshot.Contains(txId)))
+                    {
+                        if (_pendingSet.Add(txId))
+                            _pendingQueue.Enqueue(txId);
+                    }
 
-            public void ReplaceKnownSnapshot(IEnumerable<string> knownSnapshot) =>
-                KnownSnapshot = new HashSet<string>(knownSnapshot, StringComparer.OrdinalIgnoreCase);
+                    KnownSnapshot = current;
+                }
+            }
 
             public string? TryDequeuePending()
             {
-                while (_pendingQueue.Count > 0)
+                lock (_sync)
                 {
-                    string txId = _pendingQueue.Dequeue();
-                    if (_pendingSet.Remove(txId))
-                        return txId;
-                }
+                    while (_pendingQueue.Count > 0)
+                    {
+                        string txId = _pendingQueue.Dequeue();
+                        if (_pendingSet.Remove(txId))
+                            return txId;
+                    }
 
-                return null;
+                    return null;
+                }
             }
 
             public void Requeue(string txId, int maxRetryAttempts)
             {
-                int retryCount = _retryCounts.TryGetValue(txId, out int current) ? current + 1 : 1;
-                if (retryCount > maxRetryAttempts)
+                lock (_sync)
                 {
-                    _retryCounts.Remove(txId);
-                    return;
-                }
+                    int retryCount = _retryCounts.TryGetValue(txId, out int current) ? current + 1 : 1;
+                    if (retryCount > maxRetryAttempts)
+                    {
+                        _retryCounts.Remove(txId);
+                        return;
+                    }
 
-                _retryCounts[txId] = retryCount;
-                if (_pendingSet.Add(txId))
-                    _pendingQueue.Enqueue(txId);
+                    _retryCounts[txId] = retryCount;
+                    if (_pendingSet.Add(txId))
+                        _pendingQueue.Enqueue(txId);
+                }
             }
 
-            public void MarkComplete(string txId) => _retryCounts.Remove(txId);
+            public void MarkComplete(string txId)
+            {
+                lock (_sync)
+                {
+                    _retryCounts.Remove(txId);
+                }
+            }
         }
     }
 }
