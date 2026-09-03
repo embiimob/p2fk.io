@@ -206,20 +206,30 @@ namespace P2FK.IO.Services
             }
         }
 
-        private static IEnumerable<string> ExtractIpfsCids(string rawJson)
+        private static List<string> ExtractIpfsCids(string rawJson)
         {
-            using var document = JsonDocument.Parse(rawJson);
-            if (!document.RootElement.TryGetProperty("Message", out var messageEl))
-                yield break;
-
-            foreach (string message in EnumerateMessageStrings(messageEl))
+            try
             {
-                foreach (Match match in IpfsUrnRegex.Matches(message))
+                using var document = JsonDocument.Parse(rawJson);
+                if (!document.RootElement.TryGetProperty("Message", out var messageEl))
+                    return [];
+
+                var cids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (string message in EnumerateMessageStrings(messageEl))
                 {
-                    string cid = match.Groups["cid"].Value.Trim('<', '>', ' ', '\t', '\r', '\n');
-                    if (IsValidIpfsCid(cid))
-                        yield return cid;
+                    foreach (Match match in IpfsUrnRegex.Matches(message))
+                    {
+                        string cid = match.Groups["cid"].Value.Trim('<', '>', ' ', '\t', '\r', '\n');
+                        if (IsValidIpfsCid(cid))
+                            cids.Add(cid);
+                    }
                 }
+
+                return cids.ToList();
+            }
+            catch (JsonException)
+            {
+                return [];
             }
         }
 
