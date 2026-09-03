@@ -114,7 +114,7 @@ namespace P2FK.IO.Services
                         await _kuboIngressService.UnpinAsync(cid, cancellationToken);
 
                     DeleteDirectoryIfExists(cidFolderPath);
-                    removedAny = removedAny || isPinned;
+                    removedAny = true;
                     _logger.LogInformation("IPFS cache removal complete for folder {CidFolder} pinned={WasPinned}", cid, isPinned);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
