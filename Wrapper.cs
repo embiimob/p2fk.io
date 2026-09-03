@@ -47,11 +47,15 @@ namespace P2FK.IO
         public string MZCRPCPassword = "better-password";
 
         public const int MaxTimeoutSeconds = 420;
+        private const int ForegroundAcquireRetryMilliseconds = 50;
         private const int BackgroundAcquireRetryMilliseconds = 500;
-        private const int BackgroundRequiredFreeSlots = 2;
 
         // Global concurrency cap: at most 8 CLI processes running simultaneously.
-        private static readonly SemaphoreSlim _semaphore = new SemaphoreSlim(8, 8);
+        // Seven shared permits are available to API or background work; one extra permit
+        // is reserved for foreground/API traffic so live monitoring never consumes the
+        // final slot that an interactive request could use.
+        private static readonly SemaphoreSlim _sharedSemaphore = new SemaphoreSlim(7, 7);
+        private static readonly SemaphoreSlim _foregroundReserveSemaphore = new SemaphoreSlim(1, 1);
         private static readonly SemaphoreSlim _backgroundMonitorSemaphore = new SemaphoreSlim(1, 1);
         private static readonly TimeSpan _timeout = TimeSpan.FromSeconds(MaxTimeoutSeconds);
 
@@ -143,7 +147,8 @@ namespace P2FK.IO
         {
             using var timeoutCts = new CancellationTokenSource(_timeout);
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(timeoutCts.Token, cancellationToken);
-            bool acquired = false;
+            bool acquiredShared = false;
+            bool acquiredForegroundReserve = false;
             bool backgroundPermitAcquired = false;
             try
             {
@@ -154,10 +159,9 @@ namespace P2FK.IO
 
                     while (!linkedCts.Token.IsCancellationRequested)
                     {
-                        if (_semaphore.CurrentCount >= BackgroundRequiredFreeSlots &&
-                            await _semaphore.WaitAsync(TimeSpan.Zero, linkedCts.Token))
+                        if (await _sharedSemaphore.WaitAsync(TimeSpan.Zero, linkedCts.Token))
                         {
-                            acquired = true;
+                            acquiredShared = true;
                             break;
                         }
 
@@ -166,8 +170,22 @@ namespace P2FK.IO
                 }
                 else
                 {
-                    await _semaphore.WaitAsync(linkedCts.Token);
-                    acquired = true;
+                    while (!linkedCts.Token.IsCancellationRequested)
+                    {
+                        if (await _sharedSemaphore.WaitAsync(TimeSpan.Zero, linkedCts.Token))
+                        {
+                            acquiredShared = true;
+                            break;
+                        }
+
+                        if (await _foregroundReserveSemaphore.WaitAsync(TimeSpan.Zero, linkedCts.Token))
+                        {
+                            acquiredForegroundReserve = true;
+                            break;
+                        }
+
+                        await Task.Delay(ForegroundAcquireRetryMilliseconds, linkedCts.Token);
+                    }
                 }
             }
             catch (OperationCanceledException)
@@ -221,7 +239,8 @@ namespace P2FK.IO
             }
             finally
             {
-                if (acquired) _semaphore.Release();
+                if (acquiredShared) _sharedSemaphore.Release();
+                if (acquiredForegroundReserve) _foregroundReserveSemaphore.Release();
                 if (backgroundPermitAcquired) _backgroundMonitorSemaphore.Release();
             }
         }

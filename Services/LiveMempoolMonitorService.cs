@@ -122,7 +122,9 @@ namespace P2FK.IO.Services
 
                 return txIds;
             }
-            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
+            catch (Exception ex) when (
+                ex is HttpRequestException or JsonException ||
+                (ex is TaskCanceledException && !cancellationToken.IsCancellationRequested))
             {
                 _logger.LogDebug(ex, "Live mempool RPC poll failed for {Network}", network.Key);
                 return null;
