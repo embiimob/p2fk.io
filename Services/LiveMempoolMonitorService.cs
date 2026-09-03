@@ -68,7 +68,6 @@ namespace P2FK.IO.Services
                 state.Enqueue(txId);
 
             state.ReplaceKnownSnapshot(currentMempool);
-            state.TrimMissingTransactions();
 
             for (int i = 0; i < MaxTransactionsPerCycle; i++)
             {
@@ -179,7 +178,6 @@ namespace P2FK.IO.Services
 
         private static bool IsTransientCliFailure(string result) =>
             result.Contains("request timed out", StringComparison.OrdinalIgnoreCase) ||
-            result.Contains("request cancelled", StringComparison.OrdinalIgnoreCase) ||
             result.Contains("request deferred", StringComparison.OrdinalIgnoreCase) ||
             result.StartsWith("Error:", StringComparison.OrdinalIgnoreCase);
 
@@ -213,18 +211,12 @@ namespace P2FK.IO.Services
             public void ReplaceKnownSnapshot(IEnumerable<string> knownSnapshot) =>
                 KnownSnapshot = new HashSet<string>(knownSnapshot, StringComparer.OrdinalIgnoreCase);
 
-            public void TrimMissingTransactions()
-            {
-                foreach (string txId in _pendingSet.Where(txId => !KnownSnapshot.Contains(txId)).ToList())
-                    _pendingSet.Remove(txId);
-            }
-
             public string? TryDequeuePending()
             {
                 while (_pendingQueue.Count > 0)
                 {
                     string txId = _pendingQueue.Dequeue();
-                    if (_pendingSet.Remove(txId) && KnownSnapshot.Contains(txId))
+                    if (_pendingSet.Remove(txId))
                         return txId;
                 }
 
@@ -233,7 +225,7 @@ namespace P2FK.IO.Services
 
             public void Requeue(string txId)
             {
-                if (KnownSnapshot.Contains(txId) && _pendingSet.Add(txId))
+                if (_pendingSet.Add(txId))
                     _pendingQueue.Enqueue(txId);
             }
         }
