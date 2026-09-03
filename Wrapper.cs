@@ -160,7 +160,7 @@ namespace P2FK.IO
         // Executes the CLI process with an internal-only timeout.  Not bound to any
         // individual caller's CancellationToken so HTTP disconnects don't abort the build.
         private Task<string> ExecuteCliAsync(string executablePath, string arguments) =>
-            ExecuteCliAsync(executablePath, arguments, lowPriority: false, CancellationToken.None);
+            ExecuteCliAsync(executablePath, SplitArguments(arguments), lowPriority: false, CancellationToken.None);
 
         private Task<string> ExecuteCliAsync(
             string executablePath,
@@ -176,13 +176,6 @@ namespace P2FK.IO
                 },
                 lowPriority,
                 cancellationToken);
-
-        private async Task<string> ExecuteCliAsync(
-            string executablePath,
-            string arguments,
-            bool lowPriority,
-            CancellationToken cancellationToken)
-            => await ExecuteCliAsync(executablePath, processStartInfo => processStartInfo.Arguments = arguments, lowPriority, cancellationToken);
 
         private async Task<string> ExecuteCliAsync(
             string executablePath,
@@ -292,6 +285,43 @@ namespace P2FK.IO
                 if (acquiredForegroundReserve) _foregroundReserveSemaphore.Release();
                 if (backgroundPermitAcquired) _backgroundMonitorSemaphore.Release();
             }
+        }
+
+        private static IReadOnlyList<string> SplitArguments(string arguments)
+        {
+            var values = new List<string>();
+            if (string.IsNullOrWhiteSpace(arguments))
+                return values;
+
+            var current = new StringBuilder();
+            bool inQuotes = false;
+
+            foreach (char ch in arguments)
+            {
+                if (ch == '"')
+                {
+                    inQuotes = !inQuotes;
+                    continue;
+                }
+
+                if (char.IsWhiteSpace(ch) && !inQuotes)
+                {
+                    if (current.Length > 0)
+                    {
+                        values.Add(current.ToString());
+                        current.Clear();
+                    }
+
+                    continue;
+                }
+
+                current.Append(ch);
+            }
+
+            if (current.Length > 0)
+                values.Add(current.ToString());
+
+            return values;
         }
     }
 }
