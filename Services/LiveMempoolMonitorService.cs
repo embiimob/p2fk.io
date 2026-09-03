@@ -237,7 +237,7 @@ namespace P2FK.IO.Services
                 return false;
 
             return Regex.IsMatch(cid, @"^Qm[1-9A-HJ-NP-Za-km-z]{44}$", RegexOptions.CultureInvariant) ||
-                   Regex.IsMatch(cid, @"^[bB][a-z2-7]{20,}$", RegexOptions.CultureInvariant);
+                   Regex.IsMatch(cid, @"^[bB][A-Za-z0-9]{20,}$", RegexOptions.CultureInvariant);
         }
 
         private static IEnumerable<string> EnumerateMessageStrings(JsonElement messageEl)
@@ -287,6 +287,7 @@ namespace P2FK.IO.Services
                 return false;
 
             if (result.Contains("request timed out", StringComparison.OrdinalIgnoreCase) ||
+                result.Contains("request cancelled", StringComparison.OrdinalIgnoreCase) ||
                 result.Contains("request deferred", StringComparison.OrdinalIgnoreCase))
                 return true;
 
