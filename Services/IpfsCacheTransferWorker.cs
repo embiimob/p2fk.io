@@ -112,7 +112,8 @@ namespace P2FK.IO.Services
                     bool isPinned = await _kuboIngressService.IsPinnedAsync(cid, cancellationToken);
                     if (!isPinned)
                     {
-                        _logger.LogDebug("IPFS cache removal skipped for folder {CidFolder} because the CID is not pinned", cid);
+                        DeleteDirectoryIfExists(cidFolderPath);
+                        _logger.LogInformation("IPFS cache removal complete for folder {CidFolder} pinned={WasPinned}", cid, isPinned);
                         continue;
                     }
 
