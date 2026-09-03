@@ -153,7 +153,7 @@ namespace P2FK.IO.Services
                 return false;
 
             await using var stream = largestFile.OpenRead();
-            KuboAddResult added = await _kuboIngressService.AddAsync(stream, largestFile.Name, cancellationToken);
+            var added = await _kuboIngressService.AddAsync(stream, largestFile.Name, cancellationToken);
             await _kuboIngressService.PinAsync(added.Hash, cancellationToken);
 
             _logger.LogInformation(
