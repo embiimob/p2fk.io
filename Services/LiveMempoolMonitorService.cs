@@ -24,7 +24,7 @@ namespace P2FK.IO.Services
         private readonly HttpClient _httpClient;
         private readonly ILogger<LiveMempoolMonitorService> _logger;
         private readonly ConcurrentDictionary<string, MonitorState> _networkStates = new(StringComparer.OrdinalIgnoreCase);
-        private readonly ConcurrentDictionary<string, byte> _pinnedLiveIpfsCids = new(StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentDictionary<string, byte> _pinnedLiveIpfsCids = new(StringComparer.Ordinal);
 
         public LiveMempoolMonitorService(
             Wrapper wrapper,
@@ -234,7 +234,7 @@ namespace P2FK.IO.Services
                 return false;
 
             return Regex.IsMatch(cid, @"^Qm[1-9A-HJ-NP-Za-km-z]{44}$", RegexOptions.CultureInvariant) ||
-                   Regex.IsMatch(cid, @"^[bB][A-Za-z2-7]{20,}$", RegexOptions.CultureInvariant);
+                   Regex.IsMatch(cid, @"^[bB][A-Za-z2-7]{58,}$", RegexOptions.CultureInvariant);
         }
 
         private static IEnumerable<string> EnumerateMessageStrings(JsonElement messageEl)
