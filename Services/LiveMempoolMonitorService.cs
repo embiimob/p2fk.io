@@ -51,7 +51,7 @@ namespace P2FK.IO.Services
             }
         }
 
-        private async Task PollNetworkAsync(MonitorNetwork network, CancellationToken cancellationToken)
+        private async Task PollNetworkAsync(Wrapper.BlockchainNode network, CancellationToken cancellationToken)
         {
             IReadOnlyList<string>? currentMempool = await TryGetRawMempoolAsync(network, cancellationToken);
             if (currentMempool == null)
@@ -77,7 +77,7 @@ namespace P2FK.IO.Services
             }
         }
 
-        private async Task<IReadOnlyList<string>?> TryGetRawMempoolAsync(MonitorNetwork network, CancellationToken cancellationToken)
+        private async Task<IReadOnlyList<string>?> TryGetRawMempoolAsync(Wrapper.BlockchainNode network, CancellationToken cancellationToken)
         {
             try
             {
@@ -131,16 +131,19 @@ namespace P2FK.IO.Services
             }
         }
 
-        private async Task ProcessTransactionAsync(MonitorNetwork network, string txId, CancellationToken cancellationToken)
+        private async Task ProcessTransactionAsync(Wrapper.BlockchainNode network, string txId, CancellationToken cancellationToken)
         {
-            string arguments =
-                "--versionbyte " + network.VersionByte +
-                " --getrootbytransactionid --password " + network.RpcPassword +
-                " --url " + network.RpcUrl +
-                " --username " + network.RpcUser +
-                " --tid " + txId;
-
-            string result = await _wrapper.RunBackgroundCommandAsync(network.CliPath, arguments, cancellationToken);
+            string result = await _wrapper.RunBackgroundCommandAsync(
+                network.CliPath,
+                [
+                    "--versionbyte", network.VersionByte,
+                    "--getrootbytransactionid",
+                    "--password", network.RpcPassword,
+                    "--url", network.RpcUrl,
+                    "--username", network.RpcUser,
+                    "--tid", txId
+                ],
+                cancellationToken);
             if (!LooksLikeRootJson(result))
                 return;
 
@@ -164,23 +167,6 @@ namespace P2FK.IO.Services
             }
         }
 
-        private IEnumerable<MonitorNetwork> GetNetworks()
-        {
-            yield return new MonitorNetwork("btc-mainnet", "BTC", true, _wrapper.ProdRPCURL, _wrapper.ProdRPCUser, _wrapper.ProdRPCPassword, _wrapper.ProdCLIPath, _wrapper.ProdVersionByte);
-            yield return new MonitorNetwork("btc-testnet", "BTC", false, _wrapper.TestRPCURL, _wrapper.TestRPCUser, _wrapper.TestRPCPassword, _wrapper.TestCLIPath, _wrapper.TestVersionByte);
-            yield return new MonitorNetwork("ltc-mainnet", "LTC", true, _wrapper.LTCRPCURL, _wrapper.LTCRPCUser, _wrapper.LTCRPCPassword, _wrapper.LTCCLIPath, _wrapper.LTCVersionByte);
-            yield return new MonitorNetwork("dog-mainnet", "DOG", true, _wrapper.DOGRPCURL, _wrapper.DOGRPCUser, _wrapper.DOGRPCPassword, _wrapper.DOGCLIPath, _wrapper.DOGVersionByte);
-            yield return new MonitorNetwork("mzc-mainnet", "MZC", true, _wrapper.MZCRPCURL, _wrapper.MZCRPCUser, _wrapper.MZCRPCPassword, _wrapper.MZCCLIPath, _wrapper.MZCVersionByte);
-        }
-
-        private sealed record MonitorNetwork(
-            string Key,
-            string Blockchain,
-            bool Mainnet,
-            string RpcUrl,
-            string RpcUser,
-            string RpcPassword,
-            string CliPath,
-            string VersionByte);
+        private IEnumerable<Wrapper.BlockchainNode> GetNetworks() => _wrapper.GetBlockchainNodes();
     }
 }

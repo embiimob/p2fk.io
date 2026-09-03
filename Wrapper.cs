@@ -84,6 +84,16 @@ namespace P2FK.IO
         private static readonly Regex _vbPattern   = new(@"--versionbyte\s+(\S+)", RegexOptions.Compiled);
         private static readonly Regex _verbosePattern = new(@"--verbose(?:\s|$)", RegexOptions.Compiled);
 
+        public sealed record BlockchainNode(
+            string Key,
+            string Blockchain,
+            bool Mainnet,
+            string CliPath,
+            string VersionByte,
+            string RpcUrl,
+            string RpcUser,
+            string RpcPassword);
+
         public async Task<string> RunCommandAsync(string executablePath, string arguments, CancellationToken cancellationToken = default)
         {
             string key = BuildCoalescingKey(executablePath, arguments);
@@ -104,8 +114,20 @@ namespace P2FK.IO
             }
         }
 
-        public Task<string> RunBackgroundCommandAsync(string executablePath, string arguments, CancellationToken cancellationToken = default) =>
+        public Task<string> RunBackgroundCommandAsync(
+            string executablePath,
+            IReadOnlyList<string> arguments,
+            CancellationToken cancellationToken = default) =>
             ExecuteCliAsync(executablePath, arguments, lowPriority: true, cancellationToken);
+
+        public IEnumerable<BlockchainNode> GetBlockchainNodes()
+        {
+            yield return new BlockchainNode("btc-mainnet", "BTC", true, ProdCLIPath, ProdVersionByte, ProdRPCURL, ProdRPCUser, ProdRPCPassword);
+            yield return new BlockchainNode("btc-testnet", "BTC", false, TestCLIPath, TestVersionByte, TestRPCURL, TestRPCUser, TestRPCPassword);
+            yield return new BlockchainNode("ltc-mainnet", "LTC", true, LTCCLIPath, LTCVersionByte, LTCRPCURL, LTCRPCUser, LTCRPCPassword);
+            yield return new BlockchainNode("dog-mainnet", "DOG", true, DOGCLIPath, DOGVersionByte, DOGRPCURL, DOGRPCUser, DOGRPCPassword);
+            yield return new BlockchainNode("mzc-mainnet", "MZC", true, MZCCLIPath, MZCVersionByte, MZCRPCURL, MZCRPCUser, MZCRPCPassword);
+        }
 
         // Derives a stable coalescing key from the CLI verb and address so that callers
         // with different --skip / --qty still coalesce on the same address+command pair.
@@ -139,9 +161,31 @@ namespace P2FK.IO
         private Task<string> ExecuteCliAsync(string executablePath, string arguments) =>
             ExecuteCliAsync(executablePath, arguments, lowPriority: false, CancellationToken.None);
 
+        private Task<string> ExecuteCliAsync(
+            string executablePath,
+            IReadOnlyList<string> arguments,
+            bool lowPriority,
+            CancellationToken cancellationToken) =>
+            ExecuteCliAsync(
+                executablePath,
+                processStartInfo =>
+                {
+                    foreach (string argument in arguments)
+                        processStartInfo.ArgumentList.Add(argument);
+                },
+                lowPriority,
+                cancellationToken);
+
         private async Task<string> ExecuteCliAsync(
             string executablePath,
             string arguments,
+            bool lowPriority,
+            CancellationToken cancellationToken)
+            => await ExecuteCliAsync(executablePath, processStartInfo => processStartInfo.Arguments = arguments, lowPriority, cancellationToken);
+
+        private async Task<string> ExecuteCliAsync(
+            string executablePath,
+            Action<ProcessStartInfo> configureArguments,
             bool lowPriority,
             CancellationToken cancellationToken)
         {
@@ -200,7 +244,6 @@ namespace P2FK.IO
                 ProcessStartInfo processStartInfo = new ProcessStartInfo
                 {
                     FileName = executablePath,
-                    Arguments = arguments,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     CreateNoWindow = true,
@@ -208,6 +251,7 @@ namespace P2FK.IO
                     StandardOutputEncoding = Encoding.UTF8,
                     StandardErrorEncoding = Encoding.UTF8
                 };
+                configureArguments(processStartInfo);
 
                 using var process = new Process { StartInfo = processStartInfo };
                 process.Start();
