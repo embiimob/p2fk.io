@@ -1,6 +1,5 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using static System.Net.WebRequestMethods;
@@ -293,71 +292,72 @@ namespace P2FK.IO
             if (string.IsNullOrWhiteSpace(arguments))
                 return Array.Empty<string>();
 
-            if (OperatingSystem.IsWindows())
+            var values = new List<string>();
+            int i = 0;
+
+            while (i < arguments.Length)
             {
-                nint argv = CommandLineToArgvW(arguments, out int argc);
-                if (argv != 0)
+                while (i < arguments.Length && char.IsWhiteSpace(arguments[i]))
+                    i++;
+
+                if (i >= arguments.Length)
+                    break;
+
+                var current = new StringBuilder();
+                bool inQuotes = false;
+
+                while (i < arguments.Length)
                 {
-                    try
+                    int backslashCount = 0;
+                    while (i < arguments.Length && arguments[i] == '\\')
                     {
-                        var values = new List<string>(argc);
-                        for (int i = 0; i < argc; i++)
+                        backslashCount++;
+                        i++;
+                    }
+
+                    if (i < arguments.Length && arguments[i] == '"')
+                    {
+                        current.Append('\\', backslashCount / 2);
+
+                        if (backslashCount % 2 == 0)
                         {
-                            nint argPtr = Marshal.ReadIntPtr(argv, i * IntPtr.Size);
-                            string? value = Marshal.PtrToStringUni(argPtr);
-                            if (!string.IsNullOrEmpty(value))
-                                values.Add(value);
+                            if (inQuotes && i + 1 < arguments.Length && arguments[i + 1] == '"')
+                            {
+                                current.Append('"');
+                                i += 2;
+                            }
+                            else
+                            {
+                                inQuotes = !inQuotes;
+                                i++;
+                            }
+                        }
+                        else
+                        {
+                            current.Append('"');
+                            i++;
                         }
 
-                        return values;
+                        continue;
                     }
-                    finally
-                    {
-                        _ = LocalFree(argv);
-                    }
-                }
-            }
 
-            return SplitArgumentsFallback(arguments);
-        }
+                    if (backslashCount > 0)
+                        current.Append('\\', backslashCount);
 
-        private static IReadOnlyList<string> SplitArgumentsFallback(string arguments)
-        {
-            var values = new List<string>();
-            var current = new StringBuilder();
-            bool inQuotes = false;
+                    if (i >= arguments.Length || (!inQuotes && char.IsWhiteSpace(arguments[i])))
+                        break;
 
-            foreach (char ch in arguments)
-            {
-                if (ch == '"')
-                {
-                    inQuotes = !inQuotes;
-                    continue;
+                    current.Append(arguments[i]);
+                    i++;
                 }
-                else if (char.IsWhiteSpace(ch) && !inQuotes)
-                {
-                    if (current.Length > 0)
-                    {
-                        values.Add(current.ToString());
-                        current.Clear();
-                    }
-                }
-                else
-                {
-                    current.Append(ch);
-                }
-            }
 
-            if (current.Length > 0)
                 values.Add(current.ToString());
+
+                while (i < arguments.Length && char.IsWhiteSpace(arguments[i]))
+                    i++;
+            }
 
             return values;
         }
-
-        [DllImport("shell32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-        private static extern nint CommandLineToArgvW(string lpCmdLine, out int pNumArgs);
-
-        [DllImport("kernel32.dll", SetLastError = true)]
-        private static extern nint LocalFree(nint hMem);
     }
 }
