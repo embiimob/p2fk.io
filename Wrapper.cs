@@ -48,8 +48,8 @@ namespace P2FK.IO
 
         public const int MaxTimeoutSeconds = 420;
 
-        // Global concurrency cap: at most 8 CLI processes running simultaneously.
-        private static readonly SemaphoreSlim _semaphore = new SemaphoreSlim(8, 8);
+        // Global concurrency cap: at most 16 CLI processes running simultaneously.
+        private static readonly SemaphoreSlim _semaphore = new SemaphoreSlim(16, 16);
         private static readonly TimeSpan _timeout = TimeSpan.FromSeconds(MaxTimeoutSeconds);
 
         // In-flight request coalescing: concurrent API calls for the same address + command
