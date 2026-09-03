@@ -10,12 +10,13 @@ namespace P2FK.IO.Services
     {
         private static readonly TimeSpan StartupDelay = TimeSpan.FromSeconds(5);
         private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(5);
+        private const int MaxTransactionsPerCycle = 8;
 
         private readonly Wrapper _wrapper;
         private readonly WindowsSearchService _searchService;
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly ILogger<LiveMempoolMonitorService> _logger;
-        private readonly Dictionary<string, HashSet<string>> _knownMempools = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, MonitorState> _networkStates = new(StringComparer.OrdinalIgnoreCase);
 
         public LiveMempoolMonitorService(
             Wrapper wrapper,
@@ -57,23 +58,29 @@ namespace P2FK.IO.Services
             if (currentMempool == null)
                 return;
 
-            if (!_knownMempools.TryGetValue(network.Key, out var previousSnapshot))
+            if (!_networkStates.TryGetValue(network.Key, out var state))
             {
-                _knownMempools[network.Key] = new HashSet<string>(currentMempool, StringComparer.OrdinalIgnoreCase);
-                return;
+                state = new MonitorState(currentMempool);
+                _networkStates[network.Key] = state;
             }
 
-            var newTransactions = currentMempool
-                .Where(txId => !previousSnapshot.Contains(txId))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList();
+            foreach (string txId in currentMempool.Where(txId => !state.KnownSnapshot.Contains(txId)).Distinct(StringComparer.OrdinalIgnoreCase))
+                state.Enqueue(txId);
 
-            _knownMempools[network.Key] = new HashSet<string>(currentMempool, StringComparer.OrdinalIgnoreCase);
+            state.ReplaceKnownSnapshot(currentMempool);
+            state.TrimMissingTransactions();
 
-            foreach (string txId in newTransactions)
+            for (int i = 0; i < MaxTransactionsPerCycle; i++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                await ProcessTransactionAsync(network, txId, cancellationToken);
+
+                string? txId = state.TryDequeuePending();
+                if (txId == null)
+                    break;
+
+                ProcessTransactionResult processed = await ProcessTransactionAsync(network, txId, cancellationToken);
+                if (processed == ProcessTransactionResult.Retry)
+                    state.Requeue(txId);
             }
         }
 
@@ -131,7 +138,7 @@ namespace P2FK.IO.Services
             }
         }
 
-        private async Task ProcessTransactionAsync(Wrapper.BlockchainNode network, string txId, CancellationToken cancellationToken)
+        private async Task<ProcessTransactionResult> ProcessTransactionAsync(Wrapper.BlockchainNode network, string txId, CancellationToken cancellationToken)
         {
             string result = await _wrapper.RunBackgroundCommandAsync(
                 network.CliPath,
@@ -145,9 +152,12 @@ namespace P2FK.IO.Services
                 ],
                 cancellationToken);
             if (!LooksLikeRootJson(result))
-                return;
+                return IsTransientCliFailure(result)
+                    ? ProcessTransactionResult.Retry
+                    : ProcessTransactionResult.Ignore;
 
             _searchService.QueueRootCacheRefresh(txId, result, network.Mainnet, network.Blockchain);
+            return ProcessTransactionResult.Success;
         }
 
         private static bool LooksLikeRootJson(string rawJson)
@@ -167,6 +177,65 @@ namespace P2FK.IO.Services
             }
         }
 
+        private static bool IsTransientCliFailure(string result) =>
+            result.Contains("request timed out", StringComparison.OrdinalIgnoreCase) ||
+            result.Contains("request cancelled", StringComparison.OrdinalIgnoreCase) ||
+            result.Contains("request deferred", StringComparison.OrdinalIgnoreCase) ||
+            result.StartsWith("Error:", StringComparison.OrdinalIgnoreCase);
+
         private IEnumerable<Wrapper.BlockchainNode> GetNetworks() => _wrapper.GetBlockchainNodes();
+
+        private enum ProcessTransactionResult
+        {
+            Ignore,
+            Retry,
+            Success
+        }
+
+        private sealed class MonitorState
+        {
+            private readonly Queue<string> _pendingQueue = new();
+            private readonly HashSet<string> _pendingSet = new(StringComparer.OrdinalIgnoreCase);
+
+            public MonitorState(IEnumerable<string> knownSnapshot)
+            {
+                KnownSnapshot = new HashSet<string>(knownSnapshot, StringComparer.OrdinalIgnoreCase);
+            }
+
+            public HashSet<string> KnownSnapshot { get; private set; }
+
+            public void Enqueue(string txId)
+            {
+                if (_pendingSet.Add(txId))
+                    _pendingQueue.Enqueue(txId);
+            }
+
+            public void ReplaceKnownSnapshot(IEnumerable<string> knownSnapshot) =>
+                KnownSnapshot = new HashSet<string>(knownSnapshot, StringComparer.OrdinalIgnoreCase);
+
+            public void TrimMissingTransactions()
+            {
+                foreach (string txId in _pendingSet.Where(txId => !KnownSnapshot.Contains(txId)).ToList())
+                    _pendingSet.Remove(txId);
+            }
+
+            public string? TryDequeuePending()
+            {
+                while (_pendingQueue.Count > 0)
+                {
+                    string txId = _pendingQueue.Dequeue();
+                    if (_pendingSet.Remove(txId) && KnownSnapshot.Contains(txId))
+                        return txId;
+                }
+
+                return null;
+            }
+
+            public void Requeue(string txId)
+            {
+                if (KnownSnapshot.Contains(txId) && _pendingSet.Add(txId))
+                    _pendingQueue.Enqueue(txId);
+            }
+        }
     }
 }

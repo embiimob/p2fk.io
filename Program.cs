@@ -77,6 +77,7 @@ builder.Services.AddSingleton<P2FK.IO.Services.RootSearchTrendService>();
 builder.Services.AddSingleton<IngressMetadataStore>();
 builder.Services.AddSingleton<IKuboIngressService, KuboIngressService>();
 builder.Services.AddSingleton<IpfsIngressService>();
+builder.Services.AddHttpClient();
 builder.Services.AddHttpClient(nameof(KuboIngressService));
 builder.Services.Configure<IpfsIngressOptions>(builder.Configuration.GetSection(IpfsIngressOptions.SectionName));
 builder.Services.AddHealthChecks().AddCheck<IpfsIngressHealthCheck>("ipfs_ingress");
