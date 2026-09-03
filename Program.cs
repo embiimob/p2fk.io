@@ -114,6 +114,7 @@ if (OperatingSystem.IsWindows())
 {
     builder.Services.AddSingleton<P2FK.IO.Services.WindowsSearchService>();
     builder.Services.AddHostedService<P2FK.IO.Services.CacheWarmingService>();
+    builder.Services.AddHostedService<P2FK.IO.Services.LiveMempoolMonitorService>();
 }
 
 builder.Services.AddHostedService<ManagedKuboService>();

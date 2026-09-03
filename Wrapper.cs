@@ -47,9 +47,12 @@ namespace P2FK.IO
         public string MZCRPCPassword = "better-password";
 
         public const int MaxTimeoutSeconds = 420;
+        private const int BackgroundAcquireRetryMilliseconds = 500;
+        private const int BackgroundRequiredFreeSlots = 2;
 
         // Global concurrency cap: at most 8 CLI processes running simultaneously.
         private static readonly SemaphoreSlim _semaphore = new SemaphoreSlim(8, 8);
+        private static readonly SemaphoreSlim _backgroundMonitorSemaphore = new SemaphoreSlim(1, 1);
         private static readonly TimeSpan _timeout = TimeSpan.FromSeconds(MaxTimeoutSeconds);
 
         // In-flight request coalescing: concurrent API calls for the same address + command
@@ -97,6 +100,9 @@ namespace P2FK.IO
             }
         }
 
+        public Task<string> RunBackgroundCommandAsync(string executablePath, string arguments, CancellationToken cancellationToken = default) =>
+            ExecuteCliAsync(executablePath, arguments, lowPriority: true, cancellationToken);
+
         // Derives a stable coalescing key from the CLI verb and address so that callers
         // with different --skip / --qty still coalesce on the same address+command pair.
         // Falls back to the full argument string for commands that have no --address flag.
@@ -126,18 +132,49 @@ namespace P2FK.IO
 
         // Executes the CLI process with an internal-only timeout.  Not bound to any
         // individual caller's CancellationToken so HTTP disconnects don't abort the build.
-        private async Task<string> ExecuteCliAsync(string executablePath, string arguments)
+        private Task<string> ExecuteCliAsync(string executablePath, string arguments) =>
+            ExecuteCliAsync(executablePath, arguments, lowPriority: false, CancellationToken.None);
+
+        private async Task<string> ExecuteCliAsync(
+            string executablePath,
+            string arguments,
+            bool lowPriority,
+            CancellationToken cancellationToken)
         {
             using var timeoutCts = new CancellationTokenSource(_timeout);
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(timeoutCts.Token, cancellationToken);
             bool acquired = false;
+            bool backgroundPermitAcquired = false;
             try
             {
-                await _semaphore.WaitAsync(timeoutCts.Token);
-                acquired = true;
+                if (lowPriority)
+                {
+                    await _backgroundMonitorSemaphore.WaitAsync(linkedCts.Token);
+                    backgroundPermitAcquired = true;
+
+                    while (!linkedCts.Token.IsCancellationRequested)
+                    {
+                        if (_semaphore.CurrentCount >= BackgroundRequiredFreeSlots &&
+                            await _semaphore.WaitAsync(TimeSpan.Zero, linkedCts.Token))
+                        {
+                            acquired = true;
+                            break;
+                        }
+
+                        await Task.Delay(BackgroundAcquireRetryMilliseconds, linkedCts.Token);
+                    }
+                }
+                else
+                {
+                    await _semaphore.WaitAsync(linkedCts.Token);
+                    acquired = true;
+                }
             }
             catch (OperationCanceledException)
             {
-                return "[\"error: request timed out\"]";
+                return cancellationToken.IsCancellationRequested
+                    ? "[\"error: request cancelled\"]"
+                    : "[\"error: request timed out\"]";
             }
 
             try
@@ -157,18 +194,20 @@ namespace P2FK.IO
                 using var process = new Process { StartInfo = processStartInfo };
                 process.Start();
 
-                var outputTask = process.StandardOutput.ReadToEndAsync(timeoutCts.Token);
-                var errorTask  = process.StandardError.ReadToEndAsync(timeoutCts.Token);
+                var outputTask = process.StandardOutput.ReadToEndAsync(linkedCts.Token);
+                var errorTask  = process.StandardError.ReadToEndAsync(linkedCts.Token);
 
                 try
                 {
                     await Task.WhenAll(outputTask, errorTask);
-                    await process.WaitForExitAsync(timeoutCts.Token);
+                    await process.WaitForExitAsync(linkedCts.Token);
                 }
                 catch (OperationCanceledException)
                 {
                     try { process.Kill(entireProcessTree: true); } catch { /* process may have already exited or be inaccessible */ }
-                    return "[\"error: request timed out\"]";
+                    return cancellationToken.IsCancellationRequested
+                        ? "[\"error: request cancelled\"]"
+                        : "[\"error: request timed out\"]";
                 }
 
                 // Task.WhenAll above succeeded without throwing, so both tasks are guaranteed completed successfully
@@ -183,6 +222,7 @@ namespace P2FK.IO
             finally
             {
                 if (acquired) _semaphore.Release();
+                if (backgroundPermitAcquired) _backgroundMonitorSemaphore.Release();
             }
         }
     }
