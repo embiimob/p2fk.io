@@ -54,7 +54,7 @@ namespace P2FK.IO
         // Seven shared permits are available to API or background work; one extra permit
         // is reserved for foreground/API traffic so live monitoring never consumes the
         // final slot that an interactive request could use.
-        private static readonly SemaphoreSlim _sharedSemaphore = new SemaphoreSlim(7, 7);
+        private static readonly SemaphoreSlim _sharedSemaphore = new SemaphoreSlim(15, 15);
         private static readonly SemaphoreSlim _foregroundReserveSemaphore = new SemaphoreSlim(1, 1);
         private static readonly SemaphoreSlim _backgroundMonitorSemaphore = new SemaphoreSlim(1, 1);
         private static readonly TimeSpan _timeout = TimeSpan.FromSeconds(MaxTimeoutSeconds);
