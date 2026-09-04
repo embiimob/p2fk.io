@@ -189,25 +189,23 @@ namespace P2FK.IO.Services
 
             await using var stream = largestFile.OpenRead();
             var added = await _kuboIngressService.AddAsync(stream, largestFile.Name, cancellationToken);
-            if (!string.Equals(added.Hash, requestedCid, StringComparison.Ordinal))
-            {
-                if (await _kuboIngressService.IsPinnedAsync(added.Hash, cancellationToken))
-                    await _kuboIngressService.UnpinAsync(added.Hash, cancellationToken);
-
-                _logger.LogWarning(
-                    "IPFS cache import fallback CID mismatch requestedCid={RequestedCid} importedCid={ImportedCid} file={FileName}; fallback imports require CIDv0-compatible content/settings to reproduce Qm folder names",
-                    requestedCid,
-                    added.Hash,
-                    largestFile.FullName);
-                return false;
-            }
-
             await _kuboIngressService.PinAsync(added.Hash, cancellationToken);
 
-            _logger.LogInformation(
-                "IPFS cache import fallback added file {FileName} as CID {Cid}",
-                largestFile.FullName,
-                added.Hash);
+            if (!string.Equals(added.Hash, requestedCid, StringComparison.Ordinal))
+            {
+                _logger.LogWarning(
+                    "IPFS cache import fallback added file {FileName} as CID {ImportedCid} while processing requested folder CID {RequestedCid}",
+                    largestFile.FullName,
+                    added.Hash,
+                    requestedCid);
+            }
+            else
+            {
+                _logger.LogInformation(
+                    "IPFS cache import fallback added file {FileName} as CID {Cid}",
+                    largestFile.FullName,
+                    added.Hash);
+            }
 
             return true;
         }
@@ -236,11 +234,11 @@ namespace P2FK.IO.Services
         private static void ClearAttributesRecursive(string path)
         {
             var root = new DirectoryInfo(path);
-            foreach (DirectoryInfo directory in root.EnumerateDirectories("*", SearchOption.AllDirectories))
-                directory.Attributes = FileAttributes.Normal;
-
             foreach (FileInfo file in root.EnumerateFiles("*", SearchOption.AllDirectories))
                 file.Attributes = FileAttributes.Normal;
+
+            foreach (DirectoryInfo directory in root.EnumerateDirectories("*", SearchOption.AllDirectories).OrderByDescending(directory => directory.FullName.Length))
+                directory.Attributes = FileAttributes.Normal;
 
             root.Attributes = FileAttributes.Normal;
         }

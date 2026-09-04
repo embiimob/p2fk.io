@@ -242,7 +242,7 @@ For each CID folder, P2FK.IO will:
 
 - Try to fetch that CID from Kubo and pin it.
 - If the fetch fails, find the largest file anywhere inside that CID folder.
-- Import that file directly into Kubo and require the returned CID to match the folder name before treating the import as successful.
+- Import that file directly into Kubo, pin the returned CID, and log when the imported CID differs from the folder name.
 - Delete the CID folder and all of its contents after a successful import.
 
 Fallback file imports are forced through Kubo with **CIDv0-compatible** add settings so imported hashes remain in the classic `Qm...` form when the source content is actually reproducible as a CIDv0 object.
