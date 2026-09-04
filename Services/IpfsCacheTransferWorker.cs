@@ -198,7 +198,7 @@ namespace P2FK.IO.Services
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
                 _logger.LogWarning("IPFS cache import fetch timed out for CID {Cid} after no local files were found", cid);
-                await WriteTransferResultAsync(transferResultsPath, "IMPORT", cid, "FETCH-TIMEOUT", $"Kubo fetch exceeded {FetchFallbackTimeout.TotalMinutes:0} minute and no local files were found", cancellationToken);
+                await WriteTransferResultAsync(transferResultsPath, "IMPORT", cid, "FETCH-TIMEOUT", $"Kubo fetch exceeded the {FetchFallbackTimeout.TotalMinutes:0}-minute timeout and no local files were found", cancellationToken);
                 return false;
             }
             catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException)
