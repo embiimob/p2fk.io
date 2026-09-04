@@ -81,7 +81,16 @@ namespace P2FK.IO.Services
                     if (!imported)
                         continue;
 
-                    DeleteDirectoryIfExists(cidFolderPath);
+                    try
+                    {
+                        DeleteDirectoryIfExists(cidFolderPath);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "IPFS cache import succeeded but folder cleanup failed for {CidFolderPath}", cidFolderPath);
+                        continue;
+                    }
+
                     _logger.LogInformation("IPFS cache import complete for folder {CidFolder}", cid);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -112,7 +121,16 @@ namespace P2FK.IO.Services
                     bool isPinned = await _kuboIngressService.IsPinnedAsync(cid, cancellationToken);
                     if (!isPinned)
                     {
-                        DeleteDirectoryIfExists(cidFolderPath);
+                        try
+                        {
+                            DeleteDirectoryIfExists(cidFolderPath);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "IPFS cache removal succeeded but folder cleanup failed for {CidFolderPath}", cidFolderPath);
+                            continue;
+                        }
+
                         _logger.LogInformation("IPFS cache removal complete for folder {CidFolder} pinned={WasPinned}", cid, isPinned);
                         continue;
                     }
@@ -136,7 +154,16 @@ namespace P2FK.IO.Services
 
             await _kuboIngressService.RunGarbageCollectionAsync(cancellationToken);
             foreach (string path in foldersAwaitingGc)
-                DeleteDirectoryIfExists(path);
+            {
+                try
+                {
+                    DeleteDirectoryIfExists(path);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "IPFS cache removal cleanup failed for {CidFolderPath} after garbage collection", path);
+                }
+            }
         }
 
         private async Task<bool> TryFetchAndPinAsync(string cid, CancellationToken cancellationToken)
@@ -199,8 +226,23 @@ namespace P2FK.IO.Services
 
         private static void DeleteDirectoryIfExists(string path)
         {
-            if (Directory.Exists(path))
-                Directory.Delete(path, recursive: true);
+            if (!Directory.Exists(path))
+                return;
+
+            ClearAttributesRecursive(path);
+            Directory.Delete(path, recursive: true);
+        }
+
+        private static void ClearAttributesRecursive(string path)
+        {
+            var root = new DirectoryInfo(path);
+            foreach (DirectoryInfo directory in root.EnumerateDirectories("*", SearchOption.AllDirectories))
+                directory.Attributes = FileAttributes.Normal;
+
+            foreach (FileInfo file in root.EnumerateFiles("*", SearchOption.AllDirectories))
+                file.Attributes = FileAttributes.Normal;
+
+            root.Attributes = FileAttributes.Normal;
         }
     }
 }
