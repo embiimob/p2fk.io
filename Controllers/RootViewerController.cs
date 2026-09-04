@@ -24,7 +24,7 @@ namespace P2FK.IO.Controllers
         private static readonly HashSet<string> AudioExtensions = new(StringComparer.OrdinalIgnoreCase)
             { ".mp3", ".wav", ".ogg", ".flac", ".aac", ".m4a" };
         private static readonly HashSet<string> VideoExtensions = new(StringComparer.OrdinalIgnoreCase)
-            { ".mp4", ".webm", ".ogv", ".mov" };
+            { ".mp4", ".m4v", ".webm", ".ogv", ".mov" };
         private static readonly HashSet<string> TextExtensions = new(StringComparer.OrdinalIgnoreCase)
             { ".txt", ".xml", ".csv", ".md" };
         private static readonly HashSet<string> PdfExtensions = new(StringComparer.OrdinalIgnoreCase)
@@ -930,7 +930,7 @@ namespace P2FK.IO.Controllers
     var ext = artifactFn ? artifactFn.split('.').pop().toLowerCase() : '';
     var el = '';
     var imgExts = ['jpg','jpeg','png','gif','webp','bmp','svg'];
-    var vidExts = ['mp4','webm','ogv','mov'];
+    var vidExts = ['mp4','m4v','webm','ogv','mov'];
     var audExts = ['mp3','wav','ogg','flac','aac','m4a'];
     if (imgExts.indexOf(ext) >= 0) {{
       var img = document.createElement('img');
