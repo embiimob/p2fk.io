@@ -95,7 +95,10 @@ namespace P2FK.IO.Services
         private record CachedObjectEntry(string Blockchain, string Address, string RawJson);
         private record CachedProfileEntry(string Blockchain, string Address, string RawJson);
         private record PendingRootRefreshRequest(string TxId, bool Mainnet, string Blockchain);
+        private const int MaxPendingRefreshFailures = 5;
         private readonly ConcurrentDictionary<string, PendingRootRefreshRequest> _pendingRootRefreshQueue =
+            new(StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentDictionary<string, int> _pendingRootRefreshFailures =
             new(StringComparer.OrdinalIgnoreCase);
 
         [SupportedOSPlatform("windows")]
@@ -188,10 +191,12 @@ namespace P2FK.IO.Services
             if (!IsPendingRoot(rawJson))
             {
                 _pendingRootRefreshQueue.TryRemove(queueKey, out _);
+                _pendingRootRefreshFailures.TryRemove(queueKey, out _);
                 return;
             }
 
             _pendingRootRefreshQueue[queueKey] = new PendingRootRefreshRequest(txId, mainnet, normalizedBlockchain);
+            _pendingRootRefreshFailures.TryRemove(queueKey, out _);
         }
 
         /// <summary>
@@ -214,18 +219,49 @@ namespace P2FK.IO.Services
 
                 string? latestRootJson = await TryGetRootByTransactionIdAsync(item.Value, cancellationToken);
                 if (string.IsNullOrWhiteSpace(latestRootJson))
+                {
+                    RegisterPendingRefreshFailure(item.Key, item.Value);
                     continue;
+                }
 
                 if (!LooksLikeRootJson(latestRootJson))
+                {
+                    RegisterPendingRefreshFailure(item.Key, item.Value);
                     continue;
+                }
+
+                _pendingRootRefreshFailures.TryRemove(item.Key, out _);
 
                 if (IsPendingRoot(latestRootJson))
                     continue;
 
                 bool cacheUpdated = RefreshRootCacheEntry(item.Value.TxId, latestRootJson, insertIfNotFound: true);
-                if (cacheUpdated)
-                    _pendingRootRefreshQueue.TryRemove(item.Key, out _);
+                if (!cacheUpdated)
+                {
+                    _logger.LogDebug(
+                        "Pending root refresh confirmed txId={TxId} chain={Blockchain} but no cache entry was updated",
+                        item.Value.TxId,
+                        item.Value.Blockchain);
+                }
+
+                _pendingRootRefreshQueue.TryRemove(item.Key, out _);
+                _pendingRootRefreshFailures.TryRemove(item.Key, out _);
             }
+        }
+
+        private void RegisterPendingRefreshFailure(string queueKey, PendingRootRefreshRequest request)
+        {
+            int failures = _pendingRootRefreshFailures.AddOrUpdate(queueKey, 1, static (_, existing) => existing + 1);
+            if (failures < MaxPendingRefreshFailures)
+                return;
+
+            _pendingRootRefreshQueue.TryRemove(queueKey, out _);
+            _pendingRootRefreshFailures.TryRemove(queueKey, out _);
+            _logger.LogWarning(
+                "Dropping pending root refresh txId={TxId} chain={Blockchain} after {FailureCount} invalid refresh attempts",
+                request.TxId,
+                request.Blockchain,
+                failures);
         }
 
         private static bool IsPendingRoot(string rawJson)
@@ -670,6 +706,7 @@ namespace P2FK.IO.Services
                                 txId,
                                 pendingMainnet,
                                 pendingBlockchain.ToUpperInvariant());
+                            _pendingRootRefreshFailures.TryRemove(pendingQueueKey, out _);
                         }
                     }
                 }
