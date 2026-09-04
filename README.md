@@ -242,11 +242,11 @@ Inside `import`, create subfolders whose folder name is the target CID.
 
 For each CID folder, P2FK.IO will:
 
-- Try to fetch that CID from Kubo and pin it.
-- If that CID fetch times out, fall back to the largest file found anywhere inside that CID folder.
-- If the fetch fails for any other reason, find the largest file anywhere inside that CID folder.
-- Import that file directly into Kubo, pin the returned CID, and log when the imported CID differs from the folder name.
-- Treat that fallback import as successful once the file has been added and pinned, even when the returned CID differs from the folder name, then delete the CID folder and all of its contents.
+- First look for the largest file found anywhere inside that CID folder.
+- If a file is found, import that file directly into Kubo, pin the returned CID, and log when the imported CID differs from the folder name.
+- If no files are found in the folder, try to fetch that CID from Kubo and pin it.
+- Bound that CID fetch attempt to one minute.
+- Treat either successful path as complete, then delete the CID folder and all of its contents.
 
 Fallback file imports are forced through Kubo with **CIDv0-compatible** add settings so imported hashes remain in the classic `Qm...` form when the selected file content is actually reproducible as a CIDv0 object. Because this fallback adds a single file rather than recreating a full directory DAG, folder-based inputs can intentionally produce a different CID while still being treated as a completed migration of the fallback file content.
 
