@@ -13,7 +13,7 @@ namespace P2FK.IO.Services
         private static readonly TimeSpan StartupDelay = TimeSpan.FromSeconds(5);
         private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(10);
         private const int MaxTransactionsPerNetworkPerCycle = 8;
-        private const int MaxCliTransactionsPerPollCycle = 1;
+        private const int MaxCliTransactionsPerPollCycle = 2;
         private const int PendingRefreshChecksPerPollCycle = 1;
         private const int MaxRetryAttempts = 3;
         private static readonly Regex IpfsUrnRegex = new(
@@ -51,15 +51,23 @@ namespace P2FK.IO.Services
                 while (!stoppingToken.IsCancellationRequested)
                 {
                     int remainingCliBudget = MaxCliTransactionsPerPollCycle;
+                    int pendingRefreshBudget = Math.Min(PendingRefreshChecksPerPollCycle, remainingCliBudget);
+                    if (pendingRefreshBudget > 0)
+                    {
+                        await _searchService.ProcessPendingRootCacheRefreshQueueAsync(
+                            stoppingToken,
+                            pendingRefreshBudget);
+                        remainingCliBudget -= pendingRefreshBudget;
+                    }
+
                     foreach (var network in GetNetworks())
                     {
                         stoppingToken.ThrowIfCancellationRequested();
+                        if (remainingCliBudget <= 0)
+                            break;
+
                         remainingCliBudget = await PollNetworkAsync(network, remainingCliBudget, stoppingToken);
                     }
-
-                    await _searchService.ProcessPendingRootCacheRefreshQueueAsync(
-                        stoppingToken,
-                        PendingRefreshChecksPerPollCycle);
 
                     await Task.Delay(PollInterval, stoppingToken);
                 }

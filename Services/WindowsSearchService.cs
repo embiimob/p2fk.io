@@ -95,7 +95,6 @@ namespace P2FK.IO.Services
         private record CachedObjectEntry(string Blockchain, string Address, string RawJson);
         private record CachedProfileEntry(string Blockchain, string Address, string RawJson);
         private record PendingRootRefreshRequest(string TxId, bool Mainnet, string Blockchain);
-        private const int MaxPendingRefreshFailures = 5;
         private readonly ConcurrentDictionary<string, PendingRootRefreshRequest> _pendingRootRefreshQueue =
             new(StringComparer.OrdinalIgnoreCase);
         private readonly ConcurrentDictionary<string, int> _pendingRootRefreshFailures =
@@ -252,13 +251,11 @@ namespace P2FK.IO.Services
         private void RegisterPendingRefreshFailure(string queueKey, PendingRootRefreshRequest request)
         {
             int failures = _pendingRootRefreshFailures.AddOrUpdate(queueKey, 1, static (_, existing) => existing + 1);
-            if (failures < MaxPendingRefreshFailures)
+            if (failures != 1 && failures % 10 != 0)
                 return;
 
-            _pendingRootRefreshQueue.TryRemove(queueKey, out _);
-            _pendingRootRefreshFailures.TryRemove(queueKey, out _);
-            _logger.LogWarning(
-                "Dropping pending root refresh txId={TxId} chain={Blockchain} after {FailureCount} invalid refresh attempts",
+            _logger.LogInformation(
+                "Pending root refresh still waiting for txId={TxId} chain={Blockchain}; invalid refresh attempts={FailureCount}",
                 request.TxId,
                 request.Blockchain,
                 failures);
