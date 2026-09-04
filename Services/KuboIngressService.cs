@@ -69,16 +69,29 @@ namespace P2FK.IO.Services
         public async Task<bool> IsPinnedAsync(string cid, CancellationToken cancellationToken = default)
         {
             using var response = await CreateClient().PostAsync(BuildApiUri($"/api/v0/pin/ls?arg={Uri.EscapeDataString(cid)}"), content: null, cancellationToken);
-            if (response.IsSuccessStatusCode)
-                return true;
-
             string payload = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (response.IsSuccessStatusCode)
+            {
+                using var document = JsonDocument.Parse(payload);
+                if (document.RootElement.TryGetProperty("Keys", out JsonElement keys)
+                    && keys.ValueKind == JsonValueKind.Object)
+                {
+                    foreach (JsonProperty property in keys.EnumerateObject())
+                    {
+                        if (string.Equals(property.Name, cid, StringComparison.Ordinal))
+                            return true;
+                    }
+                }
+
+                return false;
+            }
+
             if (payload.Contains("not pinned", StringComparison.OrdinalIgnoreCase) ||
                 payload.Contains("no link named", StringComparison.OrdinalIgnoreCase) ||
                 payload.Contains("does not have pinned", StringComparison.OrdinalIgnoreCase))
                 return false;
 
-            throw new InvalidOperationException($"Kubo pin status failed for CID {cid}: {payload}");
+            throw new InvalidOperationException($"Kubo pin status failed for CID {cid} with HTTP {(int)response.StatusCode}: {payload}");
         }
 
         public async Task<long> GetRepoSizeAsync(CancellationToken cancellationToken = default)
