@@ -217,6 +217,13 @@ namespace P2FK.IO
 
                         await Task.Delay(ForegroundAcquireRetryMilliseconds, linkedCts.Token);
                     }
+
+                    if (!acquiredShared && !acquiredForegroundReserve)
+                    {
+                        return cancellationToken.IsCancellationRequested
+                            ? "[\"error: request cancelled\"]"
+                            : "[\"error: request timed out\"]";
+                    }
                 }
             }
             catch (OperationCanceledException)
