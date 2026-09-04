@@ -9,6 +9,8 @@ namespace P2FK.IO.Services
     public class KuboIngressService : IKuboIngressService
     {
         private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+        // Keep fallback imports in classic UnixFS/CIDv0-compatible mode so single-file cache migrations can
+        // reproduce legacy Qm-style hashes when the selected file content matches the original object shape.
         private const string AddApiRelativeUrl = "/api/v0/add?pin=false&cid-version=0&hash=sha2-256&raw-leaves=false&wrap-with-directory=false";
         private readonly Uri _kuboApiBaseUri;
         private readonly Uri _kuboGatewayBaseUri;
