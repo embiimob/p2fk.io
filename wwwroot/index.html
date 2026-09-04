@@ -1482,7 +1482,7 @@ const renderPollCard=(el,queAddr,queText,endBlock,answers,mainnet,downloadUrl)=>
 // ── Attachment renderer ────────────────────────────────────────────────
 const renderAttachments=(container,attachments,links,blockchain)=>{
   const audioMime={mp3:'audio/mpeg',wav:'audio/wav',ogg:'audio/ogg',flac:'audio/flac',webm:'audio/webm',aac:'audio/aac',m4a:'audio/mp4',opus:'audio/opus'};
-  const videoMime={mp4:'video/mp4',avi:'video/x-msvideo',mov:'video/quicktime'};
+  const videoMime={mp4:'video/mp4',m4v:'video/mp4',avi:'video/x-msvideo',mov:'video/quicktime'};
   const imgEls=[];
   for(const{hash,filename}of attachments){
     const isTx=/^[0-9a-f]{64}$/i.test(hash);
@@ -1518,7 +1518,7 @@ const renderAttachments=(container,attachments,links,blockchain)=>{
     const ext=(filename.match(/\.([^.]+)$/)||[])[1]?.toLowerCase()||'';
     const isImg=/^(jpg|jpeg|png|gif|webp|bmp|svg|avif)$/.test(ext);
     const isAud=/^(mp3|wav|ogg|flac|webm|aac|m4a|opus)$/.test(ext);
-    const isVid=/^(mp4|avi|mov)$/.test(ext);
+    const isVid=/^(mp4|m4v|avi|mov)$/.test(ext);
     const el=document.createElement('div');
     if(isImg){el.innerHTML=`<img class="media-placeholder" src="${fallbackImage}" alt="Attachment" style="max-width:100%;max-height:280px;border-radius:5px;">`;imgEls.push({img:el.querySelector('img'),url});}
     else if(isAud){el.innerHTML=`<audio controls style="width:100%"><source src="${url}" type="${audioMime[ext]||'audio/wav'}">Audio not supported.</audio>`;}
@@ -2648,7 +2648,7 @@ const getUrnMediaType=(urn)=>{
   // Check file extension from the actual file portion of the path
   const filePath=getUrnFilePath(urn)||getUrnMediaUrl(urn)||'';
   const lo=filePath.toLowerCase();
-  if(/\.(mp4|webm|mov|ogg|ogv)$/.test(lo)) return 'video';
+  if(/\.(mp4|m4v|webm|mov|ogg|ogv)$/.test(lo)) return 'video';
   if(/\.(mp3|wav|flac|aac|oga)$/.test(lo)) return 'audio';
   if(/\.pdf$/.test(lo)) return 'pdf';
   if(/\.html?$/.test(lo)) return 'html';
