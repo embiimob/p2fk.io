@@ -245,6 +245,8 @@ For each CID folder, P2FK.IO will:
 - Import that file directly into Kubo and require the returned CID to match the folder name before treating the import as successful.
 - Delete the CID folder and all of its contents after a successful import.
 
+Fallback file imports are forced through Kubo with **CIDv0-compatible** add settings so imported hashes remain in the classic `Qm...` form when the source content is actually reproducible as a CIDv0 object.
+
 This is intended to help migrate a pre-existing SUP IPFS cache into the current Kubo repo.
 
 #### Remove behavior

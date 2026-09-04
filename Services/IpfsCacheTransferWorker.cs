@@ -169,7 +169,7 @@ namespace P2FK.IO.Services
 
                 await _kuboIngressService.RunGarbageCollectionAsync(cancellationToken);
                 _logger.LogWarning(
-                    "IPFS cache import fallback CID mismatch requestedCid={RequestedCid} importedCid={ImportedCid} file={FileName}",
+                    "IPFS cache import fallback CID mismatch requestedCid={RequestedCid} importedCid={ImportedCid} file={FileName}; fallback imports require CIDv0-compatible content/settings to reproduce Qm folder names",
                     requestedCid,
                     added.Hash,
                     largestFile.FullName);

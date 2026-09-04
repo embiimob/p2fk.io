@@ -9,6 +9,7 @@ namespace P2FK.IO.Services
     public class KuboIngressService : IKuboIngressService
     {
         private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+        private const string AddApiRelativeUrl = "/api/v0/add?pin=false&cid-version=0&hash=sha2-256&raw-leaves=false&wrap-with-directory=false";
         private readonly Uri _kuboApiBaseUri;
         private readonly Uri _kuboGatewayBaseUri;
         private readonly IHttpClientFactory _httpClientFactory;
@@ -31,7 +32,7 @@ namespace P2FK.IO.Services
             fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
             content.Add(fileContent, "file", fileName);
 
-            using var response = await CreateClient().PostAsync(BuildApiUri("/api/v0/add?pin=false&cid-version=0&wrap-with-directory=false"), content, cancellationToken);
+            using var response = await CreateClient().PostAsync(BuildApiUri(AddApiRelativeUrl), content, cancellationToken);
             string payload = await response.Content.ReadAsStringAsync(cancellationToken);
             if (!response.IsSuccessStatusCode)
                 throw new InvalidOperationException($"Kubo add failed: {payload}");
