@@ -233,13 +233,40 @@ namespace P2FK.IO.Services
             return true;
         }
 
-        private static FileInfo? GetLargestFile(string cidFolderPath)
+        private FileInfo? GetLargestFile(string cidFolderPath)
         {
             FileInfo? largest = null;
-            foreach (FileInfo file in new DirectoryInfo(cidFolderPath).EnumerateFiles("*", SearchOption.AllDirectories))
+
+            var pendingDirectories = new Stack<string>();
+            pendingDirectories.Push(cidFolderPath);
+
+            while (pendingDirectories.Count > 0)
             {
-                if (largest == null || file.Length > largest.Length)
-                    largest = file;
+                string currentDirectoryPath = pendingDirectories.Pop();
+                DirectoryInfo currentDirectory = new(currentDirectoryPath);
+
+                try
+                {
+                    foreach (FileInfo file in currentDirectory.EnumerateFiles())
+                    {
+                        if (largest == null || file.Length > largest.Length)
+                            largest = file;
+                    }
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    _logger.LogWarning(ex, "Skipping inaccessible IPFS cache import files under {DirectoryPath}", currentDirectoryPath);
+                }
+
+                try
+                {
+                    foreach (DirectoryInfo childDirectory in currentDirectory.EnumerateDirectories())
+                        pendingDirectories.Push(childDirectory.FullName);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    _logger.LogWarning(ex, "Skipping inaccessible IPFS cache import directory under {DirectoryPath}", currentDirectoryPath);
+                }
             }
 
             return largest;
