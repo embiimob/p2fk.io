@@ -51,13 +51,12 @@ namespace P2FK.IO.Services
                 while (!stoppingToken.IsCancellationRequested)
                 {
                     int remainingCliBudget = MaxCliTransactionsPerPollCycle;
-                    int pendingRefreshBudget = Math.Min(PendingRefreshChecksPerPollCycle, remainingCliBudget);
-                    if (pendingRefreshBudget > 0)
+                    if (remainingCliBudget > 0)
                     {
-                        await _searchService.ProcessPendingRootCacheRefreshQueueAsync(
+                        int pendingChecks = await _searchService.ProcessPendingRootCacheRefreshQueueAsync(
                             stoppingToken,
-                            pendingRefreshBudget);
-                        remainingCliBudget -= pendingRefreshBudget;
+                            Math.Min(PendingRefreshChecksPerPollCycle, remainingCliBudget));
+                        remainingCliBudget = Math.Max(0, remainingCliBudget - pendingChecks);
                     }
 
                     foreach (var network in GetNetworks())

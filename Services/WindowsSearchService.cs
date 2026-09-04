@@ -202,10 +202,10 @@ namespace P2FK.IO.Services
         /// Rechecks currently pending transactions and updates root cache entries once
         /// those transactions become confirmed.
         /// </summary>
-        public async Task ProcessPendingRootCacheRefreshQueueAsync(CancellationToken cancellationToken, int maxChecks = int.MaxValue)
+        public async Task<int> ProcessPendingRootCacheRefreshQueueAsync(CancellationToken cancellationToken, int maxChecks = int.MaxValue)
         {
             if (maxChecks <= 0)
-                return;
+                return 0;
 
             int processedChecks = 0;
             foreach (var item in _pendingRootRefreshQueue.ToArray())
@@ -241,11 +241,14 @@ namespace P2FK.IO.Services
                         "Pending root refresh confirmed txId={TxId} chain={Blockchain} but no cache entry was updated",
                         item.Value.TxId,
                         item.Value.Blockchain);
+                    continue;
                 }
 
                 _pendingRootRefreshQueue.TryRemove(item.Key, out _);
                 _pendingRootRefreshFailures.TryRemove(item.Key, out _);
             }
+
+            return processedChecks;
         }
 
         private void RegisterPendingRefreshFailure(string queueKey, PendingRootRefreshRequest request)
