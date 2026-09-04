@@ -248,7 +248,7 @@ For each CID folder, P2FK.IO will:
 - Import that file directly into Kubo, pin the returned CID, and log when the imported CID differs from the folder name.
 - Treat that fallback import as successful once the file has been added and pinned, even when the returned CID differs from the folder name, then delete the CID folder and all of its contents.
 
-Fallback file imports are forced through Kubo with **CIDv0-compatible** add settings so imported hashes remain in the classic `Qm...` form when the source content is actually reproducible as a CIDv0 object.
+Fallback file imports are forced through Kubo with **CIDv0-compatible** add settings so imported hashes remain in the classic `Qm...` form when the selected file content is actually reproducible as a CIDv0 object. Because this fallback adds a single file rather than recreating a full directory DAG, folder-based inputs can intentionally produce a different CID while still being treated as a completed migration of the fallback file content.
 
 This is intended to help migrate a pre-existing SUP IPFS cache into the current Kubo repo.
 
