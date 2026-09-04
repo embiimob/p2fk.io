@@ -77,6 +77,7 @@ builder.Services.AddSingleton<P2FK.IO.Services.RootSearchTrendService>();
 builder.Services.AddSingleton<IngressMetadataStore>();
 builder.Services.AddSingleton<IKuboIngressService, KuboIngressService>();
 builder.Services.AddSingleton<IpfsIngressService>();
+builder.Services.AddHttpClient();
 builder.Services.AddHttpClient(nameof(KuboIngressService));
 builder.Services.Configure<IpfsIngressOptions>(builder.Configuration.GetSection(IpfsIngressOptions.SectionName));
 builder.Services.AddHealthChecks().AddCheck<IpfsIngressHealthCheck>("ipfs_ingress");
@@ -114,10 +115,12 @@ if (OperatingSystem.IsWindows())
 {
     builder.Services.AddSingleton<P2FK.IO.Services.WindowsSearchService>();
     builder.Services.AddHostedService<P2FK.IO.Services.CacheWarmingService>();
+    builder.Services.AddHostedService<P2FK.IO.Services.LiveMempoolMonitorService>();
 }
 
 builder.Services.AddHostedService<ManagedKuboService>();
 builder.Services.AddHostedService<IngressExpirationWorker>();
+builder.Services.AddHostedService<IpfsCacheTransferWorker>();
 builder.Services.AddRequestTimeouts(options =>
     options.DefaultPolicy = new RequestTimeoutPolicy
     {

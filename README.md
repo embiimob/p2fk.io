@@ -18,8 +18,11 @@ The live site at **https://p2fk.io** is a public demo running this exact codebas
 - **Keyword/address mapping endpoints** for cross-referencing public addresses and P2FK keyword identity mappings.
 - **Inquiry endpoints** for listing and resolving inquiry records by transaction and wallet address.
 - **Search and cache services** including known-root/object/profile search endpoints, trending root search visibility, and cache status reporting.
+- **Live mempool monitoring** that watches configured chain mempools, resolves newly seen root transactions through the Sup!? CLI, and updates in-process caches in near real time.
 - **Root content hosting** that serves indexed files from `/root/{txid}/{filename}` through the API host.
 - **Temporary IPFS ingress relay** backed by a dedicated Kubo node for upload, queue/status visibility, timed pin retention, and cleanup.
+- **Automatic IPFS artifact preservation from live roots** that scans newly discovered root messages for `IPFS:` URNs and pins the referenced CIDs indefinitely.
+- **IPFS cache transfer folders** that can import or remove CID-named folders from the configured Kubo repo path.
 - **Operational endpoints** including Swagger docs (`/API`) and ingress health probe (`/health/ipfs`).
 
 ---
@@ -140,6 +143,23 @@ Open **http://localhost:5000/API** in your browser to see the interactive Swagge
 
 > To change the port, edit `Properties\launchSettings.json` or pass `--urls http://localhost:8080` to `dotnet run`.
 
+### Live monitor behavior
+
+When running on Windows, P2FK.IO starts a background live monitor alongside the API host.
+
+- It polls each configured blockchain RPC mempool continuously while the service is running.
+- It detects newly seen transaction IDs and resolves them through the Sup!? CLI.
+- It uses a lower-priority CLI path so normal API traffic keeps precedence.
+- It updates the in-memory root refresh pipeline with newly discovered live roots.
+
+If a newly discovered root message contains URNs such as `IPFS:CID/file.jpg` or `IPFS:CID\file.jpg`, the live monitor now:
+
+- Extracts the **CID only**.
+- Fetches the CID through the local Kubo node without using the filename suffix.
+- Pins that CID indefinitely.
+
+These live-monitor IPFS pins are **not** stored in the temporary ingress-expiration queue, so they are not automatically purged after one hour.
+
 ### Step 5 — Build and validate
 
 ```powershell
@@ -205,6 +225,44 @@ Set the `IpfsIngress` section in `appsettings.json` (or environment-specific ove
 
 Set `KuboExecutablePath` to an absolute or repository-relative binary path if you want to override the bundled binary.
 
+### IPFS cache transfer folders
+
+P2FK.IO now also manages two helper folders inside the configured `IpfsIngress:RepoPath`:
+
+- `import`
+- `remove`
+
+If either folder does not exist, the service creates it automatically.
+
+P2FK.IO also writes a plain-text job log to `import/transfer-results.txt` so import/remove outcomes can still be reviewed when normal application logging is disabled.
+
+#### Import behavior
+
+Inside `import`, create subfolders whose folder name is the target CID.
+
+For each CID folder, P2FK.IO will:
+
+- Try to fetch that CID from Kubo and pin it.
+- If that CID fetch times out, fall back to the largest file found anywhere inside that CID folder.
+- If the fetch fails for any other reason, find the largest file anywhere inside that CID folder.
+- Import that file directly into Kubo, pin the returned CID, and log when the imported CID differs from the folder name.
+- Treat that fallback import as successful once the file has been added and pinned, even when the returned CID differs from the folder name, then delete the CID folder and all of its contents.
+
+Fallback file imports are forced through Kubo with **CIDv0-compatible** add settings so imported hashes remain in the classic `Qm...` form when the selected file content is actually reproducible as a CIDv0 object. Because this fallback adds a single file rather than recreating a full directory DAG, folder-based inputs can intentionally produce a different CID while still being treated as a completed migration of the fallback file content.
+
+This is intended to help migrate a pre-existing SUP IPFS cache into the current Kubo repo.
+
+#### Remove behavior
+
+Inside `remove`, create subfolders whose folder name is the CID to remove.
+
+For each CID folder, P2FK.IO will:
+
+- Check whether the CID is pinned.
+- Unpin it when present.
+- Delete the CID folder and all of its contents immediately when the CID is already absent.
+- Keep folders for successful unpins until Kubo garbage collection completes, then delete them.
+
 ### Bundled Kubo source
 
 - Upstream project: `https://github.com/ipfs/kubo`
@@ -258,6 +316,10 @@ curl https://p2fk.io/health/ipfs
 - Each ingress upload request supports files up to **500 MB** by default (`IpfsIngress:MaxUploadBytes`).
 - Each client IP is limited to **5 GB** of uploads over a rolling 24-hour window.
 - The ingress repo is capped at **500 GB** of active cached content.
+- Public ingress uploads remain temporary and expire after `IpfsIngress:PinLifetimeMinutes` (60 minutes by default).
+- Live-monitor-discovered IPFS CIDs are fetched and pinned separately from public ingress uploads and remain pinned until you remove them manually.
+- CID folders placed in `IpfsIngress:RepoPath\\import` are imported into the active Kubo repo by a background worker.
+- CID folders placed in `IpfsIngress:RepoPath\\remove` are treated as removal requests and cleaned up after processing.
 - Uploads stay pinned for **1 hour** and are cleaned by `IngressExpirationWorker` every **5 minutes**.
 - Queue and status endpoints expose active CID visibility without turning the API into a permanent recursive gateway.
 

@@ -47,9 +47,16 @@ namespace P2FK.IO
         public string MZCRPCPassword = "better-password";
 
         public const int MaxTimeoutSeconds = 420;
+        private const int ForegroundAcquireRetryMilliseconds = 50;
+        private static readonly TimeSpan BackgroundAcquireTimeout = TimeSpan.FromSeconds(10);
 
         // Global concurrency cap: at most 8 CLI processes running simultaneously.
-        private static readonly SemaphoreSlim _semaphore = new SemaphoreSlim(8, 8);
+        // Seven shared permits are available to API or background work; one extra permit
+        // is reserved for foreground/API traffic so live monitoring never consumes the
+        // final slot that an interactive request could use.
+        private static readonly SemaphoreSlim _sharedSemaphore = new SemaphoreSlim(7, 7);
+        private static readonly SemaphoreSlim _foregroundReserveSemaphore = new SemaphoreSlim(1, 1);
+        private static readonly SemaphoreSlim _backgroundMonitorSemaphore = new SemaphoreSlim(1, 1);
         private static readonly TimeSpan _timeout = TimeSpan.FromSeconds(MaxTimeoutSeconds);
 
         // In-flight request coalescing: concurrent API calls for the same address + command
@@ -77,6 +84,16 @@ namespace P2FK.IO
         private static readonly Regex _vbPattern   = new(@"--versionbyte\s+(\S+)", RegexOptions.Compiled);
         private static readonly Regex _verbosePattern = new(@"--verbose(?:\s|$)", RegexOptions.Compiled);
 
+        public sealed record BlockchainNode(
+            string Key,
+            string Blockchain,
+            bool Mainnet,
+            string CliPath,
+            string VersionByte,
+            string RpcUrl,
+            string RpcUser,
+            string RpcPassword);
+
         public async Task<string> RunCommandAsync(string executablePath, string arguments, CancellationToken cancellationToken = default)
         {
             string key = BuildCoalescingKey(executablePath, arguments);
@@ -95,6 +112,21 @@ namespace P2FK.IO
             {
                 return "[\"error: request cancelled\"]";
             }
+        }
+
+        public Task<string> RunBackgroundCommandAsync(
+            string executablePath,
+            IReadOnlyList<string> arguments,
+            CancellationToken cancellationToken = default) =>
+            ExecuteCliAsync(executablePath, arguments, lowPriority: true, cancellationToken);
+
+        public IEnumerable<BlockchainNode> GetBlockchainNodes()
+        {
+            yield return new BlockchainNode("btc-mainnet", "BTC", true, ProdCLIPath, ProdVersionByte, ProdRPCURL, ProdRPCUser, ProdRPCPassword);
+            yield return new BlockchainNode("btc-testnet", "BTC", false, TestCLIPath, TestVersionByte, TestRPCURL, TestRPCUser, TestRPCPassword);
+            yield return new BlockchainNode("ltc-mainnet", "LTC", true, LTCCLIPath, LTCVersionByte, LTCRPCURL, LTCRPCUser, LTCRPCPassword);
+            yield return new BlockchainNode("dog-mainnet", "DOG", true, DOGCLIPath, DOGVersionByte, DOGRPCURL, DOGRPCUser, DOGRPCPassword);
+            yield return new BlockchainNode("mzc-mainnet", "MZC", true, MZCCLIPath, MZCVersionByte, MZCRPCURL, MZCRPCUser, MZCRPCPassword);
         }
 
         // Derives a stable coalescing key from the CLI verb and address so that callers
@@ -126,18 +158,79 @@ namespace P2FK.IO
 
         // Executes the CLI process with an internal-only timeout.  Not bound to any
         // individual caller's CancellationToken so HTTP disconnects don't abort the build.
-        private async Task<string> ExecuteCliAsync(string executablePath, string arguments)
+        private Task<string> ExecuteCliAsync(string executablePath, string arguments) =>
+            ExecuteCliAsync(executablePath, SplitArguments(arguments), lowPriority: false, CancellationToken.None);
+
+        private Task<string> ExecuteCliAsync(
+            string executablePath,
+            IReadOnlyList<string> arguments,
+            bool lowPriority,
+            CancellationToken cancellationToken) =>
+            ExecuteCliAsync(
+                executablePath,
+                processStartInfo =>
+                {
+                    foreach (string argument in arguments)
+                        processStartInfo.ArgumentList.Add(argument);
+                },
+                lowPriority,
+                cancellationToken);
+
+        private async Task<string> ExecuteCliAsync(
+            string executablePath,
+            Action<ProcessStartInfo> configureArguments,
+            bool lowPriority,
+            CancellationToken cancellationToken)
         {
             using var timeoutCts = new CancellationTokenSource(_timeout);
-            bool acquired = false;
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(timeoutCts.Token, cancellationToken);
+            bool acquiredShared = false;
+            bool acquiredForegroundReserve = false;
+            bool backgroundPermitAcquired = false;
             try
             {
-                await _semaphore.WaitAsync(timeoutCts.Token);
-                acquired = true;
+                if (lowPriority)
+                {
+                    await _backgroundMonitorSemaphore.WaitAsync(linkedCts.Token);
+                    backgroundPermitAcquired = true;
+
+                    if (!await _sharedSemaphore.WaitAsync(BackgroundAcquireTimeout, linkedCts.Token))
+                        return "[\"error: request deferred\"]";
+
+                    acquiredShared = true;
+                }
+                else
+                {
+                    while (!linkedCts.Token.IsCancellationRequested)
+                    {
+                        if (await _sharedSemaphore.WaitAsync(TimeSpan.Zero, linkedCts.Token))
+                        {
+                            acquiredShared = true;
+                            break;
+                        }
+
+                        if (await _foregroundReserveSemaphore.WaitAsync(TimeSpan.Zero, linkedCts.Token))
+                        {
+                            acquiredForegroundReserve = true;
+                            break;
+                        }
+
+                        await Task.Delay(ForegroundAcquireRetryMilliseconds, linkedCts.Token);
+                    }
+
+                    if (!acquiredShared && !acquiredForegroundReserve)
+                    {
+                        return cancellationToken.IsCancellationRequested
+                            ? "[\"error: request cancelled\"]"
+                            : "[\"error: request timed out\"]";
+                    }
+                }
             }
             catch (OperationCanceledException)
             {
-                return "[\"error: request timed out\"]";
+                return cancellationToken.IsCancellationRequested
+                    ? "[\"error: request cancelled\"]"
+                    : "[\"error: request timed out\"]";
             }
 
             try
@@ -145,7 +238,6 @@ namespace P2FK.IO
                 ProcessStartInfo processStartInfo = new ProcessStartInfo
                 {
                     FileName = executablePath,
-                    Arguments = arguments,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     CreateNoWindow = true,
@@ -153,22 +245,25 @@ namespace P2FK.IO
                     StandardOutputEncoding = Encoding.UTF8,
                     StandardErrorEncoding = Encoding.UTF8
                 };
+                configureArguments(processStartInfo);
 
                 using var process = new Process { StartInfo = processStartInfo };
                 process.Start();
 
-                var outputTask = process.StandardOutput.ReadToEndAsync(timeoutCts.Token);
-                var errorTask  = process.StandardError.ReadToEndAsync(timeoutCts.Token);
+                var outputTask = process.StandardOutput.ReadToEndAsync(linkedCts.Token);
+                var errorTask  = process.StandardError.ReadToEndAsync(linkedCts.Token);
 
                 try
                 {
                     await Task.WhenAll(outputTask, errorTask);
-                    await process.WaitForExitAsync(timeoutCts.Token);
+                    await process.WaitForExitAsync(linkedCts.Token);
                 }
                 catch (OperationCanceledException)
                 {
                     try { process.Kill(entireProcessTree: true); } catch { /* process may have already exited or be inaccessible */ }
-                    return "[\"error: request timed out\"]";
+                    return cancellationToken.IsCancellationRequested
+                        ? "[\"error: request cancelled\"]"
+                        : "[\"error: request timed out\"]";
                 }
 
                 // Task.WhenAll above succeeded without throwing, so both tasks are guaranteed completed successfully
@@ -182,8 +277,83 @@ namespace P2FK.IO
             }
             finally
             {
-                if (acquired) _semaphore.Release();
+                if (acquiredShared) _sharedSemaphore.Release();
+                if (acquiredForegroundReserve) _foregroundReserveSemaphore.Release();
+                if (backgroundPermitAcquired) _backgroundMonitorSemaphore.Release();
             }
+        }
+
+        private static IReadOnlyList<string> SplitArguments(string arguments)
+        {
+            if (string.IsNullOrWhiteSpace(arguments))
+                return Array.Empty<string>();
+
+            var values = new List<string>();
+            int i = 0;
+
+            while (i < arguments.Length)
+            {
+                while (i < arguments.Length && char.IsWhiteSpace(arguments[i]))
+                    i++;
+
+                if (i >= arguments.Length)
+                    break;
+
+                var current = new StringBuilder();
+                bool inQuotes = false;
+
+                while (i < arguments.Length)
+                {
+                    int backslashCount = 0;
+                    while (i < arguments.Length && arguments[i] == '\\')
+                    {
+                        backslashCount++;
+                        i++;
+                    }
+
+                    if (i < arguments.Length && arguments[i] == '"')
+                    {
+                        current.Append('\\', backslashCount / 2);
+
+                        if (backslashCount % 2 == 0)
+                        {
+                            if (inQuotes && i + 1 < arguments.Length && arguments[i + 1] == '"')
+                            {
+                                current.Append('"');
+                                i += 2;
+                            }
+                            else
+                            {
+                                inQuotes = !inQuotes;
+                                i++;
+                            }
+                        }
+                        else
+                        {
+                            current.Append('"');
+                            i++;
+                        }
+
+                        continue;
+                    }
+
+                    if (backslashCount > 0)
+                        current.Append('\\', backslashCount);
+
+                    if (i >= arguments.Length || (!inQuotes && char.IsWhiteSpace(arguments[i])))
+                        break;
+
+                    current.Append(arguments[i]);
+                    i++;
+                }
+
+                values.Add(current.ToString());
+
+                while (i < arguments.Length && char.IsWhiteSpace(arguments[i]))
+                    i++;
+            }
+
+            return values;
         }
     }
 }

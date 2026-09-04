@@ -9,6 +9,9 @@ namespace P2FK.IO.Services
     public class KuboIngressService : IKuboIngressService
     {
         private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+        // Keep fallback imports in classic UnixFS/CIDv0-compatible mode so single-file cache migrations can
+        // reproduce legacy Qm-style hashes when the selected file content matches the original object shape.
+        private const string AddApiRelativeUrl = "/api/v0/add?pin=false&cid-version=0&hash=sha2-256&raw-leaves=false&wrap-with-directory=false";
         private readonly Uri _kuboApiBaseUri;
         private readonly Uri _kuboGatewayBaseUri;
         private readonly IHttpClientFactory _httpClientFactory;
@@ -31,7 +34,7 @@ namespace P2FK.IO.Services
             fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
             content.Add(fileContent, "file", fileName);
 
-            using var response = await CreateClient().PostAsync(BuildApiUri("/api/v0/add?pin=false&cid-version=0&wrap-with-directory=false"), content, cancellationToken);
+            using var response = await CreateClient().PostAsync(BuildApiUri(AddApiRelativeUrl), content, cancellationToken);
             string payload = await response.Content.ReadAsStringAsync(cancellationToken);
             if (!response.IsSuccessStatusCode)
                 throw new InvalidOperationException($"Kubo add failed: {payload}");
@@ -47,9 +50,51 @@ namespace P2FK.IO.Services
             return result;
         }
 
+        public async Task FetchAsync(string cid, CancellationToken cancellationToken = default)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, BuildApiUri($"/api/v0/cat?arg={Uri.EscapeDataString(cid)}"));
+            using var response = await CreateClient().SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                string payload = await response.Content.ReadAsStringAsync(cancellationToken);
+                throw new InvalidOperationException($"Kubo fetch failed for CID {cid}: {payload}");
+            }
+
+            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            await stream.CopyToAsync(Stream.Null, cancellationToken);
+        }
+
         public Task PinAsync(string cid, CancellationToken cancellationToken = default) => PostNoContentAsync($"/api/v0/pin/add?arg={Uri.EscapeDataString(cid)}", cancellationToken);
 
         public Task UnpinAsync(string cid, CancellationToken cancellationToken = default) => PostNoContentAsync($"/api/v0/pin/rm?arg={Uri.EscapeDataString(cid)}", cancellationToken);
+
+        public async Task<bool> IsPinnedAsync(string cid, CancellationToken cancellationToken = default)
+        {
+            using var response = await CreateClient().PostAsync(BuildApiUri($"/api/v0/pin/ls?arg={Uri.EscapeDataString(cid)}"), content: null, cancellationToken);
+            string payload = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (response.IsSuccessStatusCode)
+            {
+                using var document = JsonDocument.Parse(payload);
+                if (document.RootElement.TryGetProperty("Keys", out JsonElement keys)
+                    && keys.ValueKind == JsonValueKind.Object)
+                {
+                    foreach (JsonProperty property in keys.EnumerateObject())
+                    {
+                        if (string.Equals(property.Name, cid, StringComparison.Ordinal))
+                            return true;
+                    }
+                }
+
+                return false;
+            }
+
+            if (payload.Contains("not pinned", StringComparison.OrdinalIgnoreCase) ||
+                payload.Contains("no link named", StringComparison.OrdinalIgnoreCase) ||
+                payload.Contains("does not have pinned", StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            throw new InvalidOperationException($"Kubo pin status failed for CID {cid} with HTTP {(int)response.StatusCode}: {payload}");
+        }
 
         public async Task<long> GetRepoSizeAsync(CancellationToken cancellationToken = default)
         {
