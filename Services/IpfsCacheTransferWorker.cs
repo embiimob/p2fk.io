@@ -100,7 +100,7 @@ namespace P2FK.IO.Services
                     }
 
                     _logger.LogInformation("IPFS cache import complete for folder {CidFolder}", cid);
-                    await WriteTransferResultAsync(transferResultsPath, "IMPORT", cid, "SUCCESS", $"deleted source folder {cidFolderPath}", cancellationToken);
+                    await WriteTransferResultAsync(transferResultsPath, "IMPORT", cid, "COMPLETED", $"deleted source folder {cidFolderPath}", cancellationToken);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
