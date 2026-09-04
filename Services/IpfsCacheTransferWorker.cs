@@ -6,6 +6,7 @@ namespace P2FK.IO.Services
     public sealed class IpfsCacheTransferWorker : BackgroundService
     {
         private static readonly TimeSpan StartupDelay = TimeSpan.FromSeconds(5);
+        private static readonly TimeSpan FetchFallbackTimeout = TimeSpan.FromMinutes(2);
         private const string TransferResultsFileName = "transfer-results.txt";
 
         private readonly IKuboIngressService _kuboIngressService;
@@ -186,10 +187,19 @@ namespace P2FK.IO.Services
         {
             try
             {
-                await _kuboIngressService.FetchAsync(cid, cancellationToken);
+                using var fetchTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                fetchTimeoutCts.CancelAfter(FetchFallbackTimeout);
+
+                await _kuboIngressService.FetchAsync(cid, fetchTimeoutCts.Token);
                 await _kuboIngressService.PinAsync(cid, cancellationToken);
                 await WriteTransferResultAsync(transferResultsPath, "IMPORT", cid, "FETCHED", "CID was fetched from Kubo and pinned", cancellationToken);
                 return true;
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                _logger.LogWarning("IPFS cache import fetch timed out for CID {Cid}; falling back to largest local file", cid);
+                await WriteTransferResultAsync(transferResultsPath, "IMPORT", cid, "FETCH-TIMEOUT", $"Kubo fetch exceeded {FetchFallbackTimeout.TotalMinutes:0} minutes; falling back to largest local file", cancellationToken);
+                return false;
             }
             catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException)
             {
