@@ -234,6 +234,8 @@ P2FK.IO now also manages two helper folders inside the configured `IpfsIngress:R
 
 If either folder does not exist, the service creates it automatically.
 
+P2FK.IO also writes a plain-text job log to `import/transfer-results.txt` so import/remove outcomes can still be reviewed when normal application logging is disabled.
+
 #### Import behavior
 
 Inside `import`, create subfolders whose folder name is the target CID.
