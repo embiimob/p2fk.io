@@ -210,11 +210,11 @@ namespace P2FK.IO.Services
                 if (processedChecks >= maxChecks)
                     break;
 
+                processedChecks++;
+
                 string? latestRootJson = await TryGetRootByTransactionIdAsync(item.Value, cancellationToken);
                 if (string.IsNullOrWhiteSpace(latestRootJson))
                     continue;
-
-                processedChecks++;
 
                 if (!LooksLikeRootJson(latestRootJson))
                     continue;
