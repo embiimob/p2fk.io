@@ -258,7 +258,7 @@ namespace P2FK.IO.Services
                 return;
 
             _logger.LogInformation(
-                "Pending root refresh still waiting for txId={TxId} chain={Blockchain}; invalid refresh attempts={FailureCount}",
+                "Pending root refresh still waiting for txId={TxId} chain={Blockchain}; unsuccessful refresh attempts={FailureCount}",
                 request.TxId,
                 request.Blockchain,
                 failures);
