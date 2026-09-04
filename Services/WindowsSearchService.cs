@@ -198,14 +198,25 @@ namespace P2FK.IO.Services
         /// Rechecks currently pending transactions and updates root cache entries once
         /// those transactions become confirmed.
         /// </summary>
-        public async Task ProcessPendingRootCacheRefreshQueueAsync(CancellationToken cancellationToken)
+        public async Task ProcessPendingRootCacheRefreshQueueAsync(CancellationToken cancellationToken, int maxChecks = int.MaxValue)
         {
+            if (maxChecks <= 0)
+                return;
+
+            int processedChecks = 0;
             foreach (var item in _pendingRootRefreshQueue.ToArray())
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                if (processedChecks >= maxChecks)
+                    break;
 
                 string? latestRootJson = await TryGetRootByTransactionIdAsync(item.Value, cancellationToken);
                 if (string.IsNullOrWhiteSpace(latestRootJson))
+                    continue;
+
+                processedChecks++;
+
+                if (!LooksLikeRootJson(latestRootJson))
                     continue;
 
                 if (IsPendingRoot(latestRootJson))
@@ -236,7 +247,7 @@ namespace P2FK.IO.Services
 
         private async Task<string?> TryGetRootByTransactionIdAsync(PendingRootRefreshRequest request, CancellationToken cancellationToken)
         {
-            string arguments;
+            IReadOnlyList<string> arguments;
             string executablePath;
 
             if (request.Blockchain == "LTC")
@@ -272,7 +283,7 @@ namespace P2FK.IO.Services
 
             try
             {
-                return await _wrapper.RunCommandAsync(executablePath, arguments, cancellationToken);
+                return await _wrapper.RunBackgroundCommandAsync(executablePath, arguments, cancellationToken);
             }
             catch (Exception ex)
             {
@@ -292,10 +303,33 @@ namespace P2FK.IO.Services
             return $"{blockchain}:{networkSegment}:{txId}";
         }
 
-        private static string BuildGetRootByTransactionIdArguments(
+        private static IReadOnlyList<string> BuildGetRootByTransactionIdArguments(
             string versionByte, string rpcPassword, string rpcUrl, string rpcUser, string txId) =>
-            "--versionbyte " + versionByte + " --getrootbytransactionid --password " + rpcPassword +
-            " --url " + rpcUrl + " --username " + rpcUser + " --tid " + txId;
+            [
+                "--versionbyte", versionByte,
+                "--getrootbytransactionid",
+                "--password", rpcPassword,
+                "--url", rpcUrl,
+                "--username", rpcUser,
+                "--tid", txId
+            ];
+
+        private static bool LooksLikeRootJson(string rawJson)
+        {
+            if (string.IsNullOrWhiteSpace(rawJson))
+                return false;
+
+            try
+            {
+                using var document = JsonDocument.Parse(rawJson);
+                return document.RootElement.ValueKind == JsonValueKind.Object &&
+                       document.RootElement.TryGetProperty("TransactionId", out _);
+            }
+            catch (JsonException)
+            {
+                return false;
+            }
+        }
 
         private bool RefreshRootCacheEntry(string txId, string rawJson, bool insertIfNotFound = false)
         {
