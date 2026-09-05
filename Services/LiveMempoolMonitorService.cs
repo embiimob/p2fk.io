@@ -249,10 +249,7 @@ namespace P2FK.IO.Services
 
             AddIpfsCidsFromInlineProObjContent(document.RootElement, cids);
 
-            foreach (string fileContent in await ReadRootProObjFileContentsAsync(txId, document.RootElement, cancellationToken))
-            {
-                AddIpfsCidsFromText(fileContent, cids);
-            }
+            await AddIpfsCidsFromRootProObjFilesAsync(txId, document.RootElement, cids, cancellationToken);
 
             return cids.ToList();
         }
@@ -270,15 +267,18 @@ namespace P2FK.IO.Services
             }
         }
 
-        private async Task<List<string>> ReadRootProObjFileContentsAsync(string txId, JsonElement rootElement, CancellationToken cancellationToken)
+        private async Task AddIpfsCidsFromRootProObjFilesAsync(
+            string txId,
+            JsonElement rootElement,
+            HashSet<string> cids,
+            CancellationToken cancellationToken)
         {
-            var contents = new List<string>();
             if (string.IsNullOrWhiteSpace(txId))
-                return contents;
+                return;
 
             string rootFolderPath = Path.Combine(_wrapper.RootPath, txId);
             if (!Directory.Exists(rootFolderPath))
-                return contents;
+                return;
 
             HashSet<string> inlineTypes = GetInlineProObjTypes(rootElement);
             foreach (string candidateName in EnumerateRootProObjCandidateNames(rootElement))
@@ -302,15 +302,13 @@ namespace P2FK.IO.Services
                 {
                     string fileContent = await File.ReadAllTextAsync(filePath, cancellationToken);
                     if (!string.IsNullOrWhiteSpace(fileContent))
-                        contents.Add(fileContent);
+                        AddIpfsCidsFromText(fileContent, cids);
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
                     _logger.LogDebug(ex, "Unable to read root file {FilePath} while scanning for live IPFS URNs", filePath);
                 }
             }
-
-            return contents;
         }
 
         private static void AddIpfsCidsFromInlineProObjContent(JsonElement rootElement, HashSet<string> cids)
