@@ -126,7 +126,7 @@ namespace P2FK.IO
             string executablePath,
             IReadOnlyList<string> arguments,
             CancellationToken cancellationToken = default) =>
-            QueueCliExecution(() => ExecuteCliAsync(executablePath, arguments, lowPriority: true, cancellationToken), cancellationToken);
+            QueueCliExecution(() => ExecuteCliAsync(executablePath, arguments, lowPriority: true, cancellationToken));
 
         public IEnumerable<BlockchainNode> GetBlockchainNodes()
         {
@@ -156,7 +156,7 @@ namespace P2FK.IO
         // Creates the shared Task and schedules its removal from _inFlight on completion.
         private Task<string> LaunchShared(string key, string executablePath, string arguments)
         {
-            var task = QueueCliExecution(() => ExecuteCliAsync(executablePath, arguments), CancellationToken.None);
+            var task = QueueCliExecution(() => ExecuteCliAsync(executablePath, arguments));
             // Remove once done so the next caller after this one gets a fresh run.
             _ = task.ContinueWith(
                 _ => _inFlight.TryRemove(new KeyValuePair<string, Task<string>>(key, task)),
@@ -164,8 +164,8 @@ namespace P2FK.IO
             return task;
         }
 
-        private static Task<string> QueueCliExecution(Func<Task<string>> operation, CancellationToken cancellationToken) =>
-            _cliTaskFactory.StartNew(operation, cancellationToken).Unwrap();
+        private static Task<string> QueueCliExecution(Func<Task<string>> operation) =>
+            _cliTaskFactory.StartNew(operation, CancellationToken.None).Unwrap();
 
         // Executes the CLI process with an internal-only timeout.  Not bound to any
         // individual caller's CancellationToken so HTTP disconnects don't abort the build.

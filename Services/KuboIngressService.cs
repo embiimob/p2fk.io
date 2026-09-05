@@ -22,6 +22,8 @@ namespace P2FK.IO.Services
         {
             _httpClientFactory = httpClientFactory;
             _options = options.Value;
+            if (_options.PinnedLookupTimeoutMilliseconds <= 0)
+                throw new InvalidOperationException($"IpfsIngress:{nameof(IpfsIngressOptions.PinnedLookupTimeoutMilliseconds)} must be greater than zero.");
             _logger = logger;
             _kuboApiBaseUri = BuildBaseUri(_options.KuboApiBaseUrl);
             _kuboGatewayBaseUri = BuildBaseUri(_options.KuboGatewayBaseUrl);
@@ -70,7 +72,7 @@ namespace P2FK.IO.Services
 
         public async Task<bool> IsPinnedAsync(string cid, CancellationToken cancellationToken = default)
         {
-            TimeSpan lookupTimeout = TimeSpan.FromMilliseconds(Math.Max(100, _options.PinnedLookupTimeoutMilliseconds));
+            TimeSpan lookupTimeout = TimeSpan.FromMilliseconds(_options.PinnedLookupTimeoutMilliseconds);
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeoutCts.CancelAfter(lookupTimeout);
 

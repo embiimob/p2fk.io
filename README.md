@@ -225,6 +225,7 @@ Set the `IpfsIngress` section in `appsettings.json` (or environment-specific ove
 ```
 
 Set `KuboExecutablePath` to an absolute or repository-relative binary path if you want to override the bundled binary.
+Set `PinnedLookupTimeoutMilliseconds` to a positive value so local `pin/ls` checks fail quickly when a CID is not readily found.
 
 ### IPFS cache transfer folders
 
