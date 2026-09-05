@@ -184,18 +184,18 @@ namespace P2FK.IO.Services
                     ? ProcessTransactionResult.Retry
                     : ProcessTransactionResult.Ignore;
 
-            if (!await TryPinMessageIpfsCidsAsync(result, cancellationToken))
+            if (!await TryPinRootIpfsCidsAsync(txId, result, cancellationToken))
                 return ProcessTransactionResult.Retry;
 
             _searchService.QueueRootCacheRefresh(txId, result, network.Mainnet, network.Blockchain);
             return ProcessTransactionResult.Success;
         }
 
-        private async Task<bool> TryPinMessageIpfsCidsAsync(string rawJson, CancellationToken cancellationToken)
+        private async Task<bool> TryPinRootIpfsCidsAsync(string txId, string rawJson, CancellationToken cancellationToken)
         {
             try
             {
-                foreach (string cid in ExtractIpfsCids(rawJson))
+                foreach (string cid in await ExtractIpfsCidsAsync(txId, rawJson, cancellationToken))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
 
@@ -226,7 +226,7 @@ namespace P2FK.IO.Services
                 return true;
             }
             catch (Exception ex) when (
-                ex is InvalidOperationException or HttpRequestException or JsonException ||
+                ex is InvalidOperationException or HttpRequestException or JsonException or IOException or UnauthorizedAccessException ||
                 (ex is TaskCanceledException && !cancellationToken.IsCancellationRequested))
             {
                 _logger.LogWarning(ex, "Failed to fetch/pin live-monitor IPFS content");
@@ -234,27 +234,136 @@ namespace P2FK.IO.Services
             }
         }
 
-        private static List<string> ExtractIpfsCids(string rawJson)
+        private async Task<List<string>> ExtractIpfsCidsAsync(string txId, string rawJson, CancellationToken cancellationToken)
         {
             using var document = JsonDocument.Parse(rawJson);
-            if (!document.RootElement.TryGetProperty("Message", out var messageEl))
-                return [];
-
             var cids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (string message in EnumerateMessageStrings(messageEl))
+
+            if (document.RootElement.TryGetProperty("Message", out var messageEl))
             {
-                foreach (string scanText in EnumerateIpfsScanTexts(message))
+                foreach (string message in EnumerateMessageStrings(messageEl))
                 {
-                    foreach (Match match in IpfsUrnRegex.Matches(scanText))
-                    {
-                        string cid = match.Groups["cid"].Value.Trim('<', '>', ' ', '\t', '\r', '\n');
-                        if (IsValidIpfsCid(cid))
-                            cids.Add(cid);
-                    }
+                    AddIpfsCidsFromText(message, cids);
                 }
             }
 
+            AddIpfsCidsFromInlineProObjContent(document.RootElement, cids);
+
+            foreach (string fileContent in await ReadRootProObjFileContentsAsync(txId, document.RootElement, cancellationToken))
+            {
+                AddIpfsCidsFromText(fileContent, cids);
+            }
+
             return cids.ToList();
+        }
+
+        private static void AddIpfsCidsFromText(string text, HashSet<string> cids)
+        {
+            foreach (string scanText in EnumerateIpfsScanTexts(text))
+            {
+                foreach (Match match in IpfsUrnRegex.Matches(scanText))
+                {
+                    string cid = match.Groups["cid"].Value.Trim('<', '>', ' ', '\t', '\r', '\n');
+                    if (IsValidIpfsCid(cid))
+                        cids.Add(cid);
+                }
+            }
+        }
+
+        private async Task<List<string>> ReadRootProObjFileContentsAsync(string txId, JsonElement rootElement, CancellationToken cancellationToken)
+        {
+            var contents = new List<string>();
+            if (string.IsNullOrWhiteSpace(txId))
+                return contents;
+
+            string rootFolderPath = Path.Combine(_wrapper.RootPath, txId);
+            if (!Directory.Exists(rootFolderPath))
+                return contents;
+
+            foreach (string candidateName in EnumerateRootProObjCandidateNames(rootElement))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                string safeName = Path.GetFileName(candidateName.Replace('\\', '/'));
+                if (string.IsNullOrWhiteSpace(safeName))
+                    continue;
+
+                string filePath = Path.Combine(rootFolderPath, safeName);
+                if (!File.Exists(filePath))
+                    continue;
+
+                try
+                {
+                    string fileContent = await File.ReadAllTextAsync(filePath, cancellationToken);
+                    if (!string.IsNullOrWhiteSpace(fileContent))
+                        contents.Add(fileContent);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    _logger.LogDebug(ex, "Unable to read root file {FilePath} while scanning for live IPFS URNs", filePath);
+                }
+            }
+
+            return contents;
+        }
+
+        private static void AddIpfsCidsFromInlineProObjContent(JsonElement rootElement, HashSet<string> cids)
+        {
+            foreach (string propertyName in new[] { "PRO", "OBJ" })
+            {
+                if (!rootElement.TryGetProperty(propertyName, out var valueElement))
+                    continue;
+
+                if (valueElement.ValueKind == JsonValueKind.String)
+                {
+                    string? value = valueElement.GetString();
+                    if (!string.IsNullOrWhiteSpace(value))
+                        AddIpfsCidsFromText(value, cids);
+                    continue;
+                }
+
+                if (valueElement.ValueKind == JsonValueKind.Object || valueElement.ValueKind == JsonValueKind.Array)
+                    AddIpfsCidsFromText(valueElement.GetRawText(), cids);
+            }
+        }
+
+        private static IEnumerable<string> EnumerateRootProObjCandidateNames(JsonElement rootElement)
+        {
+            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "PRO",
+                "OBJ",
+                "PRO.json",
+                "OBJ.json"
+            };
+
+            if (rootElement.TryGetProperty("File", out var fileElement) && fileElement.ValueKind == JsonValueKind.Object)
+            {
+                foreach (JsonProperty fileProperty in fileElement.EnumerateObject())
+                {
+                    if (IsProOrObjFileName(fileProperty.Name))
+                        names.Add(fileProperty.Name);
+                }
+            }
+
+            return names;
+        }
+
+        private static bool IsProOrObjFileName(string fileName)
+        {
+            if (string.IsNullOrWhiteSpace(fileName))
+                return false;
+
+            string normalized = Path.GetFileName(fileName.Replace('\\', '/'));
+            if (string.IsNullOrWhiteSpace(normalized))
+                return false;
+
+            string upper = normalized.Trim().ToUpperInvariant();
+            if (upper is "PRO" or "OBJ" or "PRO.JSON" or "OBJ.JSON")
+                return true;
+
+            string extension = Path.GetExtension(upper).TrimStart('.');
+            return extension is "PRO" or "OBJ";
         }
 
         private static IEnumerable<string> EnumerateIpfsScanTexts(string message)
