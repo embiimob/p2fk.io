@@ -86,7 +86,7 @@ namespace P2FK.IO.Services
             }
             catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested && timeoutCts.IsCancellationRequested)
             {
-                throw new InvalidOperationException($"Kubo pin status timed out for CID {cid} after {lookupTimeout.TotalMilliseconds:0} ms.", ex);
+                throw new InvalidOperationException($"Kubo pin status timed out after {lookupTimeout.TotalMilliseconds:0} ms.", ex);
             }
 
             using (response)
@@ -98,7 +98,7 @@ namespace P2FK.IO.Services
                 }
                 catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested && timeoutCts.IsCancellationRequested)
                 {
-                    throw new InvalidOperationException($"Kubo pin status timed out for CID {cid} after {lookupTimeout.TotalMilliseconds:0} ms.", ex);
+                    throw new InvalidOperationException($"Kubo pin status timed out after {lookupTimeout.TotalMilliseconds:0} ms.", ex);
                 }
 
                 if (response.IsSuccessStatusCode)
