@@ -11,8 +11,10 @@ namespace P2FK.IO.Services
     public sealed class LiveMempoolMonitorService : BackgroundService
     {
         private static readonly TimeSpan StartupDelay = TimeSpan.FromSeconds(5);
-        private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(5);
-        private const int MaxTransactionsPerCycle = 8;
+        private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(10);
+        private const int MaxTransactionsPerNetworkPerCycle = 8;
+        private const int MaxCliTransactionsPerPollCycle = 2;
+        private const int PendingRefreshChecksPerPollCycle = 1;
         private const int MaxRetryAttempts = 3;
         private static readonly Regex IpfsUrnRegex = new(
             @"IPFS:\s*(?<cid>[A-Za-z0-9]+)(?:[\\/][^<>\s]*)?",
@@ -48,10 +50,22 @@ namespace P2FK.IO.Services
 
                 while (!stoppingToken.IsCancellationRequested)
                 {
+                    int remainingCliBudget = MaxCliTransactionsPerPollCycle;
+                    if (remainingCliBudget > 0)
+                    {
+                        int pendingChecks = await _searchService.ProcessPendingRootCacheRefreshQueueAsync(
+                            stoppingToken,
+                            Math.Min(PendingRefreshChecksPerPollCycle, remainingCliBudget));
+                        remainingCliBudget = Math.Max(0, remainingCliBudget - pendingChecks);
+                    }
+
                     foreach (var network in GetNetworks())
                     {
                         stoppingToken.ThrowIfCancellationRequested();
-                        await PollNetworkAsync(network, stoppingToken);
+                        if (remainingCliBudget <= 0)
+                            break;
+
+                        remainingCliBudget = await PollNetworkAsync(network, remainingCliBudget, stoppingToken);
                     }
 
                     await Task.Delay(PollInterval, stoppingToken);
@@ -62,17 +76,21 @@ namespace P2FK.IO.Services
             }
         }
 
-        private async Task PollNetworkAsync(Wrapper.BlockchainNode network, CancellationToken cancellationToken)
+        private async Task<int> PollNetworkAsync(Wrapper.BlockchainNode network, int remainingCliBudget, CancellationToken cancellationToken)
         {
             IReadOnlyList<string>? currentMempool = await TryGetRawMempoolAsync(network, cancellationToken);
             if (currentMempool == null)
-                return;
+                return remainingCliBudget;
 
             MonitorState state = _networkStates.GetOrAdd(network.Key, _ => new MonitorState(currentMempool));
 
             state.EnqueueNewTransactions(currentMempool);
 
-            for (int i = 0; i < MaxTransactionsPerCycle; i++)
+            if (remainingCliBudget <= 0)
+                return remainingCliBudget;
+
+            int transactionBudget = Math.Min(MaxTransactionsPerNetworkPerCycle, remainingCliBudget);
+            for (int i = 0; i < transactionBudget; i++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
@@ -85,7 +103,13 @@ namespace P2FK.IO.Services
                     state.Requeue(txId, MaxRetryAttempts);
                 else
                     state.MarkComplete(txId);
+
+                remainingCliBudget--;
+                if (remainingCliBudget <= 0)
+                    break;
             }
+
+            return remainingCliBudget;
         }
 
         private async Task<IReadOnlyList<string>?> TryGetRawMempoolAsync(Wrapper.BlockchainNode network, CancellationToken cancellationToken)

@@ -149,8 +149,8 @@ When running on Windows, P2FK.IO starts a background live monitor alongside the 
 
 - It polls each configured blockchain RPC mempool continuously while the service is running.
 - It detects newly seen transaction IDs and resolves them through the Sup!? CLI.
-- It uses a lower-priority CLI path so normal API traffic keeps precedence.
-- It updates the in-memory root refresh pipeline with newly discovered live roots.
+- It uses a lower-priority, single-threaded CLI path so normal API traffic keeps precedence.
+- It moves newly discovered pending roots into the unconfirmed refresh queue and rechecks that queue continuously until those roots confirm.
 
 If a newly discovered root message contains URNs such as `IPFS:CID/file.jpg` or `IPFS:CID\file.jpg`, the live monitor now:
 
