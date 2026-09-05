@@ -126,7 +126,7 @@ namespace P2FK.IO
             string executablePath,
             IReadOnlyList<string> arguments,
             CancellationToken cancellationToken = default) =>
-            QueueCliExecution(() => ExecuteCliAsync(executablePath, arguments, lowPriority: true, cancellationToken), cancellationToken);
+            QueueCliExecution(() => ExecuteCliAsync(executablePath, arguments, lowPriority: true, cancellationToken), CancellationToken.None);
 
         public IEnumerable<BlockchainNode> GetBlockchainNodes()
         {

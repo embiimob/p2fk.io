@@ -103,14 +103,26 @@ namespace P2FK.IO.Services
 
                 if (response.IsSuccessStatusCode)
                 {
-                    using var document = JsonDocument.Parse(payload);
-                    if (document.RootElement.TryGetProperty("Keys", out JsonElement keys)
-                        && keys.ValueKind == JsonValueKind.Object)
+                    JsonDocument document;
+                    try
                     {
-                        foreach (JsonProperty property in keys.EnumerateObject())
+                        document = JsonDocument.Parse(payload);
+                    }
+                    catch (JsonException ex)
+                    {
+                        throw new InvalidOperationException($"Kubo pin status returned invalid JSON for CID {cid}.", ex);
+                    }
+
+                    using (document)
+                    {
+                        if (document.RootElement.TryGetProperty("Keys", out JsonElement keys)
+                            && keys.ValueKind == JsonValueKind.Object)
                         {
-                            if (string.Equals(property.Name, cid, StringComparison.Ordinal))
-                                return true;
+                            foreach (JsonProperty property in keys.EnumerateObject())
+                            {
+                                if (string.Equals(property.Name, cid, StringComparison.Ordinal))
+                                    return true;
+                            }
                         }
                     }
 
