@@ -282,6 +282,9 @@ namespace P2FK.IO.Services
 
         private static string? TryUrlDecode(string value)
         {
+            if (string.IsNullOrEmpty(value) || !value.Contains('%', StringComparison.Ordinal))
+                return null;
+
             try
             {
                 return Uri.UnescapeDataString(value);
@@ -333,11 +336,17 @@ namespace P2FK.IO.Services
             try
             {
                 using var document = JsonDocument.Parse(rawJson);
-                return document.RootElement.ValueKind == JsonValueKind.Object &&
-                       (document.RootElement.TryGetProperty("TransactionId", out _) ||
-                        document.RootElement.TryGetProperty("Message", out _) ||
-                        document.RootElement.TryGetProperty("Output", out _) ||
-                        document.RootElement.TryGetProperty("Id", out _));
+                if (document.RootElement.ValueKind != JsonValueKind.Object)
+                    return false;
+
+                if (document.RootElement.TryGetProperty("TransactionId", out _))
+                    return true;
+
+                if (document.RootElement.TryGetProperty("Output", out _))
+                    return true;
+
+                return document.RootElement.TryGetProperty("Message", out _) &&
+                       document.RootElement.TryGetProperty("Id", out _);
             }
             catch (JsonException)
             {
