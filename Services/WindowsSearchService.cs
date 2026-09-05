@@ -359,7 +359,10 @@ namespace P2FK.IO.Services
             {
                 using var document = JsonDocument.Parse(rawJson);
                 return document.RootElement.ValueKind == JsonValueKind.Object &&
-                       document.RootElement.TryGetProperty("TransactionId", out _);
+                       (document.RootElement.TryGetProperty("TransactionId", out _) ||
+                        document.RootElement.TryGetProperty("Message", out _) ||
+                        document.RootElement.TryGetProperty("Output", out _) ||
+                        document.RootElement.TryGetProperty("Id", out _));
             }
             catch (JsonException)
             {

@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Headers;
 using System.Runtime.Versioning;
 using System.Text;
@@ -17,7 +18,7 @@ namespace P2FK.IO.Services
         private const int PendingRefreshChecksPerPollCycle = 1;
         private const int MaxRetryAttempts = 3;
         private static readonly Regex IpfsUrnRegex = new(
-            @"IPFS:\s*(?<cid>[A-Za-z0-9]+)(?:[\\/][^<>\s]*)?",
+            @"IPFS:\s*(?:\/\/)?(?:ipfs[\\/])?(?<cid>[A-Za-z0-9]+)(?:[\\/][^<>\s&]*)?",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
         private readonly Wrapper _wrapper;
@@ -242,15 +243,53 @@ namespace P2FK.IO.Services
             var cids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (string message in EnumerateMessageStrings(messageEl))
             {
-                foreach (Match match in IpfsUrnRegex.Matches(message))
+                foreach (string scanText in EnumerateIpfsScanTexts(message))
                 {
-                    string cid = match.Groups["cid"].Value.Trim('<', '>', ' ', '\t', '\r', '\n');
-                    if (IsValidIpfsCid(cid))
-                        cids.Add(cid);
+                    foreach (Match match in IpfsUrnRegex.Matches(scanText))
+                    {
+                        string cid = match.Groups["cid"].Value.Trim('<', '>', ' ', '\t', '\r', '\n');
+                        if (IsValidIpfsCid(cid))
+                            cids.Add(cid);
+                    }
                 }
             }
 
             return cids.ToList();
+        }
+
+        private static IEnumerable<string> EnumerateIpfsScanTexts(string message)
+        {
+            if (string.IsNullOrWhiteSpace(message))
+                yield break;
+
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+
+            if (seen.Add(message))
+                yield return message;
+
+            string htmlDecoded = WebUtility.HtmlDecode(message);
+            if (seen.Add(htmlDecoded))
+                yield return htmlDecoded;
+
+            string? urlDecoded = TryUrlDecode(message);
+            if (!string.IsNullOrWhiteSpace(urlDecoded) && seen.Add(urlDecoded))
+                yield return urlDecoded;
+
+            string? htmlThenUrlDecoded = TryUrlDecode(htmlDecoded);
+            if (!string.IsNullOrWhiteSpace(htmlThenUrlDecoded) && seen.Add(htmlThenUrlDecoded))
+                yield return htmlThenUrlDecoded;
+        }
+
+        private static string? TryUrlDecode(string value)
+        {
+            try
+            {
+                return Uri.UnescapeDataString(value);
+            }
+            catch (UriFormatException)
+            {
+                return null;
+            }
         }
 
         private static bool IsValidIpfsCid(string cid)
@@ -295,7 +334,10 @@ namespace P2FK.IO.Services
             {
                 using var document = JsonDocument.Parse(rawJson);
                 return document.RootElement.ValueKind == JsonValueKind.Object &&
-                       document.RootElement.TryGetProperty("TransactionId", out _);
+                       (document.RootElement.TryGetProperty("TransactionId", out _) ||
+                        document.RootElement.TryGetProperty("Message", out _) ||
+                        document.RootElement.TryGetProperty("Output", out _) ||
+                        document.RootElement.TryGetProperty("Id", out _));
             }
             catch (JsonException)
             {
