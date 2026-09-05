@@ -58,6 +58,14 @@ namespace P2FK.IO
         private static readonly SemaphoreSlim _foregroundReserveSemaphore = new SemaphoreSlim(1, 1);
         private static readonly SemaphoreSlim _backgroundMonitorSemaphore = new SemaphoreSlim(1, 1);
         private static readonly TimeSpan _timeout = TimeSpan.FromSeconds(MaxTimeoutSeconds);
+        private static readonly ConcurrentExclusiveSchedulerPair _cliSchedulerPair =
+            new(TaskScheduler.Default, maxConcurrencyLevel: 8);
+        private static readonly TaskFactory _cliTaskFactory =
+            new(
+                CancellationToken.None,
+                TaskCreationOptions.DenyChildAttach,
+                TaskContinuationOptions.None,
+                _cliSchedulerPair.ConcurrentScheduler);
 
         // In-flight request coalescing: concurrent API calls for the same address + command
         // share one SUP.exe process rather than each spawning their own.
@@ -118,7 +126,7 @@ namespace P2FK.IO
             string executablePath,
             IReadOnlyList<string> arguments,
             CancellationToken cancellationToken = default) =>
-            ExecuteCliAsync(executablePath, arguments, lowPriority: true, cancellationToken);
+            QueueCliExecution(() => ExecuteCliAsync(executablePath, arguments, lowPriority: true, cancellationToken), CancellationToken.None);
 
         public IEnumerable<BlockchainNode> GetBlockchainNodes()
         {
@@ -148,13 +156,16 @@ namespace P2FK.IO
         // Creates the shared Task and schedules its removal from _inFlight on completion.
         private Task<string> LaunchShared(string key, string executablePath, string arguments)
         {
-            var task = ExecuteCliAsync(executablePath, arguments);
+            var task = QueueCliExecution(() => ExecuteCliAsync(executablePath, arguments), CancellationToken.None);
             // Remove once done so the next caller after this one gets a fresh run.
             _ = task.ContinueWith(
                 _ => _inFlight.TryRemove(new KeyValuePair<string, Task<string>>(key, task)),
                 TaskScheduler.Default);
             return task;
         }
+
+        private static Task<string> QueueCliExecution(Func<Task<string>> operation, CancellationToken schedulingCancellationToken) =>
+            _cliTaskFactory.StartNew(operation, schedulingCancellationToken).Unwrap();
 
         // Executes the CLI process with an internal-only timeout.  Not bound to any
         // individual caller's CancellationToken so HTTP disconnects don't abort the build.
