@@ -282,17 +282,12 @@ namespace P2FK.IO.Services
 
         private static string? TryUrlDecode(string value)
         {
-            if (string.IsNullOrEmpty(value) || !value.Contains('%', StringComparison.Ordinal))
+            if (string.IsNullOrEmpty(value) ||
+                (!value.Contains('%', StringComparison.Ordinal) && !value.Contains('+', StringComparison.Ordinal)))
                 return null;
 
-            try
-            {
-                return Uri.UnescapeDataString(value);
-            }
-            catch (UriFormatException)
-            {
-                return null;
-            }
+            string decoded = WebUtility.UrlDecode(value);
+            return string.Equals(decoded, value, StringComparison.Ordinal) ? null : decoded;
         }
 
         private static bool IsValidIpfsCid(string cid)
