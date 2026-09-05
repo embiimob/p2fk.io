@@ -22,6 +22,7 @@ namespace P2FK.IO.Options
         public int PinLifetimeMinutes { get; set; } = 60;
         public int CleanupIntervalMinutes { get; set; } = 5;
         public int UploadRequestsPerMinute { get; set; } = 20;
+        public int PinnedLookupTimeoutMilliseconds { get; set; } = 1500;
         public long MaxUploadBytes { get; set; } = DefaultMaxUploadBytes;
     }
 }

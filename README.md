@@ -219,7 +219,8 @@ Set the `IpfsIngress` section in `appsettings.json` (or environment-specific ove
   "DailyIpQuotaBytes": 5368709120,
   "PinLifetimeMinutes": 60,
   "CleanupIntervalMinutes": 5,
-  "UploadRequestsPerMinute": 20
+  "UploadRequestsPerMinute": 20,
+  "PinnedLookupTimeoutMilliseconds": 1500
 }
 ```
 
