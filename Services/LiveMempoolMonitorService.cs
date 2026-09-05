@@ -350,7 +350,58 @@ namespace P2FK.IO.Services
                 }
             }
 
+            if (rootElement.TryGetProperty("Files", out var filesElement))
+                AddProObjCandidateNames(filesElement, names);
+
             return names;
+        }
+
+        private static void AddProObjCandidateNames(JsonElement filesElement, HashSet<string> names)
+        {
+            if (filesElement.ValueKind == JsonValueKind.Object)
+            {
+                foreach (JsonProperty property in filesElement.EnumerateObject())
+                {
+                    if (IsProOrObjFileName(property.Name))
+                        names.Add(property.Name);
+
+                    if (property.Value.ValueKind == JsonValueKind.String)
+                    {
+                        string? stringValue = property.Value.GetString();
+                        if (IsProOrObjFileName(stringValue ?? string.Empty))
+                            names.Add(stringValue!);
+                    }
+                }
+
+                return;
+            }
+
+            if (filesElement.ValueKind != JsonValueKind.Array)
+                return;
+
+            foreach (JsonElement entry in filesElement.EnumerateArray())
+            {
+                if (entry.ValueKind == JsonValueKind.String)
+                {
+                    string? value = entry.GetString();
+                    if (IsProOrObjFileName(value ?? string.Empty))
+                        names.Add(value!);
+                    continue;
+                }
+
+                if (entry.ValueKind != JsonValueKind.Object)
+                    continue;
+
+                foreach (JsonProperty property in entry.EnumerateObject())
+                {
+                    if (property.Value.ValueKind != JsonValueKind.String)
+                        continue;
+
+                    string? value = property.Value.GetString();
+                    if (IsProOrObjFileName(value ?? string.Empty))
+                        names.Add(value!);
+                }
+            }
         }
 
         private static bool IsProOrObjFileName(string fileName)
