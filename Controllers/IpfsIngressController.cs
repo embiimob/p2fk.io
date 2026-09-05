@@ -102,6 +102,7 @@ namespace P2FK.IO.Controllers
 
             bool isActiveIngressCid = await _metadataStore.IsCidActiveAsync(cid, DateTimeOffset.UtcNow, cancellationToken);
             bool isPinnedCid = false;
+            bool pinLookupFailed = false;
             if (!isActiveIngressCid)
             {
                 try
@@ -110,9 +111,13 @@ namespace P2FK.IO.Controllers
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Failed to check pin status for CID {Cid}", cid);
+                    pinLookupFailed = true;
+                    _logger.LogWarning(ex, "Failed to check pin status for CID {Cid}", SanitizeForLog(cid));
                 }
             }
+
+            if (pinLookupFailed)
+                return StatusCode(StatusCodes.Status502BadGateway, new { error = "Unable to verify CID pin status through the local Kubo service" });
 
             if (!isActiveIngressCid && !isPinnedCid)
                 return NotFound(new { error = "CID is not currently pinned in ingress or the always-pinned IPFS store" });
@@ -247,6 +252,9 @@ namespace P2FK.IO.Controllers
         private sealed record UploadRequest(Stream Stream, string FileName, long? ContentLength, bool DisposeStream = false);
 
         private long GetMaxUploadMegabytes() => _maxUploadBytes / 1_000_000;
+
+        private static string SanitizeForLog(string value) =>
+            value.Replace("\r", "\\r", StringComparison.Ordinal).Replace("\n", "\\n", StringComparison.Ordinal);
     }
 
     internal static class MultipartRequestHelper
