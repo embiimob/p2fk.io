@@ -293,7 +293,8 @@ A sample `web.config` is included for IIS in-process hosting. It keeps ASP.NET C
 | `POST /ipfs` | Simplified ingress upload response (also supports Swagger file picker) |
 | `GET /ipfs/status` | Kubo health and queue stats |
 | `GET /ipfs/queue` | Active temporary uploads |
-| `GET /ipfs/{cid}` | Optional passthrough for active ingress content |
+| `GET /ipfs/{cid}` | Optional passthrough for pinned ingress and always-pinned IPFS content |
+| `GET /ipfs/{cid}/{path}` | Optional path passthrough for files inside pinned IPFS content |
 | `GET /health/ipfs` | Health probe for ingress services |
 
 ### Example curl commands
@@ -321,7 +322,7 @@ curl https://p2fk.io/health/ipfs
 - CID folders placed in `IpfsIngress:RepoPath\\import` are imported into the active Kubo repo by a background worker.
 - CID folders placed in `IpfsIngress:RepoPath\\remove` are treated as removal requests and cleaned up after processing.
 - Uploads stay pinned for **1 hour** and are cleaned by `IngressExpirationWorker` every **5 minutes**.
-- Queue and status endpoints expose active CID visibility without turning the API into a permanent recursive gateway.
+- Queue and status endpoints expose active temporary-ingress CID visibility without turning the API into a permanent recursive gateway.
 
 A ready-to-import Postman collection for these ingress endpoints lives at `API Examples/IPFS Ingress.postman_collection.json`.
 
