@@ -280,12 +280,18 @@ namespace P2FK.IO.Services
             if (!Directory.Exists(rootFolderPath))
                 return contents;
 
+            HashSet<string> inlineTypes = GetInlineProObjTypes(rootElement);
             foreach (string candidateName in EnumerateRootProObjCandidateNames(rootElement))
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
                 string safeName = Path.GetFileName(candidateName.Replace('\\', '/'));
                 if (string.IsNullOrWhiteSpace(safeName))
+                    continue;
+
+                if (TryGetProObjTypeFromFileName(safeName, out string? fileType) &&
+                    fileType != null &&
+                    inlineTypes.Contains(fileType))
                     continue;
 
                 string filePath = Path.Combine(rootFolderPath, safeName);
@@ -351,6 +357,12 @@ namespace P2FK.IO.Services
 
         private static bool IsProOrObjFileName(string fileName)
         {
+            return TryGetProObjTypeFromFileName(fileName, out _);
+        }
+
+        private static bool TryGetProObjTypeFromFileName(string fileName, out string? type)
+        {
+            type = null;
             if (string.IsNullOrWhiteSpace(fileName))
                 return false;
 
@@ -359,11 +371,34 @@ namespace P2FK.IO.Services
                 return false;
 
             string upper = normalized.Trim().ToUpperInvariant();
-            if (upper is "PRO" or "OBJ" or "PRO.JSON" or "OBJ.JSON")
+            if (upper is "PRO" or "PRO.JSON")
+            {
+                type = "PRO";
                 return true;
+            }
 
-            string extension = Path.GetExtension(upper).TrimStart('.');
-            return extension is "PRO" or "OBJ";
+            if (upper is "OBJ" or "OBJ.JSON")
+            {
+                type = "OBJ";
+                return true;
+            }
+
+            return false;
+        }
+
+        private static HashSet<string> GetInlineProObjTypes(JsonElement rootElement)
+        {
+            var inlineTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string propertyName in new[] { "PRO", "OBJ" })
+            {
+                if (!rootElement.TryGetProperty(propertyName, out var valueElement))
+                    continue;
+
+                if (valueElement.ValueKind is JsonValueKind.String or JsonValueKind.Object or JsonValueKind.Array)
+                    inlineTypes.Add(propertyName);
+            }
+
+            return inlineTypes;
         }
 
         private static IEnumerable<string> EnumerateIpfsScanTexts(string message)
