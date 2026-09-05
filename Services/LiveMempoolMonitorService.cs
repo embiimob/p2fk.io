@@ -341,12 +341,21 @@ namespace P2FK.IO.Services
                 "OBJ.json"
             };
 
-            if (rootElement.TryGetProperty("File", out var fileElement) && fileElement.ValueKind == JsonValueKind.Object)
+            if (rootElement.TryGetProperty("File", out var fileElement))
             {
-                foreach (JsonProperty fileProperty in fileElement.EnumerateObject())
+                if (fileElement.ValueKind == JsonValueKind.String)
                 {
-                    if (IsProOrObjFileName(fileProperty.Name))
-                        names.Add(fileProperty.Name);
+                    string? fileName = fileElement.GetString();
+                    if (IsProOrObjFileName(fileName ?? string.Empty))
+                        names.Add(fileName!);
+                }
+                else if (fileElement.ValueKind == JsonValueKind.Object)
+                {
+                    foreach (JsonProperty fileProperty in fileElement.EnumerateObject())
+                    {
+                        if (IsProOrObjFileName(fileProperty.Name))
+                            names.Add(fileProperty.Name);
+                    }
                 }
             }
 
@@ -420,13 +429,14 @@ namespace P2FK.IO.Services
                 return false;
 
             string upper = normalized.Trim().ToUpperInvariant();
-            if (upper is "PRO" or "PRO.JSON")
+            string baseName = Path.GetFileNameWithoutExtension(upper);
+            if (upper == "PRO" || baseName == "PRO")
             {
                 type = "PRO";
                 return true;
             }
 
-            if (upper is "OBJ" or "OBJ.JSON")
+            if (upper == "OBJ" || baseName == "OBJ")
             {
                 type = "OBJ";
                 return true;
