@@ -396,16 +396,34 @@ namespace P2FK.IO.Services
 
         private async Task TryPinPendingRootIpfsCidsAsync(string txId, string rawJson, CancellationToken cancellationToken)
         {
-            foreach (string cid in ExtractPendingRootIpfsCids(rawJson))
+            List<string> cids = ExtractPendingRootIpfsCids(rawJson);
+            if (cids.Count == 0)
+            {
+                await WriteTransferResultAsync(
+                    "LIVE-IPFS-ROOT",
+                    txId,
+                    "NO-CID",
+                    "pending root scanned but no IPFS CID was found in Message content",
+                    cancellationToken);
+                return;
+            }
+
+            await WriteTransferResultAsync(
+                "LIVE-IPFS-ROOT",
+                txId,
+                "CID-FOUND",
+                $"pending root scan found {cids.Count:0} CID(s)",
+                cancellationToken);
+
+            foreach (string cid in cids)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                if (_pinnedPendingIpfsCids.ContainsKey(cid))
+                if (!_pinnedPendingIpfsCids.TryAdd(cid, 0))
                 {
                     if (await _kuboIngressService.IsPinnedAsync(cid, cancellationToken))
                         continue;
-
-                    _pinnedPendingIpfsCids.TryRemove(cid, out _);
+                    continue;
                 }
 
                 using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -414,7 +432,6 @@ namespace P2FK.IO.Services
                 {
                     await _kuboIngressService.FetchAsync(cid, timeoutCts.Token);
                     await _kuboIngressService.PinAsync(cid, timeoutCts.Token);
-                    _pinnedPendingIpfsCids[cid] = 0;
                     await WriteTransferResultAsync(
                         "LIVE-IPFS",
                         cid,
@@ -424,6 +441,7 @@ namespace P2FK.IO.Services
                 }
                 catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
                 {
+                    _pinnedPendingIpfsCids.TryRemove(cid, out _);
                     await WriteTransferResultAsync(
                         "LIVE-IPFS",
                         cid,
@@ -433,6 +451,7 @@ namespace P2FK.IO.Services
                 }
                 catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or IOException or UnauthorizedAccessException)
                 {
+                    _pinnedPendingIpfsCids.TryRemove(cid, out _);
                     await WriteTransferResultAsync(
                         "LIVE-IPFS",
                         cid,
