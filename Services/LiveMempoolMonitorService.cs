@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Options;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Runtime.Versioning;
@@ -13,6 +14,10 @@ namespace P2FK.IO.Services
     {
         private static readonly TimeSpan StartupDelay = TimeSpan.FromSeconds(5);
         private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(10);
+        private static readonly TimeSpan LiveCidRetryInterval = TimeSpan.FromMinutes(1);
+        private static readonly TimeSpan LiveCidRetryWindow = TimeSpan.FromMinutes(10);
+        private static readonly TimeSpan LiveCidFetchTimeout = TimeSpan.FromMinutes(2);
+        private const string TransferResultsFileName = "transfer-results.txt";
         private const int MaxTransactionsPerNetworkPerCycle = 8;
         private const int MaxCliTransactionsPerPollCycle = 2;
         private const int PendingRefreshChecksPerPollCycle = 1;
@@ -28,12 +33,16 @@ namespace P2FK.IO.Services
         private readonly ILogger<LiveMempoolMonitorService> _logger;
         private readonly ConcurrentDictionary<string, MonitorState> _networkStates = new(StringComparer.OrdinalIgnoreCase);
         private readonly ConcurrentDictionary<string, byte> _pinnedLiveIpfsCids = new(StringComparer.Ordinal);
+        private readonly ConcurrentDictionary<string, PendingCidRetry> _pendingLiveCidRetries = new(StringComparer.Ordinal);
+        private readonly SemaphoreSlim _transferResultLogLock = new(1, 1);
+        private readonly string _transferResultsPath;
 
         public LiveMempoolMonitorService(
             Wrapper wrapper,
             WindowsSearchService searchService,
             IKuboIngressService kuboIngressService,
             IHttpClientFactory httpClientFactory,
+            IOptions<IpfsIngressOptions> options,
             ILogger<LiveMempoolMonitorService> logger)
         {
             _wrapper = wrapper;
@@ -41,6 +50,7 @@ namespace P2FK.IO.Services
             _kuboIngressService = kuboIngressService;
             _httpClient = httpClientFactory.CreateClient();
             _logger = logger;
+            _transferResultsPath = Path.Combine(options.Value.RepoPath, "import", TransferResultsFileName);
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -51,6 +61,8 @@ namespace P2FK.IO.Services
 
                 while (!stoppingToken.IsCancellationRequested)
                 {
+                    await ProcessPendingLiveCidRetriesAsync(stoppingToken);
+
                     int remainingCliBudget = MaxCliTransactionsPerPollCycle;
                     if (remainingCliBudget > 0)
                     {
@@ -207,20 +219,13 @@ namespace P2FK.IO.Services
                         _pinnedLiveIpfsCids.TryRemove(cid, out _);
                     }
 
-                    if (!_pinnedLiveIpfsCids.TryAdd(cid, 0))
+                    if (_pendingLiveCidRetries.ContainsKey(cid))
                         continue;
 
-                    try
-                    {
-                        await _kuboIngressService.FetchAsync(cid, cancellationToken);
-                        await _kuboIngressService.PinAsync(cid, cancellationToken);
-                        _logger.LogInformation("Pinned live-monitor IPFS CID {Cid}", cid);
-                    }
-                    catch
-                    {
-                        _pinnedLiveIpfsCids.TryRemove(cid, out _);
-                        throw;
-                    }
+                    if (await TryEnsureLiveCidPinnedAsync(cid, cancellationToken))
+                        continue;
+
+                    await QueueLiveCidRetryAsync(cid, cancellationToken);
                 }
 
                 return true;
@@ -231,6 +236,132 @@ namespace P2FK.IO.Services
             {
                 _logger.LogWarning(ex, "Failed to fetch/pin live-monitor IPFS content");
                 return false;
+            }
+        }
+
+        private async Task ProcessPendingLiveCidRetriesAsync(CancellationToken cancellationToken)
+        {
+            DateTimeOffset now = DateTimeOffset.UtcNow;
+            foreach ((string cid, PendingCidRetry retry) in _pendingLiveCidRetries.ToArray())
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (retry.NextAttemptUtc > now)
+                    continue;
+
+                if (now - retry.FirstSeenUtc >= LiveCidRetryWindow)
+                {
+                    if (_pendingLiveCidRetries.TryRemove(cid, out PendingCidRetry? expiredRetry))
+                    {
+                        _logger.LogWarning(
+                            "Live-monitor IPFS CID {Cid} was not discoverable after {RetryWindowMinutes:0} minutes; stopping retries after {Attempts} attempts",
+                            cid,
+                            LiveCidRetryWindow.TotalMinutes,
+                            expiredRetry?.Attempts ?? retry.Attempts);
+                        await WriteTransferResultAsync(
+                            "LIVE-IPFS",
+                            cid,
+                            "RETRY-EXPIRED",
+                            $"mempool monitor stopped retrying after {LiveCidRetryWindow.TotalMinutes:0} minutes and {(expiredRetry?.Attempts ?? retry.Attempts):0} attempts",
+                            cancellationToken);
+                    }
+
+                    continue;
+                }
+
+                if (await TryEnsureLiveCidPinnedAsync(cid, cancellationToken))
+                {
+                    _pendingLiveCidRetries.TryRemove(cid, out _);
+                    continue;
+                }
+
+                retry.ScheduleNextAttempt(now + LiveCidRetryInterval);
+                await WriteTransferResultAsync(
+                    "LIVE-IPFS",
+                    cid,
+                    "RETRY-PENDING",
+                    $"mempool monitor attempt {retry.Attempts:0} failed; next attempt in {LiveCidRetryInterval.TotalMinutes:0} minute(s)",
+                    cancellationToken);
+            }
+        }
+
+        private async Task QueueLiveCidRetryAsync(string cid, CancellationToken cancellationToken)
+        {
+            DateTimeOffset now = DateTimeOffset.UtcNow;
+            PendingCidRetry retry = _pendingLiveCidRetries.GetOrAdd(
+                cid,
+                _ => new PendingCidRetry(now, now + LiveCidRetryInterval, attempts: 1));
+
+            if (retry.Attempts > 1)
+                return;
+
+            _logger.LogInformation(
+                "Queued live-monitor IPFS CID {Cid} for retry every {RetryIntervalMinutes:0} minute(s) for up to {RetryWindowMinutes:0} minutes",
+                cid,
+                LiveCidRetryInterval.TotalMinutes,
+                LiveCidRetryWindow.TotalMinutes);
+            await WriteTransferResultAsync(
+                "LIVE-IPFS",
+                cid,
+                "QUEUED",
+                $"mempool monitor queued CID for retry every {LiveCidRetryInterval.TotalMinutes:0} minute(s) up to {LiveCidRetryWindow.TotalMinutes:0} minutes",
+                cancellationToken);
+        }
+
+        private async Task<bool> TryEnsureLiveCidPinnedAsync(string cid, CancellationToken cancellationToken)
+        {
+            if (_pinnedLiveIpfsCids.ContainsKey(cid))
+                return true;
+
+            try
+            {
+                using var fetchTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                fetchTimeoutCts.CancelAfter(LiveCidFetchTimeout);
+
+                await _kuboIngressService.FetchAsync(cid, fetchTimeoutCts.Token);
+                await _kuboIngressService.PinAsync(cid, cancellationToken);
+                _pinnedLiveIpfsCids.TryAdd(cid, 0);
+                _logger.LogInformation("Pinned live-monitor IPFS CID {Cid}", cid);
+                await WriteTransferResultAsync("LIVE-IPFS", cid, "PINNED", "mempool monitor fetched and pinned CID", cancellationToken);
+                return true;
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                _logger.LogDebug(
+                    "Live-monitor fetch timed out for IPFS CID {Cid} after {TimeoutMinutes:0} minute(s)",
+                    cid,
+                    LiveCidFetchTimeout.TotalMinutes);
+                return false;
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException)
+            {
+                _logger.LogDebug(ex, "Live-monitor fetch/pin attempt failed for IPFS CID {Cid}", cid);
+                return false;
+            }
+        }
+
+        private async Task WriteTransferResultAsync(string action, string cid, string status, string detail, CancellationToken cancellationToken)
+        {
+            string line = $"{DateTimeOffset.UtcNow:O}\t{action}\t{cid}\t{status}\t{detail}{Environment.NewLine}";
+            try
+            {
+                string importPath = Path.GetDirectoryName(_transferResultsPath) ?? string.Empty;
+                if (!string.IsNullOrWhiteSpace(importPath))
+                    Directory.CreateDirectory(importPath);
+
+                await _transferResultLogLock.WaitAsync(cancellationToken);
+                try
+                {
+                    await File.AppendAllTextAsync(_transferResultsPath, line, cancellationToken);
+                }
+                finally
+                {
+                    _transferResultLogLock.Release();
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _logger.LogDebug(ex, "Unable to write live-monitor transfer result for CID {Cid}", cid);
             }
         }
 
@@ -655,6 +786,26 @@ namespace P2FK.IO.Services
                 {
                     _retryCounts.Remove(txId);
                 }
+            }
+        }
+
+        private sealed class PendingCidRetry
+        {
+            public PendingCidRetry(DateTimeOffset firstSeenUtc, DateTimeOffset nextAttemptUtc, int attempts)
+            {
+                FirstSeenUtc = firstSeenUtc;
+                NextAttemptUtc = nextAttemptUtc;
+                Attempts = attempts;
+            }
+
+            public DateTimeOffset FirstSeenUtc { get; }
+            public DateTimeOffset NextAttemptUtc { get; private set; }
+            public int Attempts { get; private set; }
+
+            public void ScheduleNextAttempt(DateTimeOffset nextAttemptUtc)
+            {
+                Attempts++;
+                NextAttemptUtc = nextAttemptUtc;
             }
         }
     }
