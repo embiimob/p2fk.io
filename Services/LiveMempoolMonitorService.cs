@@ -26,6 +26,12 @@ namespace P2FK.IO.Services
         private static readonly Regex IpfsUrnRegex = new(
             @"IPFS:\s*(?:\/\/)?(?:ipfs[\\/])?(?<cid>[A-Za-z0-9]+)(?:[\\/][^<>\s&]*)?",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        private static readonly Regex IpfsSchemeRegex = new(
+            @"ipfs://(?<cid>[A-Za-z0-9]+)(?:[\\/][^<>\s&]*)?",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        private static readonly Regex IpfsGatewayPathRegex = new(
+            @"(?:^|[?&=/])ipfs[\\/](?<cid>[A-Za-z0-9]+)(?:[\\/][^<>\s&]*)?",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
         private readonly Wrapper _wrapper;
         private readonly WindowsSearchService _searchService;
@@ -396,6 +402,7 @@ namespace P2FK.IO.Services
             }
 
             AddIpfsCidsFromInlineProObjContent(document.RootElement, cids);
+            AddIpfsCidsFromAllJsonStrings(document.RootElement, cids);
 
             await AddIpfsCidsFromRootProObjFilesAsync(txId, document.RootElement, cids, cancellationToken);
 
@@ -406,12 +413,41 @@ namespace P2FK.IO.Services
         {
             foreach (string scanText in EnumerateIpfsScanTexts(text))
             {
-                foreach (Match match in IpfsUrnRegex.Matches(scanText))
+                AddIpfsCidsFromMatches(IpfsUrnRegex.Matches(scanText), cids);
+                AddIpfsCidsFromMatches(IpfsSchemeRegex.Matches(scanText), cids);
+                AddIpfsCidsFromMatches(IpfsGatewayPathRegex.Matches(scanText), cids);
+            }
+        }
+
+        private static void AddIpfsCidsFromMatches(MatchCollection matches, HashSet<string> cids)
+        {
+            foreach (Match match in matches)
+            {
+                string cid = match.Groups["cid"].Value.Trim('<', '>', ' ', '\t', '\r', '\n');
+                if (IsValidIpfsCid(cid))
+                    cids.Add(cid);
+            }
+        }
+
+        private static void AddIpfsCidsFromAllJsonStrings(JsonElement element, HashSet<string> cids)
+        {
+            switch (element.ValueKind)
+            {
+                case JsonValueKind.String:
                 {
-                    string cid = match.Groups["cid"].Value.Trim('<', '>', ' ', '\t', '\r', '\n');
-                    if (IsValidIpfsCid(cid))
-                        cids.Add(cid);
+                    string? value = element.GetString();
+                    if (!string.IsNullOrWhiteSpace(value))
+                        AddIpfsCidsFromText(value, cids);
+                    break;
                 }
+                case JsonValueKind.Object:
+                    foreach (JsonProperty property in element.EnumerateObject())
+                        AddIpfsCidsFromAllJsonStrings(property.Value, cids);
+                    break;
+                case JsonValueKind.Array:
+                    foreach (JsonElement item in element.EnumerateArray())
+                        AddIpfsCidsFromAllJsonStrings(item, cids);
+                    break;
             }
         }
 
@@ -662,6 +698,7 @@ namespace P2FK.IO.Services
             if (messageEl.ValueKind != JsonValueKind.Array)
                 yield break;
 
+            var entries = new List<string>();
             foreach (JsonElement item in messageEl.EnumerateArray())
             {
                 if (item.ValueKind != JsonValueKind.String)
@@ -669,8 +706,34 @@ namespace P2FK.IO.Services
 
                 string? message = item.GetString();
                 if (!string.IsNullOrWhiteSpace(message))
+                {
+                    entries.Add(message);
                     yield return message;
+                }
             }
+
+            for (int i = 0; i < entries.Count - 1; i++)
+            {
+                string current = entries[i];
+                string next = entries[i + 1];
+                if (!ShouldCombineMessageBoundaryForIpfs(current, next))
+                    continue;
+
+                yield return current + next;
+                yield return current + "\n" + next;
+            }
+        }
+
+        private static bool ShouldCombineMessageBoundaryForIpfs(string current, string next)
+        {
+            if (string.IsNullOrWhiteSpace(current) || string.IsNullOrWhiteSpace(next))
+                return false;
+
+            string currentTrim = current.TrimEnd();
+            string nextTrim = next.TrimStart();
+            return currentTrim.Contains("IPFS", StringComparison.OrdinalIgnoreCase) ||
+                   nextTrim.Contains("IPFS", StringComparison.OrdinalIgnoreCase) ||
+                   currentTrim.EndsWith(":", StringComparison.Ordinal);
         }
 
         private static bool LooksLikeRootJson(string rawJson)
