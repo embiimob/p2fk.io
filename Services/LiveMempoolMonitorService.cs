@@ -188,6 +188,8 @@ namespace P2FK.IO.Services
 
         private async Task<ProcessTransactionResult> ProcessTransactionAsync(Wrapper.BlockchainNode network, string txId, CancellationToken cancellationToken)
         {
+            await WriteTransferResultAsync("LIVE-IPFS-ROOT", txId, "PROCESSING", "mempool transaction dequeued for root/IPFS scan", cancellationToken);
+
             string result = await _wrapper.RunBackgroundCommandAsync(
                 network.CliPath,
                 [
@@ -200,13 +202,24 @@ namespace P2FK.IO.Services
                 ],
                 cancellationToken);
             if (!LooksLikeRootJson(result))
-                return IsTransientCliFailure(result)
-                    ? ProcessTransactionResult.Retry
-                    : ProcessTransactionResult.Ignore;
+            {
+                bool isTransient = IsTransientCliFailure(result);
+                await WriteTransferResultAsync(
+                    "LIVE-IPFS-ROOT",
+                    txId,
+                    isTransient ? "ROOT-RETRY" : "ROOT-IGNORED",
+                    isTransient ? "root payload lookup failed transiently; will retry transaction" : "root payload did not match expected root JSON shape",
+                    cancellationToken);
+                return isTransient ? ProcessTransactionResult.Retry : ProcessTransactionResult.Ignore;
+            }
 
             if (!await TryPinRootIpfsCidsAsync(txId, result, cancellationToken))
+            {
+                await WriteTransferResultAsync("LIVE-IPFS-ROOT", txId, "PIN-RETRY", "CID pin/fetch stage failed; transaction will be retried", cancellationToken);
                 return ProcessTransactionResult.Retry;
+            }
 
+            await WriteTransferResultAsync("LIVE-IPFS-ROOT", txId, "PROCESSED", "root scan completed", cancellationToken);
             _searchService.QueueRootCacheRefresh(txId, result, network.Mainnet, network.Blockchain);
             return ProcessTransactionResult.Success;
         }
@@ -262,6 +275,7 @@ namespace P2FK.IO.Services
                 (ex is TaskCanceledException && !cancellationToken.IsCancellationRequested))
             {
                 _logger.LogWarning(ex, "Failed to fetch/pin live-monitor IPFS content");
+                await WriteTransferResultAsync("LIVE-IPFS-ROOT", txId, "PIN-FAILED", $"CID extraction/pin failed: {ex.Message}", cancellationToken);
                 return false;
             }
         }
