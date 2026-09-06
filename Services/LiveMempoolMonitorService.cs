@@ -103,7 +103,7 @@ namespace P2FK.IO.Services
             if (currentMempool == null)
                 return remainingCliBudget;
 
-            MonitorState state = _networkStates.GetOrAdd(network.Key, _ => new MonitorState(currentMempool));
+            MonitorState state = _networkStates.GetOrAdd(network.Key, _ => new MonitorState());
 
             state.EnqueueNewTransactions(currentMempool);
 
@@ -849,19 +849,30 @@ namespace P2FK.IO.Services
             private readonly Queue<string> _pendingQueue = new();
             private readonly HashSet<string> _pendingSet = new(StringComparer.OrdinalIgnoreCase);
             private readonly Dictionary<string, int> _retryCounts = new(StringComparer.OrdinalIgnoreCase);
+            private bool _hasSeenSnapshot;
 
-            public MonitorState(IEnumerable<string> knownSnapshot)
-            {
-                KnownSnapshot = new HashSet<string>(knownSnapshot, StringComparer.OrdinalIgnoreCase);
-            }
+            public MonitorState() { }
 
-            public HashSet<string> KnownSnapshot { get; private set; }
+            public HashSet<string> KnownSnapshot { get; private set; } = new(StringComparer.OrdinalIgnoreCase);
 
             public void EnqueueNewTransactions(IEnumerable<string> currentMempool)
             {
                 lock (_sync)
                 {
                     var current = new HashSet<string>(currentMempool, StringComparer.OrdinalIgnoreCase);
+                    if (!_hasSeenSnapshot)
+                    {
+                        foreach (string txId in current)
+                        {
+                            if (_pendingSet.Add(txId))
+                                _pendingQueue.Enqueue(txId);
+                        }
+
+                        KnownSnapshot = current;
+                        _hasSeenSnapshot = true;
+                        return;
+                    }
+
                     foreach (string txId in current.Where(txId => !KnownSnapshot.Contains(txId)))
                     {
                         if (_pendingSet.Add(txId))
