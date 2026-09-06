@@ -208,14 +208,36 @@ namespace P2FK.IO.Services
         {
             try
             {
-                foreach (string cid in await ExtractIpfsCidsAsync(txId, rawJson, cancellationToken))
+                List<string> cids = await ExtractIpfsCidsAsync(txId, rawJson, cancellationToken);
+                if (cids.Count == 0)
+                {
+                    await WriteTransferResultAsync(
+                        "LIVE-IPFS-ROOT",
+                        txId,
+                        "NO-CID",
+                        "mempool root scanned but no IPFS CID was found in Message/PRO/OBJ content",
+                        cancellationToken);
+                    return true;
+                }
+
+                await WriteTransferResultAsync(
+                    "LIVE-IPFS-ROOT",
+                    txId,
+                    "CID-FOUND",
+                    $"mempool root scan found {cids.Count:0} CID(s)",
+                    cancellationToken);
+
+                foreach (string cid in cids)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
 
                     if (_pinnedLiveIpfsCids.ContainsKey(cid))
                     {
                         if (await _kuboIngressService.IsPinnedAsync(cid, cancellationToken))
+                        {
+                            await WriteTransferResultAsync("LIVE-IPFS", cid, "ALREADY-PINNED", $"mempool root {txId} CID already pinned", cancellationToken);
                             continue;
+                        }
 
                         _pinnedLiveIpfsCids.TryRemove(cid, out _);
                     }

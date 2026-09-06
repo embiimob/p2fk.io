@@ -160,6 +160,7 @@ If a newly discovered root message contains URNs such as `IPFS:CID/file.jpg` or 
 - Allows each fetch attempt up to 2 minutes before timing out.
 - Pins that CID indefinitely.
 - Writes live-monitor CID queue/pin status entries to `IpfsIngress:RepoPath/import/transfer-results.txt` so activity can be monitored without app logging.
+- Writes a `LIVE-IPFS-ROOT ... NO-CID` entry when a pending root is scanned but no IPFS CID is present in Message/PRO/OBJ content.
 
 These live-monitor IPFS pins are **not** stored in the temporary ingress-expiration queue, so they are not automatically purged after one hour.
 
