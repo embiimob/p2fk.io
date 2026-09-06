@@ -20,7 +20,6 @@ namespace P2FK.IO.Services
         private static readonly TimeSpan LiveCidFetchTimeout = TimeSpan.FromMinutes(2);
         private const string TransferResultsFileName = "transfer-results.txt";
         private const int MaxTransactionsPerNetworkPerCycle = 8;
-        private const int MaxCliTransactionsPerNetworkPerCycle = 1;
         private const int MaxCliTransactionsPerPollCycle = 2;
         private const int PendingRefreshChecksPerPollCycle = 1;
         private const int MaxRetryAttempts = 3;
@@ -70,8 +69,6 @@ namespace P2FK.IO.Services
 
                 while (!stoppingToken.IsCancellationRequested)
                 {
-                    await ProcessPendingLiveCidRetriesAsync(stoppingToken);
-
                     int remainingCliBudget = MaxCliTransactionsPerPollCycle;
                     if (remainingCliBudget > 0)
                     {
@@ -84,6 +81,9 @@ namespace P2FK.IO.Services
                     foreach (var network in GetNetworks())
                     {
                         stoppingToken.ThrowIfCancellationRequested();
+                        if (remainingCliBudget <= 0)
+                            break;
+
                         remainingCliBudget = await PollNetworkAsync(network, remainingCliBudget, stoppingToken);
                     }
 
@@ -108,7 +108,7 @@ namespace P2FK.IO.Services
             if (remainingCliBudget <= 0)
                 return remainingCliBudget;
 
-            int transactionBudget = Math.Min(Math.Min(MaxTransactionsPerNetworkPerCycle, MaxCliTransactionsPerNetworkPerCycle), remainingCliBudget);
+            int transactionBudget = Math.Min(MaxTransactionsPerNetworkPerCycle, remainingCliBudget);
             for (int i = 0; i < transactionBudget; i++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -209,12 +209,6 @@ namespace P2FK.IO.Services
                     isTransient ? "root payload lookup failed transiently; will retry transaction" : "root payload did not match expected root JSON shape",
                     cancellationToken);
                 return isTransient ? ProcessTransactionResult.Retry : ProcessTransactionResult.Ignore;
-            }
-
-            if (!await TryPinRootIpfsCidsAsync(txId, result, cancellationToken))
-            {
-                await WriteTransferResultAsync("LIVE-IPFS-ROOT", txId, "PIN-RETRY", "CID pin/fetch stage failed; transaction will be retried", cancellationToken);
-                return ProcessTransactionResult.Retry;
             }
 
             await WriteTransferResultAsync("LIVE-IPFS-ROOT", txId, "PROCESSED", "root scan completed", cancellationToken);

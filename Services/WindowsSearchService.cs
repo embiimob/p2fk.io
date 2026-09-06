@@ -1,8 +1,11 @@
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using P2FK.IO.Models;
+using P2FK.IO.Options;
 using System.Collections.Concurrent;
 using System.Data.OleDb;
+using System.Net;
 using System.Runtime.Versioning;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -15,8 +18,12 @@ namespace P2FK.IO.Services
         private readonly string _rootPath;
         private readonly IMemoryCache _cache;
         private readonly Wrapper _wrapper;
+        private readonly IKuboIngressService _kuboIngressService;
         private readonly CacheStatusService _cacheStatus;
         private readonly ILogger<WindowsSearchService> _logger;
+        private readonly string _transferResultsPath;
+        private readonly SemaphoreSlim _transferResultLogLock = new(1, 1);
+        private readonly ConcurrentDictionary<string, byte> _pinnedPendingIpfsCids = new(StringComparer.Ordinal);
         // TTL for regular text-search cache entries (5 min backstop for user-triggered scans).
         internal static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(300);
 
@@ -27,20 +34,28 @@ namespace P2FK.IO.Services
         internal static readonly TimeSpan WildcardCacheTtl = TimeSpan.FromHours(1);
 
         private static readonly Regex TxIdRegex = new Regex(@"[0-9a-fA-F]{64}", RegexOptions.Compiled);
+        private static readonly Regex MessageAttachmentRegex = new(@"<<(?<inner>[^>]+)>>", RegexOptions.Compiled);
+        private static readonly Regex IpfsUrnRegex = new(@"IPFS:\s*(?<cid>[A-Za-z0-9]+)(?:[\\/][^<>\s&]+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
         private const int MaxSearchLength = 2048;
         private const string BtcBlockchain = "BTC";
+        private const string TransferResultsFileName = "transfer-results.txt";
+        private static readonly TimeSpan PendingCidFetchTimeout = TimeSpan.FromMinutes(2);
 
         public WindowsSearchService(
             IMemoryCache cache,
             Wrapper wrapper,
+            IKuboIngressService kuboIngressService,
+            IOptions<IpfsIngressOptions> options,
             CacheStatusService cacheStatus,
             ILogger<WindowsSearchService> logger)
         {
             _cache = cache;
             _wrapper = wrapper;
+            _kuboIngressService = kuboIngressService;
             _rootPath = wrapper.RootPath;
             _cacheStatus = cacheStatus;
             _logger = logger;
+            _transferResultsPath = Path.Combine(options.Value.RepoPath, "import", TransferResultsFileName);
         }
 
         // ── Blockchain detection ───────────────────────────────────────────────
@@ -232,7 +247,10 @@ namespace P2FK.IO.Services
                 _pendingRootRefreshFailures.TryRemove(item.Key, out _);
 
                 if (IsPendingRoot(latestRootJson))
+                {
+                    await TryPinPendingRootIpfsCidsAsync(item.Value.TxId, latestRootJson, cancellationToken);
                     continue;
+                }
 
                 bool cacheUpdated = RefreshRootCacheEntry(item.Value.TxId, latestRootJson, insertIfNotFound: true);
                 if (!cacheUpdated)
@@ -373,6 +391,153 @@ namespace P2FK.IO.Services
             catch (JsonException)
             {
                 return false;
+            }
+        }
+
+        private async Task TryPinPendingRootIpfsCidsAsync(string txId, string rawJson, CancellationToken cancellationToken)
+        {
+            foreach (string cid in ExtractPendingRootIpfsCids(rawJson))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (_pinnedPendingIpfsCids.ContainsKey(cid))
+                {
+                    if (await _kuboIngressService.IsPinnedAsync(cid, cancellationToken))
+                        continue;
+
+                    _pinnedPendingIpfsCids.TryRemove(cid, out _);
+                }
+
+                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                timeoutCts.CancelAfter(PendingCidFetchTimeout);
+                try
+                {
+                    await _kuboIngressService.FetchAsync(cid, timeoutCts.Token);
+                    await _kuboIngressService.PinAsync(cid, timeoutCts.Token);
+                    _pinnedPendingIpfsCids[cid] = 0;
+                    await WriteTransferResultAsync(
+                        "LIVE-IPFS",
+                        cid,
+                        "PINNED",
+                        $"pending root {txId} fetched and pinned",
+                        cancellationToken);
+                }
+                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                {
+                    await WriteTransferResultAsync(
+                        "LIVE-IPFS",
+                        cid,
+                        "RETRY-PENDING",
+                        $"pending root {txId} fetch/pin timed out after {PendingCidFetchTimeout.TotalMinutes:0} minute(s)",
+                        cancellationToken);
+                }
+                catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or IOException or UnauthorizedAccessException)
+                {
+                    await WriteTransferResultAsync(
+                        "LIVE-IPFS",
+                        cid,
+                        "RETRY-PENDING",
+                        $"pending root {txId} fetch/pin failed: {ex.Message}",
+                        cancellationToken);
+                }
+            }
+        }
+
+        private static List<string> ExtractPendingRootIpfsCids(string rawJson)
+        {
+            using var document = JsonDocument.Parse(rawJson);
+            var cids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (!document.RootElement.TryGetProperty("Message", out JsonElement messageElement))
+                return cids.ToList();
+
+            foreach (string message in EnumerateMessageStrings(messageElement))
+            {
+                if (string.IsNullOrWhiteSpace(message))
+                    continue;
+
+                string decoded = WebUtility.HtmlDecode(message);
+                foreach (Match attachment in MessageAttachmentRegex.Matches(decoded))
+                {
+                    string inner = attachment.Groups["inner"].Value;
+                    if (string.IsNullOrWhiteSpace(inner))
+                        continue;
+
+                    string compact = Regex.Replace(inner, @"\s+", string.Empty);
+                    if (!compact.StartsWith("IPFS:", StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    string raw = compact[5..];
+                    string cid = raw.Split(['/', '\\'], 2, StringSplitOptions.None)[0];
+                    if (IsValidIpfsCid(cid))
+                        cids.Add(cid);
+                }
+
+                foreach (Match urn in IpfsUrnRegex.Matches(decoded))
+                {
+                    string cid = urn.Groups["cid"].Value.Trim();
+                    if (IsValidIpfsCid(cid))
+                        cids.Add(cid);
+                }
+            }
+
+            return cids.ToList();
+        }
+
+        private static IEnumerable<string> EnumerateMessageStrings(JsonElement messageEl)
+        {
+            if (messageEl.ValueKind == JsonValueKind.String)
+            {
+                string? message = messageEl.GetString();
+                if (!string.IsNullOrWhiteSpace(message))
+                    yield return message;
+                yield break;
+            }
+
+            if (messageEl.ValueKind != JsonValueKind.Array)
+                yield break;
+
+            foreach (JsonElement item in messageEl.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.String)
+                    continue;
+
+                string? message = item.GetString();
+                if (!string.IsNullOrWhiteSpace(message))
+                    yield return message;
+            }
+        }
+
+        private static bool IsValidIpfsCid(string cid)
+        {
+            if (string.IsNullOrWhiteSpace(cid))
+                return false;
+
+            return Regex.IsMatch(cid, @"^Qm[1-9A-HJ-NP-Za-km-z]{44}$", RegexOptions.CultureInvariant) ||
+                   Regex.IsMatch(cid, @"^[bB][A-Za-z2-7]{58,}$", RegexOptions.CultureInvariant);
+        }
+
+        private async Task WriteTransferResultAsync(string action, string cid, string status, string detail, CancellationToken cancellationToken)
+        {
+            string line = $"{DateTimeOffset.UtcNow:O}\t{action}\t{cid}\t{status}\t{detail}{Environment.NewLine}";
+            bool lockTaken = false;
+            try
+            {
+                string importPath = Path.GetDirectoryName(_transferResultsPath) ?? string.Empty;
+                if (!string.IsNullOrWhiteSpace(importPath))
+                    Directory.CreateDirectory(importPath);
+
+                await _transferResultLogLock.WaitAsync(cancellationToken);
+                lockTaken = true;
+                await File.AppendAllTextAsync(_transferResultsPath, line, cancellationToken);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _logger.LogDebug(ex, "Unable to write pending-root IPFS transfer result for CID {Cid}", cid);
+            }
+            finally
+            {
+                if (lockTaken)
+                    _transferResultLogLock.Release();
             }
         }
 
