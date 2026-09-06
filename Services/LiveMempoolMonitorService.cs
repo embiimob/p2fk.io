@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Options;
+using P2FK.IO.Options;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Runtime.Versioning;
@@ -219,9 +220,6 @@ namespace P2FK.IO.Services
                         _pinnedLiveIpfsCids.TryRemove(cid, out _);
                     }
 
-                    if (_pendingLiveCidRetries.ContainsKey(cid))
-                        continue;
-
                     if (await TryEnsureLiveCidPinnedAsync(cid, cancellationToken))
                         continue;
 
@@ -288,11 +286,7 @@ namespace P2FK.IO.Services
         private async Task QueueLiveCidRetryAsync(string cid, CancellationToken cancellationToken)
         {
             DateTimeOffset now = DateTimeOffset.UtcNow;
-            PendingCidRetry retry = _pendingLiveCidRetries.GetOrAdd(
-                cid,
-                _ => new PendingCidRetry(now, now + LiveCidRetryInterval, attempts: 1));
-
-            if (retry.Attempts > 1)
+            if (!_pendingLiveCidRetries.TryAdd(cid, new PendingCidRetry(now, now + LiveCidRetryInterval, attempts: 1)))
                 return;
 
             _logger.LogInformation(
@@ -310,31 +304,32 @@ namespace P2FK.IO.Services
 
         private async Task<bool> TryEnsureLiveCidPinnedAsync(string cid, CancellationToken cancellationToken)
         {
-            if (_pinnedLiveIpfsCids.ContainsKey(cid))
+            if (!_pinnedLiveIpfsCids.TryAdd(cid, 0))
                 return true;
+
+            using var fetchTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            fetchTimeoutCts.CancelAfter(LiveCidFetchTimeout);
 
             try
             {
-                using var fetchTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                fetchTimeoutCts.CancelAfter(LiveCidFetchTimeout);
-
                 await _kuboIngressService.FetchAsync(cid, fetchTimeoutCts.Token);
                 await _kuboIngressService.PinAsync(cid, cancellationToken);
-                _pinnedLiveIpfsCids.TryAdd(cid, 0);
                 _logger.LogInformation("Pinned live-monitor IPFS CID {Cid}", cid);
                 await WriteTransferResultAsync("LIVE-IPFS", cid, "PINNED", "mempool monitor fetched and pinned CID", cancellationToken);
                 return true;
             }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && fetchTimeoutCts.IsCancellationRequested)
             {
+                _pinnedLiveIpfsCids.TryRemove(cid, out _);
                 _logger.LogDebug(
                     "Live-monitor fetch timed out for IPFS CID {Cid} after {TimeoutMinutes:0} minute(s)",
                     cid,
                     LiveCidFetchTimeout.TotalMinutes);
                 return false;
             }
-            catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException)
+            catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or IOException or UnauthorizedAccessException)
             {
+                _pinnedLiveIpfsCids.TryRemove(cid, out _);
                 _logger.LogDebug(ex, "Live-monitor fetch/pin attempt failed for IPFS CID {Cid}", cid);
                 return false;
             }
