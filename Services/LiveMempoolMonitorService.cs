@@ -20,6 +20,7 @@ namespace P2FK.IO.Services
         private static readonly TimeSpan LiveCidFetchTimeout = TimeSpan.FromMinutes(2);
         private const string TransferResultsFileName = "transfer-results.txt";
         private const int MaxTransactionsPerNetworkPerCycle = 8;
+        private const int MaxCliTransactionsPerNetworkPerCycle = 1;
         private const int MaxCliTransactionsPerPollCycle = 2;
         private const int PendingRefreshChecksPerPollCycle = 1;
         private const int MaxRetryAttempts = 3;
@@ -83,9 +84,6 @@ namespace P2FK.IO.Services
                     foreach (var network in GetNetworks())
                     {
                         stoppingToken.ThrowIfCancellationRequested();
-                        if (remainingCliBudget <= 0)
-                            break;
-
                         remainingCliBudget = await PollNetworkAsync(network, remainingCliBudget, stoppingToken);
                     }
 
@@ -103,14 +101,14 @@ namespace P2FK.IO.Services
             if (currentMempool == null)
                 return remainingCliBudget;
 
-            MonitorState state = _networkStates.GetOrAdd(network.Key, _ => new MonitorState());
+            MonitorState state = _networkStates.GetOrAdd(network.Key, _ => new MonitorState(currentMempool));
 
             state.EnqueueNewTransactions(currentMempool);
 
             if (remainingCliBudget <= 0)
                 return remainingCliBudget;
 
-            int transactionBudget = Math.Min(MaxTransactionsPerNetworkPerCycle, remainingCliBudget);
+            int transactionBudget = Math.Min(Math.Min(MaxTransactionsPerNetworkPerCycle, MaxCliTransactionsPerNetworkPerCycle), remainingCliBudget);
             for (int i = 0; i < transactionBudget; i++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -398,6 +396,7 @@ namespace P2FK.IO.Services
         private async Task WriteTransferResultAsync(string action, string cid, string status, string detail, CancellationToken cancellationToken)
         {
             string line = $"{DateTimeOffset.UtcNow:O}\t{action}\t{cid}\t{status}\t{detail}{Environment.NewLine}";
+            bool lockTaken = false;
             try
             {
                 string importPath = Path.GetDirectoryName(_transferResultsPath) ?? string.Empty;
@@ -405,26 +404,24 @@ namespace P2FK.IO.Services
                     Directory.CreateDirectory(importPath);
 
                 await _transferResultLogLock.WaitAsync(cancellationToken);
-                try
-                {
-                    await File.AppendAllTextAsync(_transferResultsPath, line, cancellationToken);
-                }
-                finally
-                {
-                    _transferResultLogLock.Release();
-                }
+                lockTaken = true;
+                await File.AppendAllTextAsync(_transferResultsPath, line, cancellationToken);
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested && !lockTaken)
             {
-                bool lockTaken = false;
+                bool fallbackLockTaken = false;
                 try
                 {
-                    lockTaken = _transferResultLogLock.Wait(TimeSpan.FromMilliseconds(250));
-                    if (!lockTaken)
+                    fallbackLockTaken = _transferResultLogLock.Wait(TimeSpan.FromMilliseconds(250));
+                    if (!fallbackLockTaken)
                     {
                         _logger.LogDebug("Skipped canceled live-monitor transfer write for CID {Cid} because transfer-results lock was busy", cid);
                         return;
                     }
+
+                    string importPath = Path.GetDirectoryName(_transferResultsPath) ?? string.Empty;
+                    if (!string.IsNullOrWhiteSpace(importPath))
+                        Directory.CreateDirectory(importPath);
 
                     File.AppendAllText(_transferResultsPath, line);
                 }
@@ -434,13 +431,22 @@ namespace P2FK.IO.Services
                 }
                 finally
                 {
-                    if (lockTaken)
+                    if (fallbackLockTaken)
                         _transferResultLogLock.Release();
                 }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested && lockTaken)
+            {
+                _logger.LogDebug("Canceled live-monitor transfer write for CID {Cid} during shutdown", cid);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 _logger.LogDebug(ex, "Unable to write live-monitor transfer result for CID {Cid}", cid);
+            }
+            finally
+            {
+                if (lockTaken)
+                    _transferResultLogLock.Release();
             }
         }
 
@@ -777,7 +783,6 @@ namespace P2FK.IO.Services
                     continue;
 
                 yield return current + next;
-                yield return current + "\n" + next;
             }
         }
 
@@ -863,30 +868,19 @@ namespace P2FK.IO.Services
             private readonly Queue<string> _pendingQueue = new();
             private readonly HashSet<string> _pendingSet = new(StringComparer.OrdinalIgnoreCase);
             private readonly Dictionary<string, int> _retryCounts = new(StringComparer.OrdinalIgnoreCase);
-            private bool _hasSeenSnapshot;
 
-            public MonitorState() { }
+            public MonitorState(IEnumerable<string> knownSnapshot)
+            {
+                KnownSnapshot = new HashSet<string>(knownSnapshot, StringComparer.OrdinalIgnoreCase);
+            }
 
-            public HashSet<string> KnownSnapshot { get; private set; } = new(StringComparer.OrdinalIgnoreCase);
+            public HashSet<string> KnownSnapshot { get; private set; }
 
             public void EnqueueNewTransactions(IEnumerable<string> currentMempool)
             {
                 lock (_sync)
                 {
                     var current = new HashSet<string>(currentMempool, StringComparer.OrdinalIgnoreCase);
-                    if (!_hasSeenSnapshot)
-                    {
-                        foreach (string txId in current)
-                        {
-                            if (_pendingSet.Add(txId))
-                                _pendingQueue.Enqueue(txId);
-                        }
-
-                        KnownSnapshot = current;
-                        _hasSeenSnapshot = true;
-                        return;
-                    }
-
                     foreach (string txId in current.Where(txId => !KnownSnapshot.Contains(txId)))
                     {
                         if (_pendingSet.Add(txId))
