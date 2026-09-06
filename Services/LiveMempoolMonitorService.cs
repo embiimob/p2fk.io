@@ -23,6 +23,7 @@ namespace P2FK.IO.Services
         private const int MaxCliTransactionsPerPollCycle = 2;
         private const int PendingRefreshChecksPerPollCycle = 1;
         private const int MaxRetryAttempts = 3;
+        private static readonly Regex MessageAttachmentRegex = new(@"<<(?<inner>[^>]+)>>", RegexOptions.Compiled);
         private static readonly Regex IpfsUrnRegex = new(
             @"IPFS:\s*(?:\/\/)?(?:ipfs[\\/])?(?<cid>[A-Za-z0-9]+)(?:[\\/][^<>\s&]*)?",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
@@ -275,7 +276,7 @@ namespace P2FK.IO.Services
                 if (retry.NextAttemptUtc > now)
                     continue;
 
-                if (now - retry.FirstSeenUtc >= LiveCidRetryWindow)
+                if (now - retry.FirstSeenUtc > LiveCidRetryWindow)
                 {
                     if (_pendingLiveCidRetries.TryRemove(cid, out PendingCidRetry? expiredRetry))
                     {
@@ -352,7 +353,7 @@ namespace P2FK.IO.Services
             try
             {
                 await _kuboIngressService.FetchAsync(cid, fetchTimeoutCts.Token);
-                await _kuboIngressService.PinAsync(cid, cancellationToken);
+                await _kuboIngressService.PinAsync(cid, fetchTimeoutCts.Token);
                 _logger.LogInformation("Pinned live-monitor IPFS CID {Cid}", cid);
                 await WriteTransferResultAsync("LIVE-IPFS", cid, "PINNED", "mempool monitor fetched and pinned CID", cancellationToken);
                 return true;
@@ -389,14 +390,38 @@ namespace P2FK.IO.Services
                 if (!string.IsNullOrWhiteSpace(importPath))
                     Directory.CreateDirectory(importPath);
 
-                await _transferResultLogLock.WaitAsync();
+                await _transferResultLogLock.WaitAsync(cancellationToken);
                 try
                 {
-                    await File.AppendAllTextAsync(_transferResultsPath, line, CancellationToken.None);
+                    await File.AppendAllTextAsync(_transferResultsPath, line, cancellationToken);
                 }
                 finally
                 {
                     _transferResultLogLock.Release();
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                bool lockTaken = false;
+                try
+                {
+                    lockTaken = _transferResultLogLock.Wait(TimeSpan.FromMilliseconds(250));
+                    if (!lockTaken)
+                    {
+                        _logger.LogDebug("Skipped canceled live-monitor transfer write for CID {Cid} because transfer-results lock was busy", cid);
+                        return;
+                    }
+
+                    File.AppendAllText(_transferResultsPath, line);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    _logger.LogDebug(ex, "Unable to write live-monitor transfer result for CID {Cid}", cid);
+                }
+                finally
+                {
+                    if (lockTaken)
+                        _transferResultLogLock.Release();
                 }
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -414,12 +439,12 @@ namespace P2FK.IO.Services
             {
                 foreach (string message in EnumerateMessageStrings(messageEl))
                 {
+                    AddIpfsCidsFromMessageAttachmentRefs(message, cids);
                     AddIpfsCidsFromText(message, cids);
                 }
             }
 
             AddIpfsCidsFromInlineProObjContent(document.RootElement, cids);
-            AddIpfsCidsFromAllJsonStrings(document.RootElement, cids);
 
             await AddIpfsCidsFromRootProObjFilesAsync(txId, document.RootElement, cids, cancellationToken);
 
@@ -446,25 +471,26 @@ namespace P2FK.IO.Services
             }
         }
 
-        private static void AddIpfsCidsFromAllJsonStrings(JsonElement element, HashSet<string> cids)
+        private static void AddIpfsCidsFromMessageAttachmentRefs(string message, HashSet<string> cids)
         {
-            switch (element.ValueKind)
+            if (string.IsNullOrWhiteSpace(message))
+                return;
+
+            string decoded = WebUtility.HtmlDecode(message);
+            foreach (Match match in MessageAttachmentRegex.Matches(decoded))
             {
-                case JsonValueKind.String:
-                {
-                    string? value = element.GetString();
-                    if (!string.IsNullOrWhiteSpace(value))
-                        AddIpfsCidsFromText(value, cids);
-                    break;
-                }
-                case JsonValueKind.Object:
-                    foreach (JsonProperty property in element.EnumerateObject())
-                        AddIpfsCidsFromAllJsonStrings(property.Value, cids);
-                    break;
-                case JsonValueKind.Array:
-                    foreach (JsonElement item in element.EnumerateArray())
-                        AddIpfsCidsFromAllJsonStrings(item, cids);
-                    break;
+                string inner = match.Groups["inner"].Value;
+                if (string.IsNullOrWhiteSpace(inner))
+                    continue;
+
+                string compact = Regex.Replace(inner, @"\s+", string.Empty);
+                if (!compact.StartsWith("IPFS:", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                string raw = compact[5..];
+                string cid = raw.Split(['/', '\\'], 2, StringSplitOptions.None)[0];
+                if (IsValidIpfsCid(cid))
+                    cids.Add(cid);
             }
         }
 
