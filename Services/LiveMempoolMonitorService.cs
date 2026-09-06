@@ -301,12 +301,13 @@ namespace P2FK.IO.Services
                     continue;
                 }
 
-                retry.ScheduleNextAttempt(now + LiveCidRetryInterval);
+                PendingCidRetry updatedRetry = retry.ScheduleNextAttempt(now + LiveCidRetryInterval);
+                _pendingLiveCidRetries.TryUpdate(cid, updatedRetry, retry);
                 await WriteTransferResultAsync(
                     "LIVE-IPFS",
                     cid,
                     "RETRY-PENDING",
-                    $"mempool monitor attempt {retry.Attempts:0} failed; next attempt in {LiveCidRetryInterval.TotalMinutes:0} minute(s)",
+                    $"mempool monitor attempt {updatedRetry.Attempts:0} failed; next attempt in {LiveCidRetryInterval.TotalMinutes:0} minute(s)",
                     cancellationToken);
             }
         }
@@ -333,7 +334,17 @@ namespace P2FK.IO.Services
         private async Task<bool> TryEnsureLiveCidPinnedAsync(string cid, CancellationToken cancellationToken)
         {
             if (!_pinnedLiveIpfsCids.TryAdd(cid, 0))
-                return true;
+            {
+                try
+                {
+                    return await _kuboIngressService.IsPinnedAsync(cid, cancellationToken);
+                }
+                catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or IOException or UnauthorizedAccessException)
+                {
+                    _logger.LogDebug(ex, "Live-monitor pin-status check failed for in-flight CID {Cid}", cid);
+                    return false;
+                }
+            }
 
             using var fetchTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             fetchTimeoutCts.CancelAfter(LiveCidFetchTimeout);
@@ -355,6 +366,12 @@ namespace P2FK.IO.Services
                     LiveCidFetchTimeout.TotalMinutes);
                 return false;
             }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                _pinnedLiveIpfsCids.TryRemove(cid, out _);
+                _logger.LogDebug("Live-monitor fetch/pin was canceled for IPFS CID {Cid}", cid);
+                return false;
+            }
             catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or IOException or UnauthorizedAccessException)
             {
                 _pinnedLiveIpfsCids.TryRemove(cid, out _);
@@ -372,10 +389,10 @@ namespace P2FK.IO.Services
                 if (!string.IsNullOrWhiteSpace(importPath))
                     Directory.CreateDirectory(importPath);
 
-                await _transferResultLogLock.WaitAsync(cancellationToken);
+                await _transferResultLogLock.WaitAsync();
                 try
                 {
-                    await File.AppendAllTextAsync(_transferResultsPath, line, cancellationToken);
+                    await File.AppendAllTextAsync(_transferResultsPath, line, CancellationToken.None);
                 }
                 finally
                 {
@@ -733,7 +750,8 @@ namespace P2FK.IO.Services
             string nextTrim = next.TrimStart();
             return currentTrim.Contains("IPFS", StringComparison.OrdinalIgnoreCase) ||
                    nextTrim.Contains("IPFS", StringComparison.OrdinalIgnoreCase) ||
-                   currentTrim.EndsWith(":", StringComparison.Ordinal);
+                   currentTrim.Contains("ipfs/", StringComparison.OrdinalIgnoreCase) ||
+                   currentTrim.Contains("ipfs\\", StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool LooksLikeRootJson(string rawJson)
@@ -879,14 +897,11 @@ namespace P2FK.IO.Services
             }
 
             public DateTimeOffset FirstSeenUtc { get; }
-            public DateTimeOffset NextAttemptUtc { get; private set; }
-            public int Attempts { get; private set; }
+            public DateTimeOffset NextAttemptUtc { get; }
+            public int Attempts { get; }
 
-            public void ScheduleNextAttempt(DateTimeOffset nextAttemptUtc)
-            {
-                Attempts++;
-                NextAttemptUtc = nextAttemptUtc;
-            }
+            public PendingCidRetry ScheduleNextAttempt(DateTimeOffset nextAttemptUtc) =>
+                new(FirstSeenUtc, nextAttemptUtc, Attempts + 1);
         }
     }
 }
