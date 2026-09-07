@@ -15,6 +15,7 @@ namespace P2FK.IO.Services
         private const int MaxCliTransactionsPerPollCycle = 2;
         private const int PendingRefreshChecksPerPollCycle = 1;
         private const int MaxRetryAttempts = 3;
+        private const int MinMeaningfulMessageLengthWithoutAttachments = 7;
 
         private readonly Wrapper _wrapper;
         private readonly WindowsSearchService _searchService;
@@ -177,6 +178,9 @@ namespace P2FK.IO.Services
                     : ProcessTransactionResult.Ignore;
             }
 
+            if (ShouldDiscardPendingNoiseRoot(result))
+                return ProcessTransactionResult.Ignore;
+
             _searchService.QueueRootCacheRefresh(txId, result, network.Mainnet, network.Blockchain);
             return ProcessTransactionResult.Success;
         }
@@ -233,6 +237,59 @@ namespace P2FK.IO.Services
             {
                 return false;
             }
+        }
+
+        private static bool ShouldDiscardPendingNoiseRoot(string rawJson)
+        {
+            try
+            {
+                using var document = JsonDocument.Parse(rawJson);
+                if (document.RootElement.ValueKind != JsonValueKind.Object)
+                    return false;
+
+                return !HasAttachedFiles(document.RootElement) &&
+                       GetMessageLength(document.RootElement) < MinMeaningfulMessageLengthWithoutAttachments;
+            }
+            catch (JsonException)
+            {
+                return false;
+            }
+        }
+
+        private static bool HasAttachedFiles(JsonElement root)
+        {
+            if (!root.TryGetProperty("File", out JsonElement fileElement) || fileElement.ValueKind != JsonValueKind.Object)
+                return false;
+
+            foreach (JsonProperty property in fileElement.EnumerateObject())
+            {
+                if (!string.Equals(property.Name, "SIG", StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(property.Name, "LNK", StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+
+            return false;
+        }
+
+        private static int GetMessageLength(JsonElement root)
+        {
+            if (!root.TryGetProperty("Message", out JsonElement messageElement))
+                return 0;
+
+            if (messageElement.ValueKind == JsonValueKind.String)
+                return (messageElement.GetString() ?? string.Empty).Trim().Length;
+
+            if (messageElement.ValueKind != JsonValueKind.Array)
+                return 0;
+
+            int totalLength = 0;
+            foreach (JsonElement item in messageElement.EnumerateArray())
+            {
+                if (item.ValueKind == JsonValueKind.String)
+                    totalLength += (item.GetString() ?? string.Empty).Trim().Length;
+            }
+
+            return totalLength;
         }
 
         private IEnumerable<Wrapper.BlockchainNode> GetNetworks() => _wrapper.GetBlockchainNodes();
