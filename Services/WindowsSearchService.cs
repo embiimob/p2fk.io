@@ -35,7 +35,7 @@ namespace P2FK.IO.Services
 
         private static readonly Regex TxIdRegex = new Regex(@"[0-9a-fA-F]{64}", RegexOptions.Compiled);
         private static readonly Regex MessageAttachmentRegex = new(@"<<(?<inner>[^>]+)>>", RegexOptions.Compiled);
-        private static readonly Regex IpfsUrnRegex = new(@"IPFS:\s*(?<cid>[A-Za-z0-9]+)(?:[\\/][^<>\s&]+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        private static readonly Regex IpfsUrnRegex = new(@"IPFS:\s*(?<cid>[A-Za-z0-9]+)(?:[\\/][^<>\s&]+)?", RegexOptions.Compiled | RegexOptions.IgnoreCase);
         private const int MaxSearchLength = 2048;
         private const string BtcBlockchain = "BTC";
         private const string TransferResultsFileName = "transfer-results.txt";
@@ -396,18 +396,27 @@ namespace P2FK.IO.Services
 
         private async Task TryPinPendingRootIpfsCidsAsync(string txId, string rawJson, CancellationToken cancellationToken)
         {
-            List<string> cids = ExtractPendingRootIpfsCids(rawJson);
-            if (cids.Count == 0)
+            List<PendingRootCidFinding> findings = ExtractPendingRootIpfsCids(txId, rawJson);
+            if (findings.Count == 0)
                 return;
 
-            await WriteTransferResultAsync(
-                "LIVE-IPFS-ROOT",
-                txId,
-                "CID-FOUND",
-                $"pending root scan found {cids.Count:0} CID(s)",
-                cancellationToken);
+            foreach (var sourceGroup in findings.GroupBy(f => f.Source, StringComparer.OrdinalIgnoreCase))
+            {
+                int sourceCidCount = sourceGroup
+                    .Select(f => f.Cid)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Count();
+                await WriteTransferResultAsync(
+                    "LIVE-IPFS-ROOT",
+                    txId,
+                    "CID-FOUND",
+                    $"pending root scan found {sourceCidCount:0} CID(s) in {sourceGroup.Key}",
+                    cancellationToken);
+            }
 
-            foreach (string cid in cids)
+            foreach (string cid in findings
+                         .Select(f => f.Cid)
+                         .Distinct(StringComparer.OrdinalIgnoreCase))
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
@@ -461,20 +470,109 @@ namespace P2FK.IO.Services
             }
         }
 
-        private static List<string> ExtractPendingRootIpfsCids(string rawJson)
+        private List<PendingRootCidFinding> ExtractPendingRootIpfsCids(string txId, string rawJson)
         {
             using var document = JsonDocument.Parse(rawJson);
-            var cids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            if (!document.RootElement.TryGetProperty("Message", out JsonElement messageElement))
-                return cids.ToList();
+            var sourceToCids = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
 
-            foreach (string message in EnumerateMessageStrings(messageElement))
+            if (document.RootElement.TryGetProperty("Message", out JsonElement messageElement))
             {
-                if (string.IsNullOrWhiteSpace(message))
-                    continue;
+                foreach (string message in EnumerateMessageStrings(messageElement))
+                {
+                    foreach (string cid in ExtractIpfsCidsFromText(message))
+                    {
+                        AddSourceCid(sourceToCids, "Message", cid);
+                    }
+                }
+            }
 
-                string decoded = WebUtility.HtmlDecode(message);
-                foreach (Match attachment in MessageAttachmentRegex.Matches(decoded))
+            AddAttachmentFileCidFindings(txId, "PRO", sourceToCids);
+            AddAttachmentFileCidFindings(txId, "OBJ", sourceToCids);
+
+            return sourceToCids
+                .SelectMany(kvp => kvp.Value.Select(cid => new PendingRootCidFinding(cid, kvp.Key)))
+                .ToList();
+        }
+
+        private void AddAttachmentFileCidFindings(
+            string txId,
+            string sourceName,
+            Dictionary<string, HashSet<string>> sourceToCids)
+        {
+            if (string.IsNullOrWhiteSpace(txId))
+                return;
+
+            string attachmentPath = Path.Combine(_rootPath, txId, sourceName);
+            if (!File.Exists(attachmentPath))
+                return;
+
+            string rawAttachmentJson;
+            try
+            {
+                rawAttachmentJson = File.ReadAllText(attachmentPath);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _logger.LogDebug(ex, "Unable to read pending-root {Source} file for txId={TxId}", sourceName, txId);
+                return;
+            }
+
+            JsonElement attachmentRoot;
+            try
+            {
+                attachmentRoot = JsonSerializer.Deserialize<JsonElement>(rawAttachmentJson);
+            }
+            catch (JsonException ex)
+            {
+                _logger.LogDebug(ex, "Unable to parse pending-root {Source} file for txId={TxId}", sourceName, txId);
+                return;
+            }
+
+            foreach (string value in EnumerateJsonStringValues(attachmentRoot))
+            {
+                foreach (string cid in ExtractIpfsCidsFromText(value))
+                {
+                    AddSourceCid(sourceToCids, sourceName, cid);
+                }
+            }
+        }
+
+        private static IEnumerable<string> EnumerateJsonStringValues(JsonElement element)
+        {
+            switch (element.ValueKind)
+            {
+                case JsonValueKind.String:
+                {
+                    string? value = element.GetString();
+                    if (!string.IsNullOrWhiteSpace(value))
+                        yield return value;
+                    break;
+                }
+                case JsonValueKind.Array:
+                    foreach (JsonElement item in element.EnumerateArray())
+                    {
+                        foreach (string value in EnumerateJsonStringValues(item))
+                            yield return value;
+                    }
+                    break;
+                case JsonValueKind.Object:
+                    foreach (JsonProperty property in element.EnumerateObject())
+                    {
+                        foreach (string value in EnumerateJsonStringValues(property.Value))
+                            yield return value;
+                    }
+                    break;
+            }
+        }
+
+        private static IEnumerable<string> ExtractIpfsCidsFromText(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+                yield break;
+
+            foreach (string candidate in EnumerateDecodedTextVariants(text))
+            {
+                foreach (Match attachment in MessageAttachmentRegex.Matches(candidate))
                 {
                     string inner = attachment.Groups["inner"].Value;
                     if (string.IsNullOrWhiteSpace(inner))
@@ -487,18 +585,48 @@ namespace P2FK.IO.Services
                     string raw = compact[5..];
                     string cid = raw.Split(['/', '\\'], 2, StringSplitOptions.None)[0];
                     if (IsValidIpfsCid(cid))
-                        cids.Add(cid);
+                        yield return cid;
                 }
 
-                foreach (Match urn in IpfsUrnRegex.Matches(decoded))
+                foreach (Match urn in IpfsUrnRegex.Matches(candidate))
                 {
                     string cid = urn.Groups["cid"].Value.Trim();
                     if (IsValidIpfsCid(cid))
-                        cids.Add(cid);
+                        yield return cid;
                 }
             }
+        }
 
-            return cids.ToList();
+        private static IEnumerable<string> EnumerateDecodedTextVariants(string text)
+        {
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            if (seen.Add(text))
+                yield return text;
+
+            string htmlDecoded = WebUtility.HtmlDecode(text);
+            if (seen.Add(htmlDecoded))
+                yield return htmlDecoded;
+
+            string? percentDecoded = null;
+            try { percentDecoded = Uri.UnescapeDataString(htmlDecoded); }
+            catch (UriFormatException) { }
+
+            if (!string.IsNullOrEmpty(percentDecoded) && seen.Add(percentDecoded))
+                yield return percentDecoded;
+        }
+
+        private static void AddSourceCid(
+            Dictionary<string, HashSet<string>> sourceToCids,
+            string source,
+            string cid)
+        {
+            if (!sourceToCids.TryGetValue(source, out HashSet<string>? cids))
+            {
+                cids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                sourceToCids[source] = cids;
+            }
+
+            cids.Add(cid);
         }
 
         private static IEnumerable<string> EnumerateMessageStrings(JsonElement messageEl)
@@ -533,6 +661,8 @@ namespace P2FK.IO.Services
             return Regex.IsMatch(cid, @"^Qm[1-9A-HJ-NP-Za-km-z]{44}$", RegexOptions.CultureInvariant) ||
                    Regex.IsMatch(cid, @"^[bB][A-Za-z2-7]{58,}$", RegexOptions.CultureInvariant);
         }
+
+        private sealed record PendingRootCidFinding(string Cid, string Source);
 
         private async Task WriteTransferResultAsync(string action, string cid, string status, string detail, CancellationToken cancellationToken)
         {

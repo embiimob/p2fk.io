@@ -153,14 +153,18 @@ When running on Windows, P2FK.IO starts a background live monitor alongside the 
 - It moves newly discovered pending roots into the unconfirmed refresh queue and rechecks that queue continuously until those roots confirm.
 - It drops newly discovered pending roots that have no attached files and fewer than 7 message characters, because those are usually mempool noise.
 
-Pending-root refresh processing (the queue of transactions waiting for confirmation) scans message attachments for URNs such as `IPFS:CID/file.jpg` or `IPFS:CID\file.jpg`:
+Pending-root refresh processing (the queue of transactions waiting for confirmation) scans all of these sources for URNs such as `IPFS:CID/file.jpg`, `IPFS:CID\file.jpg`, or `IPFS:CID`:
+
+- Root `Message` values.
+- On-disk extensionless `PRO` files at `root/<transactionid>/PRO`.
+- On-disk extensionless `OBJ` files at `root/<transactionid>/OBJ`.
 
 - Extracts the **CID only**.
 - Fetches the CID through the local Kubo node without using the filename suffix.
 - Records successfully pinned pending-root CIDs and skips later pin attempts for the same CID while the transaction remains pending.
 - Allows each fetch+pin attempt up to 2 minutes before timing out.
 - Pins that CID indefinitely.
-- Writes queue-processing CID status lines to `IpfsIngress:RepoPath/import/transfer-results.txt` (`LIVE-IPFS-ROOT ... CID-FOUND` and found-CID pin success/retry outcomes) so activity can be monitored without app logging.
+- Writes queue-processing CID status lines to `IpfsIngress:RepoPath/import/transfer-results.txt` (`LIVE-IPFS-ROOT ... CID-FOUND` with source detail and found-CID pin success/retry outcomes) so activity can be monitored without app logging.
 
 These pending-root IPFS pins are **not** stored in the temporary ingress-expiration queue, so they are not automatically purged after one hour.
 
