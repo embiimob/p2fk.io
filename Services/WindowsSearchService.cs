@@ -412,16 +412,23 @@ namespace P2FK.IO.Services
                 cancellationToken.ThrowIfCancellationRequested();
 
                 if (!_pinnedPendingIpfsCids.TryAdd(cid, 0))
-                {
-                    if (await _kuboIngressService.IsPinnedAsync(cid, cancellationToken))
-                        continue;
                     continue;
-                }
 
                 using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 timeoutCts.CancelAfter(PendingCidFetchTimeout);
                 try
                 {
+                    if (await _kuboIngressService.IsPinnedAsync(cid, timeoutCts.Token))
+                    {
+                        await WriteTransferResultAsync(
+                            "LIVE-IPFS",
+                            cid,
+                            "PINNED",
+                            $"pending root {txId} already pinned",
+                            cancellationToken);
+                        continue;
+                    }
+
                     await _kuboIngressService.FetchAsync(cid, timeoutCts.Token);
                     await _kuboIngressService.PinAsync(cid, timeoutCts.Token);
                     await WriteTransferResultAsync(
