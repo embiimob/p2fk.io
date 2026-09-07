@@ -152,13 +152,16 @@ When running on Windows, P2FK.IO starts a background live monitor alongside the 
 - It uses a lower-priority, single-threaded CLI path so normal API traffic keeps precedence.
 - It moves newly discovered pending roots into the unconfirmed refresh queue and rechecks that queue continuously until those roots confirm.
 
-If a newly discovered root message contains URNs such as `IPFS:CID/file.jpg` or `IPFS:CID\file.jpg`, the live monitor now:
+Pending-root refresh processing (the queue of transactions waiting for confirmation) scans message attachments for URNs such as `IPFS:CID/file.jpg` or `IPFS:CID\file.jpg`:
 
 - Extracts the **CID only**.
 - Fetches the CID through the local Kubo node without using the filename suffix.
+- Re-attempts fetch/pin on subsequent pending-refresh checks while the transaction remains pending.
+- Allows each fetch+pin attempt up to 2 minutes before timing out.
 - Pins that CID indefinitely.
+- Writes queue-processing CID status lines to `IpfsIngress:RepoPath/import/transfer-results.txt` (`LIVE-IPFS-ROOT ... CID-FOUND` and found-CID pin success/retry outcomes) so activity can be monitored without app logging.
 
-These live-monitor IPFS pins are **not** stored in the temporary ingress-expiration queue, so they are not automatically purged after one hour.
+These pending-root IPFS pins are **not** stored in the temporary ingress-expiration queue, so they are not automatically purged after one hour.
 
 ### Step 5 — Build and validate
 
