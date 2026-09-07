@@ -398,15 +398,7 @@ namespace P2FK.IO.Services
         {
             List<string> cids = ExtractPendingRootIpfsCids(rawJson);
             if (cids.Count == 0)
-            {
-                await WriteTransferResultAsync(
-                    "LIVE-IPFS-ROOT",
-                    txId,
-                    "NO-CID",
-                    "pending root scanned but no IPFS CID was found in Message content",
-                    cancellationToken);
                 return;
-            }
 
             await WriteTransferResultAsync(
                 "LIVE-IPFS-ROOT",

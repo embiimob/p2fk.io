@@ -159,7 +159,7 @@ Pending-root refresh processing (the queue of transactions waiting for confirmat
 - Re-attempts fetch/pin on subsequent pending-refresh checks while the transaction remains pending.
 - Allows each fetch+pin attempt up to 2 minutes before timing out.
 - Pins that CID indefinitely.
-- Writes CID pin status lines and `LIVE-IPFS-ROOT ... CID-FOUND/NO-CID` entries to `IpfsIngress:RepoPath/import/transfer-results.txt` so activity can be monitored without app logging.
+- Writes queue-processing CID status lines to `IpfsIngress:RepoPath/import/transfer-results.txt` (`LIVE-IPFS-ROOT ... CID-FOUND` and found-CID pin success/retry outcomes) so activity can be monitored without app logging.
 
 These pending-root IPFS pins are **not** stored in the temporary ingress-expiration queue, so they are not automatically purged after one hour.
 

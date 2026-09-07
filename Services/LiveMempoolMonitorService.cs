@@ -1,5 +1,3 @@
-using Microsoft.Extensions.Options;
-using P2FK.IO.Options;
 using System.Net.Http.Headers;
 using System.Runtime.Versioning;
 using System.Text;
@@ -13,7 +11,6 @@ namespace P2FK.IO.Services
     {
         private static readonly TimeSpan StartupDelay = TimeSpan.FromSeconds(5);
         private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(10);
-        private const string TransferResultsFileName = "transfer-results.txt";
         private const int MaxTransactionsPerNetworkPerCycle = 8;
         private const int MaxCliTransactionsPerPollCycle = 2;
         private const int PendingRefreshChecksPerPollCycle = 1;
@@ -24,21 +21,17 @@ namespace P2FK.IO.Services
         private readonly HttpClient _httpClient;
         private readonly ILogger<LiveMempoolMonitorService> _logger;
         private readonly ConcurrentDictionary<string, MonitorState> _networkStates = new(StringComparer.OrdinalIgnoreCase);
-        private readonly SemaphoreSlim _transferResultLogLock = new(1, 1);
-        private readonly string _transferResultsPath;
 
         public LiveMempoolMonitorService(
             Wrapper wrapper,
             WindowsSearchService searchService,
             IHttpClientFactory httpClientFactory,
-            IOptions<IpfsIngressOptions> options,
             ILogger<LiveMempoolMonitorService> logger)
         {
             _wrapper = wrapper;
             _searchService = searchService;
             _httpClient = httpClientFactory.CreateClient();
             _logger = logger;
-            _transferResultsPath = Path.Combine(options.Value.RepoPath, "import", TransferResultsFileName);
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -166,8 +159,6 @@ namespace P2FK.IO.Services
 
         private async Task<ProcessTransactionResult> ProcessTransactionAsync(Wrapper.BlockchainNode network, string txId, CancellationToken cancellationToken)
         {
-            _ = WriteTransferResultAsync("LIVE-IPFS-ROOT", txId, "PROCESSING", "mempool transaction dequeued for root/IPFS scan", CancellationToken.None);
-
             string result = await _wrapper.RunBackgroundCommandAsync(
                 network.CliPath,
                 [
@@ -181,76 +172,13 @@ namespace P2FK.IO.Services
                 cancellationToken);
             if (!LooksLikeRootJson(result))
             {
-                bool isTransient = IsTransientCliFailure(result);
-                await WriteTransferResultAsync(
-                    "LIVE-IPFS-ROOT",
-                    txId,
-                    isTransient ? "ROOT-RETRY" : "ROOT-IGNORED",
-                    isTransient ? "root payload lookup failed transiently; will retry transaction" : "root payload did not match expected root JSON shape",
-                    cancellationToken);
-                return isTransient ? ProcessTransactionResult.Retry : ProcessTransactionResult.Ignore;
+                return IsTransientCliFailure(result)
+                    ? ProcessTransactionResult.Retry
+                    : ProcessTransactionResult.Ignore;
             }
 
-            await WriteTransferResultAsync("LIVE-IPFS-ROOT", txId, "PROCESSED", "root scan completed", cancellationToken);
             _searchService.QueueRootCacheRefresh(txId, result, network.Mainnet, network.Blockchain);
             return ProcessTransactionResult.Success;
-        }
-
-        private async Task WriteTransferResultAsync(string action, string cid, string status, string detail, CancellationToken cancellationToken)
-        {
-            string line = $"{DateTimeOffset.UtcNow:O}\t{action}\t{cid}\t{status}\t{detail}{Environment.NewLine}";
-            bool lockTaken = false;
-            try
-            {
-                string importPath = Path.GetDirectoryName(_transferResultsPath) ?? string.Empty;
-                if (!string.IsNullOrWhiteSpace(importPath))
-                    Directory.CreateDirectory(importPath);
-
-                await _transferResultLogLock.WaitAsync(cancellationToken);
-                lockTaken = true;
-                await File.AppendAllTextAsync(_transferResultsPath, line, cancellationToken);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested && !lockTaken)
-            {
-                bool fallbackLockTaken = false;
-                try
-                {
-                    fallbackLockTaken = _transferResultLogLock.Wait(TimeSpan.FromMilliseconds(250));
-                    if (!fallbackLockTaken)
-                    {
-                        _logger.LogDebug("Skipped canceled live-monitor transfer write for CID {Cid} because transfer-results lock was busy", cid);
-                        return;
-                    }
-
-                    string importPath = Path.GetDirectoryName(_transferResultsPath) ?? string.Empty;
-                    if (!string.IsNullOrWhiteSpace(importPath))
-                        Directory.CreateDirectory(importPath);
-
-                    File.AppendAllText(_transferResultsPath, line);
-                }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-                {
-                    _logger.LogDebug(ex, "Unable to write live-monitor transfer result for CID {Cid}", cid);
-                }
-                finally
-                {
-                    if (fallbackLockTaken)
-                        _transferResultLogLock.Release();
-                }
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested && lockTaken)
-            {
-                _logger.LogDebug("Canceled live-monitor transfer write for CID {Cid} during shutdown", cid);
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                _logger.LogDebug(ex, "Unable to write live-monitor transfer result for CID {Cid}", cid);
-            }
-            finally
-            {
-                if (lockTaken)
-                    _transferResultLogLock.Release();
-            }
         }
 
         private static bool LooksLikeRootJson(string rawJson)
