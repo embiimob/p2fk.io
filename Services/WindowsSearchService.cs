@@ -428,6 +428,13 @@ namespace P2FK.IO.Services
 
             foreach (var sourceGroup in findings.GroupBy(f => f.Source, StringComparer.OrdinalIgnoreCase))
             {
+                string sourceLabel = sourceGroup.Key.Equals("Message", StringComparison.OrdinalIgnoreCase)
+                    ? "Message"
+                    : sourceGroup.Key.Equals("PRO", StringComparison.OrdinalIgnoreCase)
+                        ? "PRO"
+                        : sourceGroup.Key.Equals("OBJ", StringComparison.OrdinalIgnoreCase)
+                            ? "OBJ"
+                            : "Unknown";
                 int sourceCidCount = sourceGroup
                     .Select(f => f.Cid)
                     .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -436,7 +443,7 @@ namespace P2FK.IO.Services
                     "LIVE-IPFS-ROOT",
                     txId,
                     "CID-FOUND",
-                    $"pending root scan found {sourceCidCount:0} CID(s) in {sourceGroup.Key}",
+                    $"pending root scan found {sourceCidCount:0} CID(s) in {sourceLabel}",
                     cancellationToken);
             }
 
