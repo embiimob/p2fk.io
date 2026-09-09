@@ -414,7 +414,7 @@ namespace P2FK.IO.Services
                 }
                 catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or IOException or UnauthorizedAccessException)
                 {
-                    _logger.LogDebug(ex, "Pending-root CID pin worker failed for txId={TxId}", txId);
+                    _logger.LogDebug(ex, "Pending-root CID pin worker failed for txId={TxId}", SanitizeTransferResultField(txId));
                 }
                 finally
                 {
