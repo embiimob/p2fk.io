@@ -19,11 +19,14 @@ namespace P2FK.IO.Services
         private readonly IMemoryCache _cache;
         private readonly Wrapper _wrapper;
         private readonly IKuboIngressService _kuboIngressService;
+        private readonly IngressMetadataStore _ingressMetadataStore;
         private readonly CacheStatusService _cacheStatus;
         private readonly ILogger<WindowsSearchService> _logger;
         private readonly string _transferResultsPath;
         private readonly SemaphoreSlim _transferResultLogLock = new(1, 1);
         private readonly ConcurrentDictionary<string, byte> _pinnedPendingIpfsCids = new(StringComparer.Ordinal);
+        private readonly ConcurrentDictionary<string, byte> _activePendingRootCidPinWorkers =
+            new(StringComparer.OrdinalIgnoreCase);
         // TTL for regular text-search cache entries (5 min backstop for user-triggered scans).
         internal static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(300);
 
@@ -39,12 +42,15 @@ namespace P2FK.IO.Services
         private const int MaxSearchLength = 2048;
         private const string BtcBlockchain = "BTC";
         private const string TransferResultsFileName = "transfer-results.txt";
-        private static readonly TimeSpan PendingCidFetchTimeout = TimeSpan.FromMinutes(2);
+        private static readonly TimeSpan PendingCidPinAttemptTimeout = TimeSpan.FromSeconds(30);
+        private static readonly TimeSpan PendingCidPinRetryInterval = TimeSpan.FromSeconds(30);
+        private static readonly TimeSpan PendingCidPinRetryWindow = TimeSpan.FromMinutes(5);
 
         public WindowsSearchService(
             IMemoryCache cache,
             Wrapper wrapper,
             IKuboIngressService kuboIngressService,
+            IngressMetadataStore ingressMetadataStore,
             IOptions<IpfsIngressOptions> options,
             CacheStatusService cacheStatus,
             ILogger<WindowsSearchService> logger)
@@ -52,6 +58,7 @@ namespace P2FK.IO.Services
             _cache = cache;
             _wrapper = wrapper;
             _kuboIngressService = kuboIngressService;
+            _ingressMetadataStore = ingressMetadataStore;
             _rootPath = wrapper.RootPath;
             _cacheStatus = cacheStatus;
             _logger = logger;
@@ -211,6 +218,7 @@ namespace P2FK.IO.Services
 
             _pendingRootRefreshQueue[queueKey] = new PendingRootRefreshRequest(txId, mainnet, normalizedBlockchain);
             _pendingRootRefreshFailures.TryRemove(queueKey, out _);
+            StartPendingRootCidPinWorker(queueKey, txId, rawJson);
         }
 
         /// <summary>
@@ -248,7 +256,6 @@ namespace P2FK.IO.Services
 
                 if (IsPendingRoot(latestRootJson))
                 {
-                    await TryPinPendingRootIpfsCidsAsync(item.Value.TxId, latestRootJson, cancellationToken);
                     continue;
                 }
 
@@ -394,7 +401,29 @@ namespace P2FK.IO.Services
             }
         }
 
-        private async Task TryPinPendingRootIpfsCidsAsync(string txId, string rawJson, CancellationToken cancellationToken)
+        private void StartPendingRootCidPinWorker(string queueKey, string txId, string rawJson)
+        {
+            if (!_activePendingRootCidPinWorkers.TryAdd(queueKey, 0))
+                return;
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await TryPinPendingRootIpfsCidsWithRetriesAsync(txId, rawJson, CancellationToken.None);
+                }
+                catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or IOException or UnauthorizedAccessException)
+                {
+                    _logger.LogDebug(ex, "Pending-root CID pin worker failed for txId={TxId}", SanitizeTransferResultField(txId));
+                }
+                finally
+                {
+                    _activePendingRootCidPinWorkers.TryRemove(queueKey, out _);
+                }
+            });
+        }
+
+        private async Task TryPinPendingRootIpfsCidsWithRetriesAsync(string txId, string rawJson, CancellationToken cancellationToken)
         {
             List<PendingRootCidFinding> findings = ExtractPendingRootIpfsCids(txId, rawJson);
             if (findings.Count == 0)
@@ -402,6 +431,13 @@ namespace P2FK.IO.Services
 
             foreach (var sourceGroup in findings.GroupBy(f => f.Source, StringComparer.OrdinalIgnoreCase))
             {
+                string sourceLabel = sourceGroup.Key.Equals("Message", StringComparison.OrdinalIgnoreCase)
+                    ? "Message"
+                    : sourceGroup.Key.Equals("PRO", StringComparison.OrdinalIgnoreCase)
+                        ? "PRO"
+                        : sourceGroup.Key.Equals("OBJ", StringComparison.OrdinalIgnoreCase)
+                            ? "OBJ"
+                            : "Unknown";
                 int sourceCidCount = sourceGroup
                     .Select(f => f.Cid)
                     .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -410,7 +446,7 @@ namespace P2FK.IO.Services
                     "LIVE-IPFS-ROOT",
                     txId,
                     "CID-FOUND",
-                    $"pending root scan found {sourceCidCount:0} CID(s) in {sourceGroup.Key}",
+                    $"pending root scan found {sourceCidCount:0} CID(s) in {sourceLabel}",
                     cancellationToken);
             }
 
@@ -420,53 +456,117 @@ namespace P2FK.IO.Services
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                if (!_pinnedPendingIpfsCids.TryAdd(cid, 0))
+                if (_pinnedPendingIpfsCids.ContainsKey(cid))
                     continue;
 
-                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                timeoutCts.CancelAfter(PendingCidFetchTimeout);
-                try
+                DateTimeOffset startedAt = DateTimeOffset.UtcNow;
+                int attempt = 0;
+                bool pinned = false;
+                while (!pinned)
                 {
-                    if (await _kuboIngressService.IsPinnedAsync(cid, timeoutCts.Token))
+                    cancellationToken.ThrowIfCancellationRequested();
+                    attempt++;
+
+                    using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                    timeoutCts.CancelAfter(PendingCidPinAttemptTimeout);
+                    try
                     {
+                        if (await _kuboIngressService.IsPinnedAsync(cid, timeoutCts.Token))
+                        {
+                            _pinnedPendingIpfsCids[cid] = 0;
+                            await EnsureCidMempoolNonExpiringAsync(cid, txId, cancellationToken);
+                            await WriteTransferResultAsync(
+                                "LIVE-IPFS",
+                                cid,
+                                "PINNED",
+                                $"pending root {txId} already pinned",
+                                cancellationToken);
+                            pinned = true;
+                            break;
+                        }
+
+                        await _kuboIngressService.FetchAsync(cid, timeoutCts.Token);
+                        await _kuboIngressService.PinAsync(cid, timeoutCts.Token);
+                        _pinnedPendingIpfsCids[cid] = 0;
+                        await EnsureCidMempoolNonExpiringAsync(cid, txId, cancellationToken);
                         await WriteTransferResultAsync(
                             "LIVE-IPFS",
                             cid,
                             "PINNED",
-                            $"pending root {txId} already pinned",
+                            $"pending root {txId} fetched and pinned",
                             cancellationToken);
-                        continue;
+                        pinned = true;
+                        break;
+                    }
+                    catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                    {
+                        TimeSpan elapsed = DateTimeOffset.UtcNow - startedAt;
+                        if (elapsed >= PendingCidPinRetryWindow)
+                        {
+                            await WriteTransferResultAsync(
+                                "LIVE-IPFS",
+                                cid,
+                                "PIN-FAILED",
+                                $"pending root {txId} fetch/pin timed out after {PendingCidPinRetryWindow.TotalMinutes:0} minute window",
+                                cancellationToken);
+                            break;
+                        }
+
+                        await WriteTransferResultAsync(
+                            "LIVE-IPFS",
+                            cid,
+                            "RETRY-PENDING",
+                            $"pending root {txId} fetch/pin attempt {attempt} timed out; retrying in {PendingCidPinRetryInterval.TotalSeconds:0} second(s)",
+                            cancellationToken);
+                    }
+                    catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or IOException or UnauthorizedAccessException)
+                    {
+                        TimeSpan elapsed = DateTimeOffset.UtcNow - startedAt;
+                        if (elapsed >= PendingCidPinRetryWindow)
+                        {
+                            await WriteTransferResultAsync(
+                                "LIVE-IPFS",
+                                cid,
+                                "PIN-FAILED",
+                                $"pending root {txId} fetch/pin failed after {PendingCidPinRetryWindow.TotalMinutes:0} minute window: {ex.Message}",
+                                cancellationToken);
+                            break;
+                        }
+
+                        await WriteTransferResultAsync(
+                            "LIVE-IPFS",
+                            cid,
+                            "RETRY-PENDING",
+                            $"pending root {txId} fetch/pin attempt {attempt} failed: {ex.Message}; retrying in {PendingCidPinRetryInterval.TotalSeconds:0} second(s)",
+                            cancellationToken);
                     }
 
-                    await _kuboIngressService.FetchAsync(cid, timeoutCts.Token);
-                    await _kuboIngressService.PinAsync(cid, timeoutCts.Token);
+                    DateTimeOffset nextAttemptAt = startedAt + TimeSpan.FromTicks(PendingCidPinRetryInterval.Ticks * attempt);
+                    TimeSpan delay = nextAttemptAt - DateTimeOffset.UtcNow;
+                    if (delay > TimeSpan.Zero)
+                        await Task.Delay(delay, cancellationToken);
+                }
+            }
+        }
+
+        private async Task EnsureCidMempoolNonExpiringAsync(string cid, string txId, CancellationToken cancellationToken)
+        {
+            try
+            {
+                int updatedRows = await _ingressMetadataStore.MarkCidAsNonExpiringAsync(cid, cancellationToken);
+                if (updatedRows > 0)
+                {
                     await WriteTransferResultAsync(
                         "LIVE-IPFS",
                         cid,
                         "PINNED",
-                        $"pending root {txId} fetched and pinned",
+                        $"pending root {txId} cleared temporary ingress expiration for CID",
                         cancellationToken);
                 }
-                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-                {
-                    _pinnedPendingIpfsCids.TryRemove(cid, out _);
-                    await WriteTransferResultAsync(
-                        "LIVE-IPFS",
-                        cid,
-                        "RETRY-PENDING",
-                        $"pending root {txId} fetch/pin timed out after {PendingCidFetchTimeout.TotalMinutes:0} minute(s)",
-                        cancellationToken);
-                }
-                catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or IOException or UnauthorizedAccessException)
-                {
-                    _pinnedPendingIpfsCids.TryRemove(cid, out _);
-                    await WriteTransferResultAsync(
-                        "LIVE-IPFS",
-                        cid,
-                        "RETRY-PENDING",
-                        $"pending root {txId} fetch/pin failed: {ex.Message}",
-                        cancellationToken);
-                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to clear temporary ingress expiration for pending-root CID {Cid}", cid);
             }
         }
 
@@ -666,7 +766,11 @@ namespace P2FK.IO.Services
 
         private async Task WriteTransferResultAsync(string action, string cid, string status, string detail, CancellationToken cancellationToken)
         {
-            string line = $"{DateTimeOffset.UtcNow:O}\t{action}\t{cid}\t{status}\t{detail}{Environment.NewLine}";
+            string safeAction = SanitizeTransferResultField(action);
+            string safeCid = SanitizeTransferResultField(cid);
+            string safeStatus = SanitizeTransferResultField(status);
+            string safeDetail = SanitizeTransferResultField(detail);
+            string line = $"{DateTimeOffset.UtcNow:O}\t{safeAction}\t{safeCid}\t{safeStatus}\t{safeDetail}{Environment.NewLine}";
             bool lockTaken = false;
             try
             {
@@ -688,6 +792,11 @@ namespace P2FK.IO.Services
                     _transferResultLogLock.Release();
             }
         }
+
+        private static string SanitizeTransferResultField(string value) =>
+            string.IsNullOrEmpty(value)
+                ? string.Empty
+                : value.Replace('\r', ' ').Replace('\n', ' ').Replace('\t', ' ');
 
         private bool RefreshRootCacheEntry(string txId, string rawJson, bool insertIfNotFound = false)
         {
@@ -1029,6 +1138,7 @@ namespace P2FK.IO.Services
                                 pendingMainnet,
                                 pendingBlockchain.ToUpperInvariant());
                             _pendingRootRefreshFailures.TryRemove(pendingQueueKey, out _);
+                            StartPendingRootCidPinWorker(pendingQueueKey, txId, rawJson);
                         }
                     }
                 }
