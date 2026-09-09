@@ -733,7 +733,11 @@ namespace P2FK.IO.Services
 
         private async Task WriteTransferResultAsync(string action, string cid, string status, string detail, CancellationToken cancellationToken)
         {
-            string line = $"{DateTimeOffset.UtcNow:O}\t{action}\t{cid}\t{status}\t{detail}{Environment.NewLine}";
+            string safeAction = SanitizeTransferResultField(action);
+            string safeCid = SanitizeTransferResultField(cid);
+            string safeStatus = SanitizeTransferResultField(status);
+            string safeDetail = SanitizeTransferResultField(detail);
+            string line = $"{DateTimeOffset.UtcNow:O}\t{safeAction}\t{safeCid}\t{safeStatus}\t{safeDetail}{Environment.NewLine}";
             bool lockTaken = false;
             try
             {
@@ -755,6 +759,11 @@ namespace P2FK.IO.Services
                     _transferResultLogLock.Release();
             }
         }
+
+        private static string SanitizeTransferResultField(string value) =>
+            string.IsNullOrEmpty(value)
+                ? string.Empty
+                : value.Replace('\r', ' ').Replace('\n', ' ').Replace('\t', ' ');
 
         private bool RefreshRootCacheEntry(string txId, string rawJson, bool insertIfNotFound = false)
         {
