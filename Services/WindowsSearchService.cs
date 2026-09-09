@@ -19,6 +19,7 @@ namespace P2FK.IO.Services
         private readonly IMemoryCache _cache;
         private readonly Wrapper _wrapper;
         private readonly IKuboIngressService _kuboIngressService;
+        private readonly IngressMetadataStore _ingressMetadataStore;
         private readonly CacheStatusService _cacheStatus;
         private readonly ILogger<WindowsSearchService> _logger;
         private readonly string _transferResultsPath;
@@ -49,6 +50,7 @@ namespace P2FK.IO.Services
             IMemoryCache cache,
             Wrapper wrapper,
             IKuboIngressService kuboIngressService,
+            IngressMetadataStore ingressMetadataStore,
             IOptions<IpfsIngressOptions> options,
             CacheStatusService cacheStatus,
             ILogger<WindowsSearchService> logger)
@@ -56,6 +58,7 @@ namespace P2FK.IO.Services
             _cache = cache;
             _wrapper = wrapper;
             _kuboIngressService = kuboIngressService;
+            _ingressMetadataStore = ingressMetadataStore;
             _rootPath = wrapper.RootPath;
             _cacheStatus = cacheStatus;
             _logger = logger;
@@ -471,6 +474,7 @@ namespace P2FK.IO.Services
                         if (await _kuboIngressService.IsPinnedAsync(cid, timeoutCts.Token))
                         {
                             _pinnedPendingIpfsCids[cid] = 0;
+                            await EnsureCidMempoolNonExpiringAsync(cid, txId, cancellationToken);
                             await WriteTransferResultAsync(
                                 "LIVE-IPFS",
                                 cid,
@@ -484,6 +488,7 @@ namespace P2FK.IO.Services
                         await _kuboIngressService.FetchAsync(cid, timeoutCts.Token);
                         await _kuboIngressService.PinAsync(cid, timeoutCts.Token);
                         _pinnedPendingIpfsCids[cid] = 0;
+                        await EnsureCidMempoolNonExpiringAsync(cid, txId, cancellationToken);
                         await WriteTransferResultAsync(
                             "LIVE-IPFS",
                             cid,
@@ -541,6 +546,27 @@ namespace P2FK.IO.Services
                     if (delay > TimeSpan.Zero)
                         await Task.Delay(delay, cancellationToken);
                 }
+            }
+        }
+
+        private async Task EnsureCidMempoolNonExpiringAsync(string cid, string txId, CancellationToken cancellationToken)
+        {
+            try
+            {
+                int updatedRows = await _ingressMetadataStore.MarkCidAsNonExpiringAsync(cid, cancellationToken);
+                if (updatedRows > 0)
+                {
+                    await WriteTransferResultAsync(
+                        "LIVE-IPFS",
+                        cid,
+                        "PINNED",
+                        $"pending root {txId} cleared temporary ingress expiration for CID",
+                        cancellationToken);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to clear temporary ingress expiration for pending-root CID {Cid}", cid);
             }
         }
 

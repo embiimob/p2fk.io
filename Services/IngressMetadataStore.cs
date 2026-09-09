@@ -203,6 +203,22 @@ namespace P2FK.IO.Services
             return result is long value && value == 1;
         }
 
+        public async Task<int> MarkCidAsNonExpiringAsync(string cid, CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(cid))
+                return 0;
+
+            await using var connection = await OpenConnectionAsync(cancellationToken);
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                UPDATE UploadRecord
+                SET IsExpired = 1
+                WHERE CID = $cid AND IsExpired = 0;
+                """;
+            command.Parameters.AddWithValue("$cid", cid);
+            return await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
         public async Task MarkExpiredAsync(Guid id, CancellationToken cancellationToken = default)
         {
             await using var connection = await OpenConnectionAsync(cancellationToken);

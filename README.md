@@ -163,6 +163,7 @@ Pending-root CID processing starts immediately when a root is added to the pendi
 - Fetches the CID through the local Kubo node without using the filename suffix.
 - Attempts pinning every 30 seconds until successful or until a 5-minute retry window elapses.
 - Writes a final failed-pin status line when that 5-minute window is exhausted without a successful pin.
+- If a found CID already exists in temporary ingress, mempool promotion clears its expiration tracking so cleanup will not unpin it later.
 - Records successfully pinned pending-root CIDs and skips later pin attempts for the same CID while the transaction remains pending.
 - Pins that CID indefinitely.
 - Writes queue-processing CID status lines to `IpfsIngress:RepoPath/import/transfer-results.txt` (`LIVE-IPFS-ROOT ... CID-FOUND` with source detail and found-CID pin success/retry outcomes) so activity can be monitored without app logging.
