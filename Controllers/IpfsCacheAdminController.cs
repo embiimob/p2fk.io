@@ -44,10 +44,10 @@ namespace P2FK.IO.Controllers
                     archive.CreateEntry($"{cid.TrimEnd('/')}/");
             }
 
-            archiveStream.Position = 0;
+            byte[] archiveBytes = archiveStream.ToArray();
             _logger.LogInformation("Exported {PinnedCidCount} pinned IPFS CIDs as a folder-only zip archive", cids.Count);
             return File(
-                fileStream: archiveStream,
+                fileContents: archiveBytes,
                 contentType: "application/zip",
                 fileDownloadName: $"ipfs-pinned-cids-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}.zip");
         }
