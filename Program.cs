@@ -196,7 +196,9 @@ app.UseSwaggerUI(options =>
     options.InjectJavascript("/swagger-footer.js");
 });
 
-app.UseHttpsRedirection();
+app.UseWhen(
+    context => !LocalIpfsAdminAccess.IsLoopbackRequest(context),
+    branch => branch.UseHttpsRedirection());
 app.UseRateLimiter();
 app.UseAuthorization();
 
