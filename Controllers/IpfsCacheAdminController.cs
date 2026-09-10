@@ -4,7 +4,6 @@ using Microsoft.Extensions.Options;
 using P2FK.IO.Options;
 using P2FK.IO.Services;
 using System.IO.Compression;
-using System.Net.Mime;
 
 namespace P2FK.IO.Controllers
 {
@@ -37,24 +36,20 @@ namespace P2FK.IO.Controllers
         public async Task<IActionResult> ExportPinnedCidFolders(CancellationToken cancellationToken)
         {
             IReadOnlyList<string> cids = await _kuboIngressService.ListPinnedCidsAsync(cancellationToken);
+            await using var archiveStream = new MemoryStream();
 
-            Response.StatusCode = StatusCodes.Status200OK;
-            Response.ContentType = "application/zip";
-            Response.Headers.ContentDisposition = new ContentDisposition
-            {
-                FileName = $"ipfs-pinned-cids-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}.zip",
-                Inline = false
-            }.ToString();
-
-            using (var archive = new ZipArchive(Response.Body, ZipArchiveMode.Create, leaveOpen: true))
+            using (var archive = new ZipArchive(archiveStream, ZipArchiveMode.Create, leaveOpen: true))
             {
                 foreach (string cid in cids)
                     archive.CreateEntry($"{cid.TrimEnd('/')}/");
             }
 
-            await Response.Body.FlushAsync(cancellationToken);
+            archiveStream.Position = 0;
             _logger.LogInformation("Exported {PinnedCidCount} pinned IPFS CIDs as a folder-only zip archive", cids.Count);
-            return new EmptyResult();
+            return File(
+                fileStream: archiveStream,
+                contentType: "application/zip",
+                fileDownloadName: $"ipfs-pinned-cids-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}.zip");
         }
 
         /// <summary>Queues a single CID to become part of the always-pinned IPFS cache. Only shown in Swagger when browsing via 127.0.0.1.</summary>
