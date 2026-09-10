@@ -235,6 +235,17 @@ namespace P2FK.IO.Services
                     return;
                 }
             }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "IPFS cache removal timeout fallback failed for folder {CidFolder}", cid);
+                await WriteTransferResultAsync(
+                    transferResultsPath,
+                    "REMOVE",
+                    cid,
+                    "FAILED",
+                    $"pin lookup timed out and unpin fallback failed: {ex.Message}",
+                    cancellationToken);
+            }
         }
 
         private async Task<bool> TryFetchAndPinAsync(string cid, string transferResultsPath, CancellationToken cancellationToken)
