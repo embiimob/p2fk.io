@@ -148,7 +148,7 @@ namespace P2FK.IO.Controllers
         private string? TryClearEmptyConflictFolder(string rootPath, string cid)
         {
             string conflictPath = Path.Combine(rootPath, cid);
-            if (File.Exists(conflictPath))
+            if (System.IO.File.Exists(conflictPath))
                 return $"Conflicting queued file already exists at {conflictPath}. Clear it manually before issuing the opposite cache operation.";
             if (!Directory.Exists(conflictPath))
                 return null;
@@ -169,7 +169,7 @@ namespace P2FK.IO.Controllers
                     return Conflict(new { error = conflict });
 
                 string targetPath = Path.Combine(targetRootPath, cid);
-                if (File.Exists(targetPath))
+                if (System.IO.File.Exists(targetPath))
                     return Conflict(new { error = $"A queued file already exists at {targetPath}. Clear it manually before retrying." });
 
                 Directory.CreateDirectory(targetPath);
