@@ -302,7 +302,6 @@ A sample `web.config` is included for IIS in-process hosting. It keeps ASP.NET C
 
 | Route | Purpose |
 |---|---|
-| `POST /api/v0/add` | Kubo-style upload (Swagger shows a GUI file picker in **Try it out**) |
 | `POST /ipfs` | Simplified ingress upload response (also supports Swagger file picker) |
 | `GET /ipfs/status` | Kubo health and queue stats |
 | `GET /ipfs/queue` | Active temporary uploads |
@@ -316,8 +315,6 @@ A sample `web.config` is included for IIS in-process hosting. It keeps ASP.NET C
 ### Example curl commands
 
 ```bash
-curl -F file=@movie.mp4 https://p2fk.io/api/v0/add
-
 curl -F file=@movie.mp4 https://p2fk.io/ipfs
 
 curl https://p2fk.io/ipfs/status
