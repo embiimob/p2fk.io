@@ -214,7 +214,7 @@ namespace P2FK.IO.Services
                     cancellationToken);
                 return;
             }
-            catch (InvalidOperationException ex) when (IsNotPinnedError(ex))
+            catch (KuboPinNotFoundException)
             {
                 try
                 {
@@ -367,11 +367,6 @@ namespace P2FK.IO.Services
 
             root.Attributes = FileAttributes.Normal;
         }
-
-        private static bool IsNotPinnedError(InvalidOperationException ex) =>
-            ex.Message.Contains("not pinned", StringComparison.OrdinalIgnoreCase) ||
-            ex.Message.Contains("no link named", StringComparison.OrdinalIgnoreCase) ||
-            ex.Message.Contains("does not have pinned", StringComparison.OrdinalIgnoreCase);
 
         private async Task WriteTransferResultAsync(string transferResultsPath, string operation, string cid, string status, string detail, CancellationToken cancellationToken)
         {
