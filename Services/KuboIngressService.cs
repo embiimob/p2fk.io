@@ -68,7 +68,19 @@ namespace P2FK.IO.Services
 
         public Task PinAsync(string cid, CancellationToken cancellationToken = default) => PostNoContentAsync($"/api/v0/pin/add?arg={Uri.EscapeDataString(cid)}", cancellationToken);
 
-        public Task UnpinAsync(string cid, CancellationToken cancellationToken = default) => PostNoContentAsync($"/api/v0/pin/rm?arg={Uri.EscapeDataString(cid)}", cancellationToken);
+        public async Task UnpinAsync(string cid, CancellationToken cancellationToken = default)
+        {
+            string relativeUrl = $"/api/v0/pin/rm?arg={Uri.EscapeDataString(cid)}";
+            using var response = await CreateClient().PostAsync(BuildApiUri(relativeUrl), content: null, cancellationToken);
+            string payload = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (response.IsSuccessStatusCode)
+                return;
+
+            if (IsNotPinnedPayload(payload))
+                throw new KuboPinNotFoundException($"Kubo unpin reported CID {cid} is not pinned: {payload}");
+
+            throw new InvalidOperationException($"Kubo request failed for {relativeUrl}: {payload}");
+        }
 
         public async Task<bool> IsPinnedAsync(string cid, CancellationToken cancellationToken = default)
         {
@@ -86,7 +98,7 @@ namespace P2FK.IO.Services
             }
             catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested && timeoutCts.IsCancellationRequested)
             {
-                throw new InvalidOperationException($"Kubo pin status timed out after {lookupTimeout.TotalMilliseconds:0} ms.", ex);
+                throw new KuboPinStatusTimeoutException($"Kubo pin status timed out after {lookupTimeout.TotalMilliseconds:0} ms.", ex);
             }
 
             using (response)
@@ -98,7 +110,7 @@ namespace P2FK.IO.Services
                 }
                 catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested && timeoutCts.IsCancellationRequested)
                 {
-                    throw new InvalidOperationException($"Kubo pin status timed out after {lookupTimeout.TotalMilliseconds:0} ms.", ex);
+                    throw new KuboPinStatusTimeoutException($"Kubo pin status timed out after {lookupTimeout.TotalMilliseconds:0} ms.", ex);
                 }
 
                 if (response.IsSuccessStatusCode)
@@ -218,5 +230,10 @@ namespace P2FK.IO.Services
 
         private static string SanitizeForLog(string value) =>
             value.Replace("\r", "\\r", StringComparison.Ordinal).Replace("\n", "\\n", StringComparison.Ordinal);
+
+        private static bool IsNotPinnedPayload(string payload) =>
+            payload.Contains("not pinned", StringComparison.OrdinalIgnoreCase) ||
+            payload.Contains("no link named", StringComparison.OrdinalIgnoreCase) ||
+            payload.Contains("does not have pinned", StringComparison.OrdinalIgnoreCase);
     }
 }

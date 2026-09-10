@@ -128,7 +128,18 @@ namespace P2FK.IO.Services
 
                 try
                 {
-                    bool isPinned = await _kuboIngressService.IsPinnedAsync(cid, cancellationToken);
+                    bool isPinned;
+                    try
+                    {
+                        isPinned = await _kuboIngressService.IsPinnedAsync(cid, cancellationToken);
+                    }
+                    catch (KuboPinStatusTimeoutException ex)
+                    {
+                        _logger.LogWarning(ex, "IPFS cache remove lookup timed out for folder {CidFolder}; attempting unpin fallback", cid);
+                        await HandleRemovalAfterLookupTimeoutAsync(cid, cidFolderPath, transferResultsPath, foldersAwaitingGc, cancellationToken);
+                        continue;
+                    }
+
                     if (!isPinned)
                     {
                         try
@@ -180,6 +191,60 @@ namespace P2FK.IO.Services
                     _logger.LogWarning(ex, "IPFS cache removal cleanup failed for {CidFolderPath} after garbage collection", path);
                     await WriteTransferResultAsync(transferResultsPath, "REMOVE", cid, "CLEANUP-FAILED", $"{path} :: {ex.Message}", cancellationToken);
                 }
+            }
+        }
+
+        private async Task HandleRemovalAfterLookupTimeoutAsync(
+            string cid,
+            string cidFolderPath,
+            string transferResultsPath,
+            List<string> foldersAwaitingGc,
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                await _kuboIngressService.UnpinAsync(cid, cancellationToken);
+                foldersAwaitingGc.Add(cidFolderPath);
+                await WriteTransferResultAsync(
+                    transferResultsPath,
+                    "REMOVE",
+                    cid,
+                    "PENDING-GC",
+                    "pin lookup timed out; unpin fallback succeeded and folder is waiting for garbage collection",
+                    cancellationToken);
+                return;
+            }
+            catch (KuboPinNotFoundException)
+            {
+                try
+                {
+                    DeleteDirectoryIfExists(cidFolderPath);
+                    await WriteTransferResultAsync(
+                        transferResultsPath,
+                        "REMOVE",
+                        cid,
+                        "SUCCESS",
+                        "pin lookup timed out and unpin reported CID absent; deleted marker folder",
+                        cancellationToken);
+                    return;
+                }
+                catch (Exception cleanupEx)
+                {
+                    _logger.LogWarning(cleanupEx, "IPFS cache removal cleanup failed for {CidFolderPath} after timeout fallback", cidFolderPath);
+                    await WriteTransferResultAsync(transferResultsPath, "REMOVE", cid, "CLEANUP-FAILED", $"{cidFolderPath} :: {cleanupEx.Message}", cancellationToken);
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "IPFS cache removal timeout fallback failed for folder {CidFolder}", cid);
+                await WriteTransferResultAsync(
+                    transferResultsPath,
+                    "REMOVE",
+                    cid,
+                    "FAILED",
+                    $"pin lookup timed out and unpin fallback failed: {ex.Message}",
+                    cancellationToken);
             }
         }
 
