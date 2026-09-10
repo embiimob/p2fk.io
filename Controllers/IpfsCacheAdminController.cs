@@ -148,6 +148,8 @@ namespace P2FK.IO.Controllers
         private string? TryClearEmptyConflictFolder(string rootPath, string cid)
         {
             string conflictPath = Path.Combine(rootPath, cid);
+            if (File.Exists(conflictPath))
+                return $"Conflicting queued file already exists at {conflictPath}. Clear it manually before issuing the opposite cache operation.";
             if (!Directory.Exists(conflictPath))
                 return null;
 
@@ -166,7 +168,11 @@ namespace P2FK.IO.Controllers
                 if (conflict is not null)
                     return Conflict(new { error = conflict });
 
-                Directory.CreateDirectory(Path.Combine(targetRootPath, cid));
+                string targetPath = Path.Combine(targetRootPath, cid);
+                if (File.Exists(targetPath))
+                    return Conflict(new { error = $"A queued file already exists at {targetPath}. Clear it manually before retrying." });
+
+                Directory.CreateDirectory(targetPath);
             }
 
             return Accepted(new { cid, status = queuedStatus });
@@ -181,10 +187,10 @@ namespace P2FK.IO.Controllers
     {
         public override void OnActionExecuting(ActionExecutingContext context)
         {
-            if (LocalIpfsAdminAccess.IsLocalAdminRequest(context.HttpContext))
+            if (LocalIpfsAdminAccess.IsLoopbackRequest(context.HttpContext))
                 return;
 
-            context.Result = new NotFoundObjectResult(new { error = "Endpoint is only available from 127.0.0.1" });
+            context.Result = new NotFoundObjectResult(new { error = "Endpoint is only available from localhost" });
         }
     }
 }
