@@ -133,7 +133,7 @@ namespace P2FK.IO.Services
                     {
                         isPinned = await _kuboIngressService.IsPinnedAsync(cid, cancellationToken);
                     }
-                    catch (InvalidOperationException ex) when (IsPinnedLookupTimeout(ex))
+                    catch (KuboPinStatusTimeoutException ex)
                     {
                         _logger.LogWarning(ex, "IPFS cache remove lookup timed out for folder {CidFolder}; attempting unpin fallback", cid);
                         await HandleRemovalAfterLookupTimeoutAsync(cid, cidFolderPath, transferResultsPath, foldersAwaitingGc, cancellationToken);
@@ -367,9 +367,6 @@ namespace P2FK.IO.Services
 
             root.Attributes = FileAttributes.Normal;
         }
-
-        private static bool IsPinnedLookupTimeout(InvalidOperationException ex) =>
-            ex.Message.Contains("Kubo pin status timed out", StringComparison.OrdinalIgnoreCase);
 
         private static bool IsNotPinnedError(InvalidOperationException ex) =>
             ex.Message.Contains("not pinned", StringComparison.OrdinalIgnoreCase) ||
