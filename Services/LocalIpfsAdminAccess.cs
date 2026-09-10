@@ -11,8 +11,11 @@ namespace P2FK.IO.Services
             httpContext.Connection.RemoteIpAddress is IPAddress remoteIp
             && IPAddress.IsLoopback(remoteIp);
 
-        public static bool ShouldExposeInSwagger(HttpContext httpContext) =>
+        public static bool IsLocalAdminRequest(HttpContext httpContext) =>
             IsLoopbackRequest(httpContext)
             && string.Equals(httpContext.Request.Host.Host, SwaggerHost, StringComparison.OrdinalIgnoreCase);
+
+        public static bool ShouldExposeInSwagger(HttpContext httpContext) =>
+            IsLocalAdminRequest(httpContext);
     }
 }

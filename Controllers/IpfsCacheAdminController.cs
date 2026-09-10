@@ -11,6 +11,7 @@ namespace P2FK.IO.Controllers
     [ApiController]
     public sealed class IpfsCacheAdminController : ControllerBase
     {
+        private static readonly object QueueMutationSync = new();
         private readonly IKuboIngressService _kuboIngressService;
         private readonly IngressMetadataStore _metadataStore;
         private readonly string _repoPath;
@@ -81,7 +82,7 @@ namespace P2FK.IO.Controllers
             }
             catch (KuboPinStatusTimeoutException ex)
             {
-                _logger.LogWarning(ex, "Timed out checking pinned status for CID {Cid}; queueing add request instead", normalizedCid);
+                _logger.LogWarning(ex, "Timed out checking pinned status for CID {Cid}; queueing add request instead", SanitizeForLog(normalizedCid));
             }
 
             if (isPinned)
@@ -89,12 +90,11 @@ namespace P2FK.IO.Controllers
 
             string importPath = Path.Combine(_repoPath, "import");
             string removePath = Path.Combine(_repoPath, "remove");
-            string? conflict = TryClearEmptyConflictFolder(removePath, normalizedCid);
-            if (conflict is not null)
-                return Conflict(new { error = conflict });
-
-            Directory.CreateDirectory(Path.Combine(importPath, normalizedCid));
-            return Accepted(new { cid = normalizedCid, status = "queued-for-import" });
+            return QueueOperation(
+                normalizedCid,
+                importPath,
+                removePath,
+                "queued-for-import");
         }
 
         /// <summary>Queues a single CID for removal from the always-pinned IPFS cache. Only shown in Swagger when browsing via 127.0.0.1.</summary>
@@ -119,20 +119,20 @@ namespace P2FK.IO.Controllers
             }
             catch (KuboPinStatusTimeoutException ex)
             {
-                _logger.LogWarning(ex, "Timed out checking pinned status for CID {Cid}; queueing removal request instead", normalizedCid);
+                _logger.LogWarning(ex, "Timed out checking pinned status for CID {Cid}; queueing removal request instead", SanitizeForLog(normalizedCid));
             }
 
             string importPath = Path.Combine(_repoPath, "import");
             string removePath = Path.Combine(_repoPath, "remove");
-            string? conflict = TryClearEmptyConflictFolder(importPath, normalizedCid);
-            if (conflict is not null)
-                return Conflict(new { error = conflict });
 
             if (isPinned == false)
                 return Ok(new { cid = normalizedCid, status = "not-pinned" });
 
-            Directory.CreateDirectory(Path.Combine(removePath, normalizedCid));
-            return Accepted(new { cid = normalizedCid, status = "queued-for-removal" });
+            return QueueOperation(
+                normalizedCid,
+                removePath,
+                importPath,
+                "queued-for-removal");
         }
 
         private static bool TryNormalizeCid(string cid, out string normalizedCid)
@@ -157,6 +157,23 @@ namespace P2FK.IO.Controllers
             Directory.Delete(conflictPath, recursive: true);
             return null;
         }
+
+        private IActionResult QueueOperation(string cid, string targetRootPath, string conflictRootPath, string queuedStatus)
+        {
+            lock (QueueMutationSync)
+            {
+                string? conflict = TryClearEmptyConflictFolder(conflictRootPath, cid);
+                if (conflict is not null)
+                    return Conflict(new { error = conflict });
+
+                Directory.CreateDirectory(Path.Combine(targetRootPath, cid));
+            }
+
+            return Accepted(new { cid, status = queuedStatus });
+        }
+
+        private static string SanitizeForLog(string value) =>
+            value.Replace("\r", "\\r", StringComparison.Ordinal).Replace("\n", "\\n", StringComparison.Ordinal);
     }
 
     [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method)]
@@ -164,7 +181,7 @@ namespace P2FK.IO.Controllers
     {
         public override void OnActionExecuting(ActionExecutingContext context)
         {
-            if (LocalIpfsAdminAccess.IsLoopbackRequest(context.HttpContext))
+            if (LocalIpfsAdminAccess.IsLocalAdminRequest(context.HttpContext))
                 return;
 
             context.Result = new NotFoundObjectResult(new { error = "Endpoint is only available from 127.0.0.1" });
