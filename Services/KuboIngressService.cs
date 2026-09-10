@@ -82,6 +82,36 @@ namespace P2FK.IO.Services
             throw new InvalidOperationException($"Kubo request failed for {relativeUrl}: {payload}");
         }
 
+        public async Task<IReadOnlyList<string>> ListPinnedCidsAsync(CancellationToken cancellationToken = default)
+        {
+            using var response = await CreateClient().PostAsync(BuildApiUri("/api/v0/pin/ls?type=recursive"), content: null, cancellationToken);
+            string payload = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (!response.IsSuccessStatusCode)
+                throw new InvalidOperationException($"Kubo pin list failed: {payload}");
+
+            JsonDocument document;
+            try
+            {
+                document = JsonDocument.Parse(payload);
+            }
+            catch (JsonException ex)
+            {
+                throw new InvalidOperationException("Kubo pin list returned invalid JSON.", ex);
+            }
+
+            using (document)
+            {
+                if (!document.RootElement.TryGetProperty("Keys", out JsonElement keys)
+                    || keys.ValueKind != JsonValueKind.Object)
+                    return Array.Empty<string>();
+
+                return keys.EnumerateObject()
+                    .Select(property => property.Name)
+                    .OrderBy(cid => cid, StringComparer.Ordinal)
+                    .ToArray();
+            }
+        }
+
         public async Task<bool> IsPinnedAsync(string cid, CancellationToken cancellationToken = default)
         {
             TimeSpan lookupTimeout = TimeSpan.FromMilliseconds(_options.PinnedLookupTimeoutMilliseconds);

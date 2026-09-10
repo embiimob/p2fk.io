@@ -40,24 +40,6 @@ namespace P2FK.IO.Controllers
             _logger = logger;
         }
 
-        /// <summary>Streams a file into the temporary ingress Kubo node and returns a Kubo-style add result.</summary>
-        [HttpPost("api/v0/add")]
-        [DisableRequestTimeout]
-        [EnableRateLimiting("IpfsUpload")]
-        [Consumes("multipart/form-data", "application/octet-stream")]
-        public async Task<ActionResult<KuboAddResult>> Add([FromForm(Name = "file")] IFormFile? file, CancellationToken cancellationToken)
-        {
-            return await HandleUploadAsync(
-                file,
-                async upload => new JsonResult(new KuboAddResult
-                {
-                    Name = upload.AddResult.Name,
-                    Hash = upload.AddResult.Hash,
-                    Size = upload.AddResult.Size
-                }),
-                cancellationToken);
-        }
-
         /// <summary>Streams a file into the temporary ingress Kubo node and returns ingress metadata.</summary>
         [HttpPost("ipfs")]
         [DisableRequestTimeout]

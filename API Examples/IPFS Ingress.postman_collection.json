@@ -6,29 +6,6 @@
   },
   "item": [
     {
-      "name": "Add via /api/v0/add",
-      "request": {
-        "method": "POST",
-        "header": [],
-        "body": {
-          "mode": "formdata",
-          "formdata": [
-            {
-              "key": "file",
-              "type": "file",
-              "src": ""
-            }
-          ]
-        },
-        "url": {
-          "raw": "https://p2fk.io/api/v0/add",
-          "protocol": "https",
-          "host": ["p2fk", "io"],
-          "path": ["api", "v0", "add"]
-        }
-      }
-    },
-    {
       "name": "Add via /ipfs",
       "request": {
         "method": "POST",

@@ -153,7 +153,19 @@ app.UseStaticFiles(new StaticFileOptions
 });
 
 app.UseSerilogRequestLogging();
-app.UseSwagger();
+app.UseSwagger(options =>
+{
+    options.PreSerializeFilters.Add((swaggerDoc, httpRequest) =>
+    {
+        if (LocalIpfsAdminAccess.ShouldExposeInSwagger(httpRequest.HttpContext))
+            return;
+
+        foreach (string path in swaggerDoc.Paths.Keys
+                     .Where(path => path.StartsWith(LocalIpfsAdminAccess.SwaggerPathPrefix, StringComparison.OrdinalIgnoreCase))
+                     .ToArray())
+            swaggerDoc.Paths.Remove(path);
+    });
+});
 app.UseDefaultFiles();
 app.UseStaticFiles();
 app.UseRequestTimeouts();
@@ -184,7 +196,9 @@ app.UseSwaggerUI(options =>
     options.InjectJavascript("/swagger-footer.js");
 });
 
-app.UseHttpsRedirection();
+app.UseWhen(
+    context => !LocalIpfsAdminAccess.IsLoopbackRequest(context),
+    branch => branch.UseHttpsRedirection());
 app.UseRateLimiter();
 app.UseAuthorization();
 

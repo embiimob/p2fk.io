@@ -302,19 +302,19 @@ A sample `web.config` is included for IIS in-process hosting. It keeps ASP.NET C
 
 | Route | Purpose |
 |---|---|
-| `POST /api/v0/add` | Kubo-style upload (Swagger shows a GUI file picker in **Try it out**) |
 | `POST /ipfs` | Simplified ingress upload response (also supports Swagger file picker) |
 | `GET /ipfs/status` | Kubo health and queue stats |
 | `GET /ipfs/queue` | Active temporary uploads |
 | `GET /ipfs/{cid}` | Optional passthrough for pinned ingress and always-pinned IPFS content |
 | `GET /ipfs/{cid}/{path}` | Optional path passthrough for files inside pinned IPFS content |
+| `GET /ipfs/cache-admin/export` | **127.0.0.1-only in Swagger**; downloads a zip of empty CID-named folders for every recursive-pinned CID |
+| `POST /ipfs/cache-admin/pins/{cid}` | **127.0.0.1-only in Swagger**; queues a single CID for always-pinned cache import/promotion |
+| `DELETE /ipfs/cache-admin/pins/{cid}` | **127.0.0.1-only in Swagger**; queues a single CID for always-pinned cache removal |
 | `GET /health/ipfs` | Health probe for ingress services |
 
 ### Example curl commands
 
 ```bash
-curl -F file=@movie.mp4 https://p2fk.io/api/v0/add
-
 curl -F file=@movie.mp4 https://p2fk.io/ipfs
 
 curl https://p2fk.io/ipfs/status
@@ -334,6 +334,7 @@ curl https://p2fk.io/health/ipfs
 - Live-monitor-discovered IPFS CIDs are fetched and pinned separately from public ingress uploads and remain pinned until you remove them manually.
 - CID folders placed in `IpfsIngress:RepoPath\\import` are imported into the active Kubo repo by a background worker.
 - CID folders placed in `IpfsIngress:RepoPath\\remove` are treated as removal requests and cleaned up after processing.
+- When Swagger is opened through `http://127.0.0.1/.../API`, three localhost-only cache admin operations also appear: folder-only pinned-CID export, single-CID add/promotion, and single-CID removal.
 - Uploads stay pinned for **1 hour** and are cleaned by `IngressExpirationWorker` every **5 minutes**.
 - Queue and status endpoints expose active temporary-ingress CID visibility without turning the API into a permanent recursive gateway.
 
