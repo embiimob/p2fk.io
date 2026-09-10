@@ -149,12 +149,12 @@ namespace P2FK.IO.Controllers
         {
             string conflictPath = Path.Combine(rootPath, cid);
             if (System.IO.File.Exists(conflictPath))
-                return $"Conflicting queued file already exists at {conflictPath}. Clear it manually before issuing the opposite cache operation.";
+                return "A conflicting queued file already exists for this CID. Clear it manually before issuing the opposite cache operation.";
             if (!Directory.Exists(conflictPath))
                 return null;
 
             if (Directory.EnumerateFileSystemEntries(conflictPath).Any())
-                return $"Conflicting queued folder already exists at {conflictPath}. Clear it manually before issuing the opposite cache operation.";
+                return "A conflicting queued folder already exists for this CID. Clear it manually before issuing the opposite cache operation.";
 
             Directory.Delete(conflictPath, recursive: true);
             return null;
@@ -170,7 +170,7 @@ namespace P2FK.IO.Controllers
 
                 string targetPath = Path.Combine(targetRootPath, cid);
                 if (System.IO.File.Exists(targetPath))
-                    return Conflict(new { error = $"A queued file already exists at {targetPath}. Clear it manually before retrying." });
+                    return Conflict(new { error = "A queued file already exists for this CID. Clear it manually before retrying." });
 
                 Directory.CreateDirectory(targetPath);
             }
@@ -187,10 +187,10 @@ namespace P2FK.IO.Controllers
     {
         public override void OnActionExecuting(ActionExecutingContext context)
         {
-            if (LocalIpfsAdminAccess.IsLoopbackRequest(context.HttpContext))
+            if (LocalIpfsAdminAccess.IsLocalAdminRequest(context.HttpContext))
                 return;
 
-            context.Result = new NotFoundObjectResult(new { error = "Endpoint is only available from localhost" });
+            context.Result = new NotFoundObjectResult(new { error = "Endpoint is only available through 127.0.0.1" });
         }
     }
 }
