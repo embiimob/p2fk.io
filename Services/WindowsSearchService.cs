@@ -38,7 +38,7 @@ namespace P2FK.IO.Services
 
         private static readonly Regex TxIdRegex = new Regex(@"[0-9a-fA-F]{64}", RegexOptions.Compiled);
         private static readonly Regex MessageAttachmentRegex = new(@"<<(?<inner>[^>]+)>>", RegexOptions.Compiled);
-        private static readonly Regex IpfsUrnRegex = new(@"IPFS:\s*(?<cid>[A-Za-z0-9]+)(?:[\\/][^<>\s&]+)?", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        private static readonly Regex IpfsUrnRegex = new(@"IPFS:\s*(?<cid>[A-Za-z0-9]+)(?:[\\/](?<path>[^<>\s&]+))?", RegexOptions.Compiled | RegexOptions.IgnoreCase);
         private const int MaxSearchLength = 2048;
         private const string BtcBlockchain = "BTC";
         private const string TransferResultsFileName = "transfer-results.txt";
@@ -195,7 +195,8 @@ namespace P2FK.IO.Services
 
         /// <summary>
         /// Queues a transaction for periodic pending-status checks during warm/rewarm cycles.
-        /// Only pending roots (null/epoch block date) are retained in this queue.
+        /// CID pinning starts immediately for the supplied root JSON, while only pending
+        /// roots (null/epoch block date) are retained in the refresh queue.
         /// </summary>
         public void QueueRootCacheRefresh(string txId, string rawJson, bool mainnet, string blockchain)
         {
@@ -209,6 +210,8 @@ namespace P2FK.IO.Services
 
             _ = RefreshRootCacheEntry(txId, rawJson, insertIfNotFound: true);
 
+            StartPendingRootCidPinWorker(queueKey, txId, rawJson);
+
             if (!IsPendingRoot(rawJson))
             {
                 _pendingRootRefreshQueue.TryRemove(queueKey, out _);
@@ -218,7 +221,6 @@ namespace P2FK.IO.Services
 
             _pendingRootRefreshQueue[queueKey] = new PendingRootRefreshRequest(txId, mainnet, normalizedBlockchain);
             _pendingRootRefreshFailures.TryRemove(queueKey, out _);
-            StartPendingRootCidPinWorker(queueKey, txId, rawJson);
         }
 
         /// <summary>
@@ -683,18 +685,48 @@ namespace P2FK.IO.Services
                         continue;
 
                     string raw = compact[5..];
-                    string cid = raw.Split(['/', '\\'], 2, StringSplitOptions.None)[0];
-                    if (IsValidIpfsCid(cid))
+                    if (TryExtractAllowedIpfsCid(raw, out string cid) && IsValidIpfsCid(cid))
                         yield return cid;
                 }
 
                 foreach (Match urn in IpfsUrnRegex.Matches(candidate))
                 {
                     string cid = urn.Groups["cid"].Value.Trim();
-                    if (IsValidIpfsCid(cid))
+                    string path = urn.Groups["path"].Value;
+                    if (IsAllowedIpfsPath(path) && IsValidIpfsCid(cid))
                         yield return cid;
                 }
             }
+        }
+
+        private static bool TryExtractAllowedIpfsCid(string raw, out string cid)
+        {
+            cid = string.Empty;
+            if (string.IsNullOrWhiteSpace(raw))
+                return false;
+
+            string[] parts = raw.Split(['/', '\\'], 2, StringSplitOptions.None);
+            string candidateCid = parts[0].Trim();
+            string path = parts.Length > 1 ? parts[1] : string.Empty;
+            if (!IsAllowedIpfsPath(path))
+                return false;
+
+            cid = candidateCid;
+            return true;
+        }
+
+        private static bool IsAllowedIpfsPath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+                return true;
+
+            string normalizedPath = path.Replace('\\', '/');
+            int fileNameStart = normalizedPath.LastIndexOf('/');
+            string fileName = fileNameStart >= 0 ? normalizedPath[(fileNameStart + 1)..] : normalizedPath;
+            if (!fileName.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            return fileName.Contains("_session_", StringComparison.OrdinalIgnoreCase);
         }
 
         private static IEnumerable<string> EnumerateDecodedTextVariants(string text)
@@ -742,6 +774,7 @@ namespace P2FK.IO.Services
             if (messageEl.ValueKind != JsonValueKind.Array)
                 yield break;
 
+            var messageParts = new List<string>();
             foreach (JsonElement item in messageEl.EnumerateArray())
             {
                 if (item.ValueKind != JsonValueKind.String)
@@ -749,7 +782,17 @@ namespace P2FK.IO.Services
 
                 string? message = item.GetString();
                 if (!string.IsNullOrWhiteSpace(message))
+                {
+                    messageParts.Add(message);
                     yield return message;
+                }
+            }
+
+            if (messageParts.Count > 1)
+            {
+                string combinedMessage = string.Concat(messageParts);
+                if (!string.IsNullOrWhiteSpace(combinedMessage))
+                    yield return combinedMessage;
             }
         }
 

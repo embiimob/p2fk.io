@@ -153,11 +153,16 @@ When running on Windows, P2FK.IO starts a background live monitor alongside the 
 - It moves newly discovered pending roots into the unconfirmed refresh queue and rechecks that queue continuously until those roots confirm.
 - It drops newly discovered pending roots that have no attached files and fewer than 7 message characters, because those are usually mempool noise.
 
-Pending-root CID processing starts immediately when a root is added to the pending-refresh queue and scans all of these sources for URNs such as `IPFS:CID/file.jpg`, `IPFS:CID\file.jpg`, or `IPFS:CID`:
+Live mempool CID processing starts immediately when a root is discovered and scans all of these sources for URNs such as `IPFS:CID/file.jpg`, `IPFS:CID\file.jpg`, or `IPFS:CID`:
 
 - Root `Message` values.
+- Concatenated root `Message` array content when the URN is split across multiple message entries.
 - On-disk extensionless `PRO` files at `root/<transactionid>/PRO`.
 - On-disk extensionless `OBJ` files at `root/<transactionid>/OBJ`.
+
+Roots discovered through live mempool monitoring still trigger this CID scan/pin path even if the transaction is already confirmed by the time the root JSON is fetched.
+
+When a message URN includes a file path ending in `.json`, that CID is skipped unless the JSON filename contains `_session_`.
 
 - Extracts the **CID only**.
 - Fetches the CID through the local Kubo node without using the filename suffix.
