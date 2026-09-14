@@ -685,7 +685,7 @@ namespace P2FK.IO.Services
                         continue;
 
                     string raw = compact[5..];
-                    if (TryExtractAllowedIpfsCid(raw, out string? cid) && IsValidIpfsCid(cid))
+                    if (TryExtractAllowedIpfsCid(raw, out string cid) && IsValidIpfsCid(cid))
                         yield return cid;
                 }
 
@@ -699,9 +699,9 @@ namespace P2FK.IO.Services
             }
         }
 
-        private static bool TryExtractAllowedIpfsCid(string raw, out string? cid)
+        private static bool TryExtractAllowedIpfsCid(string raw, out string cid)
         {
-            cid = null;
+            cid = string.Empty;
             if (string.IsNullOrWhiteSpace(raw))
                 return false;
 
