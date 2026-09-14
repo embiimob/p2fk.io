@@ -195,7 +195,8 @@ namespace P2FK.IO.Services
 
         /// <summary>
         /// Queues a transaction for periodic pending-status checks during warm/rewarm cycles.
-        /// Only pending roots (null/epoch block date) are retained in this queue.
+        /// CID pinning starts immediately for the supplied root JSON, while only pending
+        /// roots (null/epoch block date) are retained in the refresh queue.
         /// </summary>
         public void QueueRootCacheRefresh(string txId, string rawJson, bool mainnet, string blockchain)
         {
@@ -209,6 +210,8 @@ namespace P2FK.IO.Services
 
             _ = RefreshRootCacheEntry(txId, rawJson, insertIfNotFound: true);
 
+            StartPendingRootCidPinWorker(queueKey, txId, rawJson);
+
             if (!IsPendingRoot(rawJson))
             {
                 _pendingRootRefreshQueue.TryRemove(queueKey, out _);
@@ -218,7 +221,6 @@ namespace P2FK.IO.Services
 
             _pendingRootRefreshQueue[queueKey] = new PendingRootRefreshRequest(txId, mainnet, normalizedBlockchain);
             _pendingRootRefreshFailures.TryRemove(queueKey, out _);
-            StartPendingRootCidPinWorker(queueKey, txId, rawJson);
         }
 
         /// <summary>
@@ -742,6 +744,7 @@ namespace P2FK.IO.Services
             if (messageEl.ValueKind != JsonValueKind.Array)
                 yield break;
 
+            var messageParts = new List<string>();
             foreach (JsonElement item in messageEl.EnumerateArray())
             {
                 if (item.ValueKind != JsonValueKind.String)
@@ -749,7 +752,17 @@ namespace P2FK.IO.Services
 
                 string? message = item.GetString();
                 if (!string.IsNullOrWhiteSpace(message))
+                {
+                    messageParts.Add(message);
                     yield return message;
+                }
+            }
+
+            if (messageParts.Count > 1)
+            {
+                string combinedMessage = string.Concat(messageParts);
+                if (!string.IsNullOrWhiteSpace(combinedMessage))
+                    yield return combinedMessage;
             }
         }
 
