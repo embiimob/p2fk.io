@@ -162,6 +162,8 @@ Live mempool CID processing starts immediately when a root is discovered and sca
 
 Roots discovered through live mempool monitoring still trigger this CID scan/pin path even if the transaction is already confirmed by the time the root JSON is fetched.
 
+When a message URN includes a file path ending in `.json`, that CID is skipped unless the JSON filename contains `_session_`.
+
 - Extracts the **CID only**.
 - Fetches the CID through the local Kubo node without using the filename suffix.
 - Attempts pinning every 30 seconds until successful or until a 5-minute retry window elapses.
