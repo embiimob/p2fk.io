@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using P2FK.IO.Options;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
@@ -17,6 +18,7 @@ namespace P2FK.IO.Services
         private readonly string _kuboExecutablePath;
         private Process? _kuboProcess;
         private bool _startedManagedProcess;
+        private readonly ConcurrentQueue<string> _daemonErrors = new();
 
         public ManagedKuboService(
             IKuboIngressService kuboIngressService,
@@ -57,7 +59,31 @@ namespace P2FK.IO.Services
             await ConfigureKuboAsync(cancellationToken);
             _kuboProcess = StartDaemonProcess();
             _startedManagedProcess = true;
-            await WaitForKuboAsync(cancellationToken);
+            try
+            {
+                await WaitForKuboAsync(cancellationToken);
+            }
+            catch
+            {
+                // Host startup failures do not guarantee StopAsync will be called.
+                try
+                {
+                    if (!_kuboProcess.HasExited)
+                        _kuboProcess.Kill(entireProcessTree: true);
+                    await _kuboProcess.WaitForExitAsync(CancellationToken.None);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to stop the Kubo process after startup failure");
+                }
+                finally
+                {
+                    _kuboProcess.Dispose();
+                    _kuboProcess = null;
+                    _startedManagedProcess = false;
+                }
+                throw;
+            }
 
             _logger.LogInformation("Managed Kubo daemon started for repo {RepoPath}", _options.RepoPath);
             await base.StartAsync(cancellationToken);
@@ -101,6 +127,7 @@ namespace P2FK.IO.Services
 
         private async Task ConfigureKuboAsync(CancellationToken cancellationToken)
         {
+            string[] swarmAddresses = _options.GetKuboSwarmMultiAddresses();
             await RunKuboCommandAsync(cancellationToken, "config", "Addresses.API", _options.KuboApiMultiAddress);
             await RunKuboCommandAsync(cancellationToken, "config", "Addresses.Gateway", _options.KuboGatewayMultiAddress);
             await RunKuboCommandAsync(
@@ -108,8 +135,12 @@ namespace P2FK.IO.Services
                 "config",
                 "--json",
                 "Addresses.Swarm",
-                JsonSerializer.Serialize(_options.KuboSwarmMultiAddresses));
+                JsonSerializer.Serialize(swarmAddresses));
             await RunKuboCommandAsync(cancellationToken, "config", "--json", "Gateway.NoFetch", "true");
+            if (_options.KuboDisableNatPortMap is bool disableNatPortMap)
+            {
+                await RunKuboCommandAsync(cancellationToken, "config", "--json", "Swarm.DisableNatPortMap", disableNatPortMap ? "true" : "false");
+            }
         }
 
         private Process StartDaemonProcess()
@@ -125,10 +156,15 @@ namespace P2FK.IO.Services
                 if (!string.IsNullOrWhiteSpace(args.Data))
                     _logger.LogInformation("kubo: {Message}", args.Data);
             };
-            process.ErrorDataReceived += (_, args) =>
+            process.ErrorDataReceived += (sender, args) =>
             {
                 if (!string.IsNullOrWhiteSpace(args.Data))
+                {
+                    _daemonErrors.Enqueue(args.Data.Length > 1000 ? args.Data[..1000] : args.Data);
+                    while (_daemonErrors.Count > 20)
+                        _daemonErrors.TryDequeue(out _);
                     _logger.LogWarning("kubo: {Message}", args.Data);
+                }
             };
 
             if (!process.Start())
@@ -145,21 +181,35 @@ namespace P2FK.IO.Services
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeoutCts.CancelAfter(timeout);
 
-            while (!timeoutCts.IsCancellationRequested)
+            try
             {
-                if (_kuboProcess is { HasExited: true })
+                while (!timeoutCts.IsCancellationRequested)
                 {
-                    throw new InvalidOperationException($"Managed Kubo daemon exited during startup with code {_kuboProcess.ExitCode}.");
+                    if (_kuboProcess is { HasExited: true })
+                    {
+                        // Drain asynchronous stderr callbacks before constructing the startup error.
+                        await _kuboProcess.WaitForExitAsync(cancellationToken);
+                        throw new InvalidOperationException(
+                            $"Managed Kubo daemon exited during startup with code {_kuboProcess.ExitCode}. {GetStartupDiagnostics()}");
+                    }
+
+                    if (await _kuboIngressService.IsHealthyAsync(timeoutCts.Token))
+                        return;
+
+                    await Task.Delay(TimeSpan.FromSeconds(1), timeoutCts.Token);
                 }
-
-                if (await _kuboIngressService.IsHealthyAsync(timeoutCts.Token))
-                    return;
-
-                await Task.Delay(TimeSpan.FromSeconds(1), timeoutCts.Token);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && timeoutCts.IsCancellationRequested)
+            {
             }
 
-            throw new TimeoutException($"Managed Kubo daemon did not become healthy within {timeout.TotalSeconds:0} seconds.");
+            cancellationToken.ThrowIfCancellationRequested();
+            throw new TimeoutException(
+                $"Managed Kubo daemon did not become healthy within {timeout.TotalSeconds:0} seconds. {GetStartupDiagnostics()}");
         }
+
+        private string GetStartupDiagnostics() =>
+            $"Repo: {_options.RepoPath}; API: {_options.KuboApiBaseUrl}. Kubo stderr: {string.Join(" | ", _daemonErrors)}";
 
         private async Task TryShutdownKuboAsync(CancellationToken cancellationToken)
         {

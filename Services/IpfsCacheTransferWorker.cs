@@ -6,7 +6,6 @@ namespace P2FK.IO.Services
     public sealed class IpfsCacheTransferWorker : BackgroundService
     {
         private static readonly TimeSpan StartupDelay = TimeSpan.FromSeconds(5);
-        private static readonly TimeSpan FetchFallbackTimeout = TimeSpan.FromMinutes(1);
         private const string TransferResultsFileName = "transfer-results.txt";
 
         private readonly IKuboIngressService _kuboIngressService;
@@ -253,23 +252,23 @@ namespace P2FK.IO.Services
             try
             {
                 using var fetchTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                fetchTimeoutCts.CancelAfter(FetchFallbackTimeout);
+                fetchTimeoutCts.CancelAfter(TimeSpan.FromSeconds(_options.KuboFetchTimeoutSeconds));
 
                 await _kuboIngressService.FetchAsync(cid, fetchTimeoutCts.Token);
-                await _kuboIngressService.PinAsync(cid, cancellationToken);
+                await _kuboIngressService.PinAsync(cid, fetchTimeoutCts.Token);
                 await WriteTransferResultAsync(transferResultsPath, "IMPORT", cid, "FETCHED", "CID was fetched from Kubo and pinned", cancellationToken);
                 return true;
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
                 _logger.LogWarning("IPFS cache import fetch timed out for CID {Cid} after no local files were found", cid);
-                await WriteTransferResultAsync(transferResultsPath, "IMPORT", cid, "FETCH-TIMEOUT", $"Kubo fetch exceeded the {FetchFallbackTimeout.TotalMinutes:0}-minute timeout and no local files were found", cancellationToken);
+                await WriteTransferResultAsync(transferResultsPath, "IMPORT", cid, "FETCH-TIMEOUT", $"Kubo fetch/pin exceeded the {_options.KuboFetchTimeoutSeconds}-second timeout and no local files were found", cancellationToken);
                 return false;
             }
-            catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException)
+            catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or IOException)
             {
                 _logger.LogDebug(ex, "IPFS cache import fetch failed for CID {Cid} after no local files were found", cid);
-                await WriteTransferResultAsync(transferResultsPath, "IMPORT", cid, "FETCH-MISS", "Kubo fetch failed and no local files were found", cancellationToken);
+                await WriteTransferResultAsync(transferResultsPath, "IMPORT", cid, "FETCH-MISS", $"Kubo fetch/pin failed and no local files were found: {ex.Message}", cancellationToken);
                 return false;
             }
         }

@@ -24,6 +24,8 @@ namespace P2FK.IO.Services
             _options = options.Value;
             if (_options.PinnedLookupTimeoutMilliseconds <= 0)
                 throw new InvalidOperationException($"IpfsIngress:{nameof(IpfsIngressOptions.PinnedLookupTimeoutMilliseconds)} must be greater than zero.");
+            if (_options.KuboFetchTimeoutSeconds <= 0)
+                throw new InvalidOperationException($"IpfsIngress:{nameof(IpfsIngressOptions.KuboFetchTimeoutSeconds)} must be greater than zero.");
             _logger = logger;
             _kuboApiBaseUri = BuildBaseUri(_options.KuboApiBaseUrl);
             _kuboGatewayBaseUri = BuildBaseUri(_options.KuboGatewayBaseUrl);
@@ -54,19 +56,44 @@ namespace P2FK.IO.Services
 
         public async Task FetchAsync(string cid, CancellationToken cancellationToken = default)
         {
-            using var request = new HttpRequestMessage(HttpMethod.Post, BuildApiUri($"/api/v0/cat?arg={Uri.EscapeDataString(cid)}"));
-            using var response = await CreateClient().SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(_options.KuboFetchTimeoutSeconds));
+            using var client = CreateClient();
+            client.Timeout = Timeout.InfiniteTimeSpan;
+            // Like SUP's ipfs get, retrieve the whole UnixFS tree, not just file roots.
+            using var request = new HttpRequestMessage(HttpMethod.Post, BuildApiUri($"/api/v0/get?arg={Uri.EscapeDataString(cid)}&archive=true&compress=false"));
+            using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeoutCts.Token);
             if (!response.IsSuccessStatusCode)
             {
-                string payload = await response.Content.ReadAsStringAsync(cancellationToken);
+                string payload = await response.Content.ReadAsStringAsync(timeoutCts.Token);
                 throw new InvalidOperationException($"Kubo fetch failed for CID {cid}: {payload}");
             }
 
-            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-            await stream.CopyToAsync(Stream.Null, cancellationToken);
+            await using var stream = await response.Content.ReadAsStreamAsync(timeoutCts.Token);
+            await stream.CopyToAsync(Stream.Null, timeoutCts.Token);
+            // Kubo can report a late failure after sending HTTP 200 and a partial archive.
+            if (response.TrailingHeaders.TryGetValues("X-Stream-Error", out var errors))
+            {
+                string error = string.Join("; ", errors.Where(value => !string.IsNullOrWhiteSpace(value)));
+                if (error.Length > 0)
+                    throw new InvalidOperationException($"Kubo fetch failed for CID {cid}: {error}");
+            }
         }
 
-        public Task PinAsync(string cid, CancellationToken cancellationToken = default) => PostNoContentAsync($"/api/v0/pin/add?arg={Uri.EscapeDataString(cid)}", cancellationToken);
+        public async Task PinAsync(string cid, CancellationToken cancellationToken = default)
+        {
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(_options.KuboFetchTimeoutSeconds));
+            using var client = CreateClient();
+            client.Timeout = Timeout.InfiniteTimeSpan;
+            using var response = await client.PostAsync(
+                BuildApiUri($"/api/v0/pin/add?arg={Uri.EscapeDataString(cid)}&recursive=true"),
+                content: null,
+                timeoutCts.Token);
+            string payload = await response.Content.ReadAsStringAsync(timeoutCts.Token);
+            if (!response.IsSuccessStatusCode)
+                throw new InvalidOperationException($"Kubo pin failed for CID {cid}: {payload}");
+        }
 
         public async Task UnpinAsync(string cid, CancellationToken cancellationToken = default)
         {
@@ -229,14 +256,6 @@ namespace P2FK.IO.Services
                 ? $"/ipfs/{cid}"
                 : $"/ipfs/{cid}/{path.TrimStart('/')}";
             return new Uri(_kuboGatewayBaseUri, relativePath.TrimStart('/'));
-        }
-
-        private async Task PostNoContentAsync(string relativeUrl, CancellationToken cancellationToken)
-        {
-            using var response = await CreateClient().PostAsync(BuildApiUri(relativeUrl), content: null, cancellationToken);
-            string payload = await response.Content.ReadAsStringAsync(cancellationToken);
-            if (!response.IsSuccessStatusCode)
-                throw new InvalidOperationException($"Kubo request failed for {relativeUrl}: {payload}");
         }
 
         private HttpClient CreateClient() => _httpClientFactory.CreateClient(nameof(KuboIngressService));

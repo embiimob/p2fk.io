@@ -23,6 +23,7 @@ namespace P2FK.IO.Services
         private readonly CacheStatusService _cacheStatus;
         private readonly ILogger<WindowsSearchService> _logger;
         private readonly string _transferResultsPath;
+        private readonly TimeSpan _pendingCidPinAttemptTimeout;
         private readonly SemaphoreSlim _transferResultLogLock = new(1, 1);
         private readonly ConcurrentDictionary<string, byte> _pinnedPendingIpfsCids = new(StringComparer.Ordinal);
         private readonly ConcurrentDictionary<string, byte> _activePendingRootCidPinWorkers =
@@ -42,7 +43,6 @@ namespace P2FK.IO.Services
         private const int MaxSearchLength = 2048;
         private const string BtcBlockchain = "BTC";
         private const string TransferResultsFileName = "transfer-results.txt";
-        private static readonly TimeSpan PendingCidPinAttemptTimeout = TimeSpan.FromSeconds(30);
         private static readonly TimeSpan PendingCidPinRetryInterval = TimeSpan.FromSeconds(30);
         private static readonly TimeSpan PendingCidPinRetryWindow = TimeSpan.FromMinutes(5);
 
@@ -63,6 +63,7 @@ namespace P2FK.IO.Services
             _cacheStatus = cacheStatus;
             _logger = logger;
             _transferResultsPath = Path.Combine(options.Value.RepoPath, "import", TransferResultsFileName);
+            _pendingCidPinAttemptTimeout = TimeSpan.FromSeconds(options.Value.KuboFetchTimeoutSeconds);
         }
 
         // ── Blockchain detection ───────────────────────────────────────────────
@@ -470,10 +471,24 @@ namespace P2FK.IO.Services
                     attempt++;
 
                     using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                    timeoutCts.CancelAfter(PendingCidPinAttemptTimeout);
+                    TimeSpan remaining = PendingCidPinRetryWindow - (DateTimeOffset.UtcNow - startedAt);
+                    timeoutCts.CancelAfter(remaining <= TimeSpan.Zero
+                        ? TimeSpan.Zero
+                        : remaining < _pendingCidPinAttemptTimeout ? remaining : _pendingCidPinAttemptTimeout);
                     try
                     {
-                        if (await _kuboIngressService.IsPinnedAsync(cid, timeoutCts.Token))
+                        bool alreadyPinned = false;
+                        try
+                        {
+                            alreadyPinned = await _kuboIngressService.IsPinnedAsync(cid, timeoutCts.Token);
+                        }
+                        catch (KuboPinStatusTimeoutException)
+                        {
+                            // A slow local pin lookup must not prevent the actual network fetch.
+                            _logger.LogDebug("Pin lookup timed out for CID {Cid}; attempting fetch/pin", cid);
+                        }
+                        timeoutCts.Token.ThrowIfCancellationRequested();
+                        if (alreadyPinned)
                         {
                             _pinnedPendingIpfsCids[cid] = 0;
                             await EnsureCidMempoolNonExpiringAsync(cid, txId, cancellationToken);

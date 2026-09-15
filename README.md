@@ -165,8 +165,8 @@ Roots discovered through live mempool monitoring still trigger this CID scan/pin
 When a message URN includes a file path ending in `.json`, that CID is skipped unless the JSON filename contains `_session_`.
 
 - Extracts the **CID only**.
-- Fetches the CID through the local Kubo node without using the filename suffix.
-- Attempts pinning every 30 seconds until successful or until a 5-minute retry window elapses.
+- Fetches the entire file or directory CID through the local Kubo node without using the filename suffix.
+- Gives each fetch/pin attempt up to `KuboFetchTimeoutSeconds` (180 seconds by default), bounded by the remaining 5-minute retry window. Quick failures retry on the 30-second schedule; long attempts are not interrupted every 30 seconds.
 - Writes a final failed-pin status line when that 5-minute window is exhausted without a successful pin.
 - If a found CID already exists in temporary ingress, mempool promotion clears its expiration tracking so cleanup will not unpin it later.
 - Records successfully pinned pending-root CIDs and skips later pin attempts for the same CID while the transaction remains pending.
@@ -195,7 +195,10 @@ P2FK.IO now starts and stops the ingress Kubo daemon with the ASP.NET Core host.
 - create the ingress repo folder when needed
 - run `kubo init --profile=server` if the repo has not been initialized yet
 - apply the configured API, gateway, swarm, and `Gateway.NoFetch` settings
+- optionally apply `Swarm.DisableNatPortMap` when `KuboDisableNatPortMap` is explicitly set
 - start `kubo daemon --migrate=true` and wait for it to become healthy before serving requests
+
+If the configured API is already healthy, startup leaves that daemon and its configuration alone.
 
 Use a dedicated ingress-only Kubo instance:
 
@@ -205,7 +208,7 @@ Use a dedicated ingress-only Kubo instance:
 | Repo path | `D:\SupIngress` |
 | API | `127.0.0.1:5101` |
 | Gateway | `127.0.0.1:8180` |
-| Swarm | `4101` |
+| Swarm | TCP `4101` and UDP `4101` (QUIC-v1) |
 
 Do **not** point these endpoints at the existing production Kubo repo.
 
@@ -225,8 +228,12 @@ Set the `IpfsIngress` section in `appsettings.json` (or environment-specific ove
   "KuboGatewayMultiAddress": "/ip4/127.0.0.1/tcp/8180",
   "KuboSwarmMultiAddresses": [
     "/ip4/0.0.0.0/tcp/4101",
-    "/ip6/::/tcp/4101"
+    "/ip6/::/tcp/4101",
+    "/ip4/0.0.0.0/udp/4101/quic-v1",
+    "/ip6/::/udp/4101/quic-v1"
   ],
+  "KuboDisableNatPortMap": null,
+  "KuboFetchTimeoutSeconds": 180,
   "KuboStartupTimeoutSeconds": 30,
   "RepoPath": "D:\\SupIngress",
   "DatabasePath": "App_Data/ipfs-ingress.db",
@@ -241,6 +248,58 @@ Set the `IpfsIngress` section in `appsettings.json` (or environment-specific ove
 
 Set `KuboExecutablePath` to an absolute or repository-relative binary path if you want to override the bundled binary.
 Set `PinnedLookupTimeoutMilliseconds` to a positive value so local `pin/ls` checks fail quickly when a CID is not readily found.
+Set `KuboFetchTimeoutSeconds` to a positive value for full fetch/pin attempts, not just provider discovery. The timeout covers streamed response bodies as well as headers; long transfers are no longer silently capped by HttpClient's default 100 seconds. Health checks and short pin lookups keep their existing timeouts.
+Leave `KuboDisableNatPortMap` as `null` to preserve the repository's NAT policy. Set it to `false` to enable Kubo's automatic NAT port mapping on a trusted router, or `true` to disable mapping. This does not configure Windows Firewall or guarantee that the router supports mapping.
+
+### CID retrieval service pack — SUP desktop comparison
+
+The source comparison found a deterministic retrieval bug and several operational differences:
+
+| Area | SUP desktop | Previous P2FK.IO behavior / service-pack change |
+|---|---|---|
+| File versus directory CIDs | Uses `ipfs get` | Used `cat`, which rejects directories. Now streams `get --archive` to fetch the full UnixFS tree before recursive pinning, without extracting files. |
+| Transfer time | Helper defaults to 60 seconds; JukeBox allows 550 seconds | Live pinning allowed only 30 seconds for lookup, download, and pin; empty-folder imports allowed 60 seconds for download. Both now use a configurable 180-second fetch/pin budget. Live retries still have a 5-minute total window. |
+| Stream completion | Kubo CLI handles streaming failures | Now rejects `X-Stream-Error` trailers even when the response starts with HTTP 200. Failed imports retain their marker and log the actual error. |
+| Pin-status lookup | Separate CLI operations | A slow local `pin/ls` no longer prevents live workers from attempting retrieval. |
+| Peer connectivity | Plain `init`, upstream listeners on port 4001 | `server` profile, isolated repo, port 4101. QUIC listeners are now included; NAT mapping is explicitly configurable without resetting security filters. |
+| Public gateway | Public gateways can retrieve uncached content | P2FK.IO intentionally serves only active ingress or pinned CIDs, with `Gateway.NoFetch=true`. This restriction is unchanged. A public-route 404 is not proof of a failed DHT lookup. |
+
+Sources inspected: SUP [`Connections.cs`](https://github.com/embiimob/SUP/blob/e74682cdf44b96614f2bc4ff421d616979f15913/Connections.cs#L375-L406), [`IpfsHelper.cs`](https://github.com/embiimob/SUP/blob/e74682cdf44b96614f2bc4ff421d616979f15913/IpfsHelper.cs#L18-L79), and [`JukeBox.cs`](https://github.com/embiimob/SUP/blob/e74682cdf44b96614f2bc4ff421d616979f15913/JukeBox.cs#L385-L435); Kubo v0.41.0 [`cat`](https://github.com/ipfs/kubo/blob/v0.41.0/core/commands/cat.go#L135-L149), [`get`](https://github.com/ipfs/kubo/blob/v0.41.0/core/commands/get.go), and [`server` profile](https://github.com/ipfs/kubo/blob/v0.41.0/config/profile.go#L24-L74).
+
+Neither application explicitly replaces routing or bootstrap defaults. Fresh Kubo v0.41.0 uses auto routing (DHT plus delegated routing); this pack deliberately does not force DHT-server mode or overwrite an operator's bootstrap/routing configuration. TCP-only listeners did not disable outbound QUIC, but omitted QUIC listening addresses.
+
+The `server` profile disables mDNS and automatic NAT mapping and filters local/private peer addresses. Running SUP on the same machine does **not** share its cached blocks, pins, peer identity, or connections with `SupIngress`. A CID available only from a same-host/LAN peer can therefore remain unavailable to the ingress node. This pack preserves those filters rather than silently allowing private-network connections. Gateway success can also reflect gateway-cached data rather than a currently reachable original provider. Without a failing CID and runtime peer/configuration evidence, these remain possible network causes, not a confirmed diagnosis of the deployed node.
+
+#### Upgrade and verify
+
+**Startup regression correction:** .NET configuration binding was appending configured swarm addresses to the pre-populated defaults, producing the duplicated eight-entry list. Defaults are now applied only after binding when the setting is absent; explicit addresses are trimmed and deduplicated before writing Kubo's config. Custom listener lists no longer silently include the default public listeners. On the next managed start, the existing `Addresses.Swarm` list is replaced, not appended. Startup exceptions now include bounded Kubo stderr and the selected repo/API; a failed startup terminates only the daemon process launched by that attempt so it does not leave an orphan holding the repo lock or ports.
+
+Duplicate entries are a confirmed configuration bug, but a config file alone cannot establish the daemon's fatal error. `Gateway.NoFetch=true` does not prevent daemon startup or RPC `get` downloads, and adding WebRTC/WebTransport listeners is not required to start Kubo. A manually started node on 4001/5001/8080 does not test the service's 4101/5101/8180 bindings. If startup still fails, collect the new startup exception/stderr (not the full config), check those ports for conflicts, and confirm that the service account can access the configured repo and executable. If startup reports a timeout rather than a bind/lock/config error, check `KuboStartupTimeoutSeconds` against actual startup time.
+
+1. Deploy the rebuilt app and merge the new options into **both** production and any environment-specific settings. Existing overrides of `KuboSwarmMultiAddresses` must include the new UDP entries if QUIC listening is wanted.
+2. Stop the app and its dedicated ingress daemon before restarting so managed settings are reapplied. Do not delete/reinitialize `SupIngress`, copy SUP's identity/config, or stop an unrelated SUP daemon. With `ManageKuboProcess=false`, the operator must configure listeners/NAT directly.
+3. Allow TCP and UDP port **4101** for peer traffic in the firewall and, where appropriate, forward them through the router. Keep API **5101** and gateway **8180** loopback-only.
+4. Retry an affected CID using the localhost cache-admin pin endpoint or an empty `RepoPath/import/<CID>` folder. Read `import/transfer-results.txt`: `FETCH-MISS` now includes the underlying error; `FETCH-TIMEOUT` means the complete fetch/pin budget expired, not necessarily that no provider was found.
+5. Check a file CID, a directory CID with a filename suffix, and a larger/slow CID. Successful imports must be recursively pinned before their marker folders disappear. Missing content must leave its marker for retry. Verify the public gateway still rejects an unknown, unpinned CID.
+
+For a network-only comparison, run these in PowerShell against the **ingress** repo (adjust paths); repeat selected config/peer checks against SUP's separate repo:
+
+```powershell
+$kubo = ".\tools\kubo\kubo.exe"
+$repo = "D:\SupIngress"
+& $kubo --repo-dir $repo version
+& $kubo --repo-dir $repo config Routing.Type
+& $kubo --repo-dir $repo config Bootstrap
+& $kubo --repo-dir $repo config Addresses.Swarm
+& $kubo --repo-dir $repo config Swarm.DisableNatPortMap
+& $kubo --repo-dir $repo config Swarm.AddrFilters
+& $kubo --repo-dir $repo swarm peers
+& $kubo --repo-dir $repo routing findprovs <CID>
+& $kubo --repo-dir $repo get <CID> --archive --output "$env:TEMP\ingress-cid.tar"
+& $kubo --repo-dir $repo pin ls <CID>
+```
+
+`get` above is a diagnostic download, not a pin. If CLI retrieval succeeds while queued imports fail, compare elapsed time and logged errors; increase the configured budget when needed. If CLI retrieval also fails, inspect provider reachability, private-address filters, firewall/router policy, and routing overrides (including `IPFS_HTTP_ROUTERS` in the service environment). `/health/ipfs` checks the local API/repo, not connectivity to providers. Do not publish the full Kubo config: it contains the node's private key.
 
 ### IPFS cache transfer folders
 
@@ -262,7 +321,7 @@ For each CID folder, P2FK.IO will:
 - First look for the largest file found anywhere inside that CID folder.
 - If a file is found, import that file directly into Kubo, pin the returned CID, and log when the imported CID differs from the folder name.
 - If no files are found in the folder, try to fetch that CID from Kubo and pin it.
-- Bound that CID fetch attempt to one minute.
+- Bound the combined CID fetch/pin attempt to `KuboFetchTimeoutSeconds` (180 seconds by default).
 - Treat either successful path as complete, then delete the CID folder and all of its contents.
 
 Fallback file imports are forced through Kubo with **CIDv0-compatible** add settings so imported hashes remain in the classic `Qm...` form when the selected file content is actually reproducible as a CIDv0 object. Because this fallback adds a single file rather than recreating a full directory DAG, folder-based inputs can intentionally produce a different CID while still being treated as a completed migration of the fallback file content.
@@ -295,7 +354,7 @@ If your local Kubo daemon is configured as `localhost`, P2FK.IO now normalizes t
 The firewall prompt comes from `kubo.exe`, not from ASP.NET Core itself.
 
 - `Addresses.API` and `Addresses.Gateway` are configured on loopback only, so they should **not** trigger a public firewall prompt.
-- `Addresses.Swarm` is configured on `0.0.0.0` / `::` by default, so the first interactive launch of `kubo.exe` on Windows may show a firewall consent dialog for inbound peer traffic on port `4101`.
+- `Addresses.Swarm` is configured on `0.0.0.0` / `::` by default, so the first interactive launch of `kubo.exe` on Windows may show a firewall consent dialog for inbound TCP/UDP peer traffic on port `4101`.
 - If P2FK.IO runs under IIS, a Windows service, or another non-interactive host, that dialog usually will **not** be visible. In that case you should pre-create the firewall rule yourself for `kubo.exe` or the swarm port.
 - If you do not want any inbound peer traffic, change `KuboSwarmMultiAddresses` to loopback-only addresses and Windows should stop asking for firewall access.
 

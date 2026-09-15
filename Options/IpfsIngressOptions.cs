@@ -13,7 +13,10 @@ namespace P2FK.IO.Options
         public string KuboGatewayBaseUrl { get; set; } = "http://127.0.0.1:8180";
         public string KuboApiMultiAddress { get; set; } = "/ip4/127.0.0.1/tcp/5101";
         public string KuboGatewayMultiAddress { get; set; } = "/ip4/127.0.0.1/tcp/8180";
-        public string[] KuboSwarmMultiAddresses { get; set; } = ["/ip4/0.0.0.0/tcp/4101", "/ip6/::/tcp/4101"];
+        // The configuration binder appends to pre-populated arrays; apply defaults after binding.
+        public string[]? KuboSwarmMultiAddresses { get; set; }
+        public bool? KuboDisableNatPortMap { get; set; }
+        public int KuboFetchTimeoutSeconds { get; set; } = 180;
         public int KuboStartupTimeoutSeconds { get; set; } = 30;
         public string RepoPath { get; set; } = @"D:\SupIngress";
         public string DatabasePath { get; set; } = "App_Data/ipfs-ingress.db";
@@ -24,5 +27,20 @@ namespace P2FK.IO.Options
         public int UploadRequestsPerMinute { get; set; } = 20;
         public int PinnedLookupTimeoutMilliseconds { get; set; } = 1500;
         public long MaxUploadBytes { get; set; } = DefaultMaxUploadBytes;
+
+        public string[] GetKuboSwarmMultiAddresses()
+        {
+            string[] addresses = KuboSwarmMultiAddresses ??
+            [
+                "/ip4/0.0.0.0/tcp/4101",
+                "/ip6/::/tcp/4101",
+                "/ip4/0.0.0.0/udp/4101/quic-v1",
+                "/ip6/::/udp/4101/quic-v1"
+            ];
+            if (addresses.Length == 0 || addresses.Any(string.IsNullOrWhiteSpace))
+                throw new InvalidOperationException($"IpfsIngress:{nameof(KuboSwarmMultiAddresses)} must contain non-empty swarm addresses.");
+
+            return addresses.Select(address => address.Trim()).Distinct(StringComparer.Ordinal).ToArray();
+        }
     }
 }
