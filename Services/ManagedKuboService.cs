@@ -110,6 +110,10 @@ namespace P2FK.IO.Services
                 "Addresses.Swarm",
                 JsonSerializer.Serialize(_options.KuboSwarmMultiAddresses));
             await RunKuboCommandAsync(cancellationToken, "config", "--json", "Gateway.NoFetch", "true");
+            if (_options.KuboDisableNatPortMap is bool disableNatPortMap)
+            {
+                await RunKuboCommandAsync(cancellationToken, "config", "--json", "Swarm.DisableNatPortMap", disableNatPortMap ? "true" : "false");
+            }
         }
 
         private Process StartDaemonProcess()
