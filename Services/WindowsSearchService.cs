@@ -438,7 +438,13 @@ namespace P2FK.IO.Services
 
             foreach (var sourceGroup in findings.GroupBy(f => f.Source, StringComparer.OrdinalIgnoreCase))
             {
-                string sourceLabel = sourceGroup.Key;
+                string sourceLabel = sourceGroup.Key.Equals("Message", StringComparison.OrdinalIgnoreCase)
+                    ? "Message"
+                    : sourceGroup.Key.Equals("PRO", StringComparison.OrdinalIgnoreCase)
+                        ? "PRO"
+                        : sourceGroup.Key.Equals("OBJ", StringComparison.OrdinalIgnoreCase)
+                            ? "OBJ"
+                            : "Unknown";
                 int sourceCidCount = sourceGroup
                     .Select(f => f.Cid)
                     .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -601,21 +607,21 @@ namespace P2FK.IO.Services
                 }
             }
 
+            // Only search PRO and OBJ files, and only if they are declared in the File object.
             if (document.RootElement.TryGetProperty("File", out JsonElement fileElement) && fileElement.ValueKind == JsonValueKind.Object)
             {
-                foreach (JsonProperty prop in fileElement.EnumerateObject())
+                if (fileElement.TryGetProperty("PRO", out _))
                 {
-                    if (!string.IsNullOrEmpty(prop.Name) && prop.Name != "SIG")
-                    {
-                        AddAttachmentFileCidFindings(txId, prop.Name, sourceToCids);
-                    }
+                    AddAttachmentFileCidFindings(txId, "PRO", sourceToCids);
+                }
+                if (fileElement.TryGetProperty("OBJ", out _))
+                {
+                    AddAttachmentFileCidFindings(txId, "OBJ", sourceToCids);
                 }
             }
             else
             {
-                // Fallback to what was there in case File object is missing but files exist somehow
-                AddAttachmentFileCidFindings(txId, "PRO", sourceToCids);
-                AddAttachmentFileCidFindings(txId, "OBJ", sourceToCids);
+                // Do not fallback; if there's no File array/object, we don't scan attachments.
             }
 
             return sourceToCids
@@ -707,7 +713,7 @@ namespace P2FK.IO.Services
                     if (string.IsNullOrWhiteSpace(inner))
                         continue;
 
-                    string compact = Regex.Replace(inner, @"\s+", string.Empty);
+                    string compact = Regex.Replace(inner, @"^\s+|\s+$", string.Empty);
                     if (!compact.StartsWith("IPFS:", StringComparison.OrdinalIgnoreCase))
                         continue;
 
