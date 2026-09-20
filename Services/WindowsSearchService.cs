@@ -40,7 +40,7 @@ namespace P2FK.IO.Services
 
         private static readonly Regex TxIdRegex = new Regex(@"[0-9a-fA-F]{64}", RegexOptions.Compiled);
         private static readonly Regex MessageAttachmentRegex = new(@"<<(?<inner>[^>]+)>>", RegexOptions.Compiled);
-        private static readonly Regex IpfsUrnRegex = new(@"IPFS:\s*(?<cid>[A-Za-z0-9]+)(?:[\\/](?<path>[^<>\s&]+))?", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        private static readonly Regex IpfsUrnRegex = new(@"IPFS:\s*(?<cid>[A-Za-z0-9]+)(?:[\\/](?<path>[^<>&""]+))?", RegexOptions.Compiled | RegexOptions.IgnoreCase);
         private const int MaxSearchLength = 2048;
         private const string BtcBlockchain = "BTC";
         private const string TransferResultsFileName = "transfer-results.txt";
@@ -407,6 +407,9 @@ namespace P2FK.IO.Services
 
         private void StartPendingRootCidPinWorker(string queueKey, string txId, string rawJson)
         {
+            // Keep memory from growing indefinitely
+            if (_processedPendingRootTxIds.Count > 100000) _processedPendingRootTxIds.Clear();
+
             if (!_processedPendingRootTxIds.TryAdd(txId, 0))
                 return;
 
