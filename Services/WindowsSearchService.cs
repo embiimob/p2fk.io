@@ -26,6 +26,7 @@ namespace P2FK.IO.Services
         private readonly TimeSpan _pendingCidPinAttemptTimeout;
         private readonly SemaphoreSlim _transferResultLogLock = new(1, 1);
         private readonly ConcurrentDictionary<string, byte> _pinnedPendingIpfsCids = new(StringComparer.Ordinal);
+        private readonly ConcurrentDictionary<string, byte> _processedPendingRootTxIds = new(StringComparer.OrdinalIgnoreCase);
         private readonly ConcurrentDictionary<string, byte> _activePendingRootCidPinWorkers =
             new(StringComparer.OrdinalIgnoreCase);
         // TTL for regular text-search cache entries (5 min backstop for user-triggered scans).
@@ -39,7 +40,7 @@ namespace P2FK.IO.Services
 
         private static readonly Regex TxIdRegex = new Regex(@"[0-9a-fA-F]{64}", RegexOptions.Compiled);
         private static readonly Regex MessageAttachmentRegex = new(@"<<(?<inner>[^>]+)>>", RegexOptions.Compiled);
-        private static readonly Regex IpfsUrnRegex = new(@"IPFS:\s*(?<cid>[A-Za-z0-9]+)(?:[\\/](?<path>[^<>\s&]+))?", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        private static readonly Regex IpfsUrnRegex = new(@"IPFS:\s*(?<cid>[A-Za-z0-9]+)(?:[\\/](?<path>[^<>&""]+))?", RegexOptions.Compiled | RegexOptions.IgnoreCase);
         private const int MaxSearchLength = 2048;
         private const string BtcBlockchain = "BTC";
         private const string TransferResultsFileName = "transfer-results.txt";
@@ -406,6 +407,12 @@ namespace P2FK.IO.Services
 
         private void StartPendingRootCidPinWorker(string queueKey, string txId, string rawJson)
         {
+            // Keep memory from growing indefinitely
+            if (_processedPendingRootTxIds.Count > 100000) _processedPendingRootTxIds.Clear();
+
+            if (!_processedPendingRootTxIds.TryAdd(txId, 0))
+                return;
+
             if (!_activePendingRootCidPinWorkers.TryAdd(queueKey, 0))
                 return;
 
@@ -603,8 +610,22 @@ namespace P2FK.IO.Services
                 }
             }
 
-            AddAttachmentFileCidFindings(txId, "PRO", sourceToCids);
-            AddAttachmentFileCidFindings(txId, "OBJ", sourceToCids);
+            // Only search PRO and OBJ files, and only if they are declared in the File object.
+            if (document.RootElement.TryGetProperty("File", out JsonElement fileElement) && fileElement.ValueKind == JsonValueKind.Object)
+            {
+                if (fileElement.TryGetProperty("PRO", out _))
+                {
+                    AddAttachmentFileCidFindings(txId, "PRO", sourceToCids);
+                }
+                if (fileElement.TryGetProperty("OBJ", out _))
+                {
+                    AddAttachmentFileCidFindings(txId, "OBJ", sourceToCids);
+                }
+            }
+            else
+            {
+                // Do not fallback; if there's no File array/object, we don't scan attachments.
+            }
 
             return sourceToCids
                 .SelectMany(kvp => kvp.Value.Select(cid => new PendingRootCidFinding(cid, kvp.Key)))
@@ -695,7 +716,7 @@ namespace P2FK.IO.Services
                     if (string.IsNullOrWhiteSpace(inner))
                         continue;
 
-                    string compact = Regex.Replace(inner, @"\s+", string.Empty);
+                    string compact = Regex.Replace(inner, @"^\s+|\s+$", string.Empty);
                     if (!compact.StartsWith("IPFS:", StringComparison.OrdinalIgnoreCase))
                         continue;
 
