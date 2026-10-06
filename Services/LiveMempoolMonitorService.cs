@@ -40,6 +40,7 @@ namespace P2FK.IO.Services
             try
             {
                 await Task.Delay(StartupDelay, stoppingToken);
+                long cycle = 0;
 
                 while (!stoppingToken.IsCancellationRequested)
                 {
@@ -52,12 +53,15 @@ namespace P2FK.IO.Services
                         remainingCliBudget = Math.Max(0, remainingCliBudget - pendingChecks);
                     }
 
-                    foreach (var network in GetNetworks())
+                    // Always snapshot every network's mempool (even with no CLI budget left) so
+                    // short-lived transactions are queued before they confirm, and rotate the
+                    // starting network so one busy chain cannot starve the others' CLI budget.
+                    var networks = GetNetworks().ToList();
+                    int startIndex = networks.Count == 0 ? 0 : (int)(cycle++ % networks.Count);
+                    for (int n = 0; n < networks.Count; n++)
                     {
                         stoppingToken.ThrowIfCancellationRequested();
-                        if (remainingCliBudget <= 0)
-                            break;
-
+                        var network = networks[(startIndex + n) % networks.Count];
                         remainingCliBudget = await PollNetworkAsync(network, remainingCliBudget, stoppingToken);
                     }
 

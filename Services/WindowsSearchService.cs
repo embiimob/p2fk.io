@@ -27,8 +27,6 @@ namespace P2FK.IO.Services
         private readonly SemaphoreSlim _transferResultLogLock = new(1, 1);
         private readonly ConcurrentDictionary<string, byte> _pinnedPendingIpfsCids = new(StringComparer.Ordinal);
         private readonly ConcurrentDictionary<string, byte> _processedPendingRootTxIds = new(StringComparer.OrdinalIgnoreCase);
-        private readonly ConcurrentDictionary<string, byte> _activePendingRootCidPinWorkers =
-            new(StringComparer.OrdinalIgnoreCase);
         // TTL for regular text-search cache entries (5 min backstop for user-triggered scans).
         internal static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(300);
 
@@ -46,6 +44,11 @@ namespace P2FK.IO.Services
         private const string TransferResultsFileName = "transfer-results.txt";
         private static readonly TimeSpan PendingCidPinRetryInterval = TimeSpan.FromSeconds(30);
         private static readonly TimeSpan PendingCidPinRetryWindow = TimeSpan.FromMinutes(5);
+        // Shortest CID accepted by IsValidIpfsCid (CIDv0 "Qm..." = 46 chars).
+        private const int MinIpfsCidLength = 46;
+        // Roots whose ROOT.json was written within this window are CID-scanned when found by
+        // a full (non-incremental) or text search scan, so recently confirmed roots are covered.
+        private static readonly TimeSpan RecentRootCidScanWindow = TimeSpan.FromHours(24);
 
         public WindowsSearchService(
             IMemoryCache cache,
@@ -212,7 +215,7 @@ namespace P2FK.IO.Services
 
             _ = RefreshRootCacheEntry(txId, rawJson, insertIfNotFound: true);
 
-            StartPendingRootCidPinWorker(queueKey, txId, rawJson);
+            StartPendingRootCidPinWorker(txId, rawJson);
 
             if (!IsPendingRoot(rawJson))
             {
@@ -262,6 +265,9 @@ namespace P2FK.IO.Services
                 {
                     continue;
                 }
+
+                // Rescan the confirmed root; dedupe skips it unless new CIDs are now visible.
+                StartPendingRootCidPinWorker(item.Value.TxId, latestRootJson);
 
                 bool cacheUpdated = RefreshRootCacheEntry(item.Value.TxId, latestRootJson, insertIfNotFound: true);
                 if (!cacheUpdated)
@@ -405,39 +411,101 @@ namespace P2FK.IO.Services
             }
         }
 
-        private void StartPendingRootCidPinWorker(string queueKey, string txId, string rawJson)
+        private void StartPendingRootCidPinWorker(string txId, string rawJson)
         {
-            // Keep memory from growing indefinitely
-            if (_processedPendingRootTxIds.Count > 100000) _processedPendingRootTxIds.Clear();
-
-            if (!_processedPendingRootTxIds.TryAdd(txId, 0))
-                return;
-
-            if (!_activePendingRootCidPinWorkers.TryAdd(queueKey, 0))
+            if (string.IsNullOrWhiteSpace(txId) || !MayContainIpfsCid(rawJson))
                 return;
 
             _ = Task.Run(async () =>
             {
+                string? scanSignature = null;
                 try
                 {
-                    await TryPinPendingRootIpfsCidsWithRetriesAsync(txId, rawJson, CancellationToken.None);
+                    List<PendingRootCidFinding> findings = ExtractPendingRootIpfsCids(txId, rawJson);
+                    if (findings.Count == 0)
+                        return;
+
+                    // Dedupe on txId + discovered CID set (not txId alone) so a root that is
+                    // re-discovered with additional content (e.g. PRO/OBJ written later) is rescanned,
+                    // while repeat discoveries of identical content do not re-log or re-pin.
+                    scanSignature = txId + "|" + string.Join(",", findings
+                        .Select(f => f.Cid)
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .OrderBy(c => c, StringComparer.OrdinalIgnoreCase));
+
+                    // Keep memory from growing indefinitely
+                    if (_processedPendingRootTxIds.Count > 100000) _processedPendingRootTxIds.Clear();
+
+                    if (!_processedPendingRootTxIds.TryAdd(scanSignature, 0))
+                    {
+                        scanSignature = null;
+                        return;
+                    }
+
+                    bool allPinned = await TryPinPendingRootIpfsCidsWithRetriesAsync(txId, findings, CancellationToken.None);
+                    if (allPinned)
+                        scanSignature = null;
                 }
-                catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or IOException or UnauthorizedAccessException)
+                catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or IOException or UnauthorizedAccessException or JsonException)
                 {
                     _logger.LogDebug(ex, "Pending-root CID pin worker failed for txId={TxId}", SanitizeTransferResultField(txId));
                 }
                 finally
                 {
-                    _activePendingRootCidPinWorkers.TryRemove(queueKey, out _);
+                    // Allow a later discovery (e.g. a manual root lookup) to retry failed pins.
+                    if (scanSignature != null)
+                        _processedPendingRootTxIds.TryRemove(scanSignature, out _);
                 }
             });
         }
 
-        private async Task TryPinPendingRootIpfsCidsWithRetriesAsync(string txId, string rawJson, CancellationToken cancellationToken)
+        /// <summary>
+        /// Cheap pre-check: a root can only reference an IPFS CID when its message text is long
+        /// enough to hold one, or when it declares PRO/OBJ attachments that are scanned from disk.
+        /// </summary>
+        private static bool MayContainIpfsCid(string rawJson)
         {
-            List<PendingRootCidFinding> findings = ExtractPendingRootIpfsCids(txId, rawJson);
+            if (string.IsNullOrWhiteSpace(rawJson))
+                return false;
+
+            try
+            {
+                using var document = JsonDocument.Parse(rawJson);
+                JsonElement root = document.RootElement;
+                if (root.ValueKind != JsonValueKind.Object)
+                    return false;
+
+                if (root.TryGetProperty("File", out JsonElement fileElement) &&
+                    fileElement.ValueKind == JsonValueKind.Object &&
+                    (fileElement.TryGetProperty("PRO", out _) || fileElement.TryGetProperty("OBJ", out _)))
+                    return true;
+
+                if (!root.TryGetProperty("Message", out JsonElement messageElement))
+                    return false;
+
+                int length = 0;
+                foreach (string message in EnumerateMessageStrings(messageElement))
+                {
+                    length = Math.Max(length, message.Length);
+                    if (length >= MinIpfsCidLength)
+                        return true;
+                }
+
+                return false;
+            }
+            catch (JsonException)
+            {
+                return false;
+            }
+        }
+
+        private async Task<bool> TryPinPendingRootIpfsCidsWithRetriesAsync(
+            string txId, List<PendingRootCidFinding> findings, CancellationToken cancellationToken)
+        {
             if (findings.Count == 0)
-                return;
+                return true;
+
+            bool allPinned = true;
 
             foreach (var sourceGroup in findings.GroupBy(f => f.Source, StringComparer.OrdinalIgnoreCase))
             {
@@ -533,6 +601,7 @@ namespace P2FK.IO.Services
                                 "PIN-FAILED",
                                 $"pending root {txId} fetch/pin timed out after {PendingCidPinRetryWindow.TotalMinutes:0} minute window",
                                 cancellationToken);
+                            allPinned = false;
                             break;
                         }
 
@@ -554,6 +623,7 @@ namespace P2FK.IO.Services
                                 "PIN-FAILED",
                                 $"pending root {txId} fetch/pin failed after {PendingCidPinRetryWindow.TotalMinutes:0} minute window: {ex.Message}",
                                 cancellationToken);
+                            allPinned = false;
                             break;
                         }
 
@@ -571,6 +641,8 @@ namespace P2FK.IO.Services
                         await Task.Delay(delay, cancellationToken);
                 }
             }
+
+            return allPinned;
         }
 
         private async Task EnsureCidMempoolNonExpiringAsync(string cid, string txId, CancellationToken cancellationToken)
@@ -1151,8 +1223,10 @@ namespace P2FK.IO.Services
 
                 // Incremental refresh optimization: wildcard warm scans are ordered newest
                 // first, so after we hit already-cached content we can stop scanning.
+                // Skip (rather than stop at) already-cached rows: a cached root whose ROOT.json was
+                // rewritten (e.g. on confirmation) can sort ahead of newly-discovered roots.
                 if (incrementalWildcardRefresh && cachedTxIds.Contains(txId))
-                    break;
+                    continue;
 
                 // Short-circuit: txId already identified as a system transaction from the Windows
                 // Search file listing — skip the ROOT.json read entirely, no file I/O needed.
@@ -1217,9 +1291,18 @@ namespace P2FK.IO.Services
                                 pendingMainnet,
                                 pendingBlockchain.ToUpperInvariant());
                             _pendingRootRefreshFailures.TryRemove(pendingQueueKey, out _);
-                            StartPendingRootCidPinWorker(pendingQueueKey, txId, rawJson);
                         }
                     }
+                }
+
+                // Every newly found root (pending or already confirmed) is CID-scanned. Full scans
+                // and text searches limit this to pending or recently written roots so historic
+                // roots are not mass-pinned on startup.
+                if (blockDate <= DateTime.UnixEpoch ||
+                    incrementalWildcardRefresh ||
+                    kvp.Value.Modified >= DateTime.UtcNow - RecentRootCidScanWindow)
+                {
+                    StartPendingRootCidPinWorker(txId, rawJson);
                 }
 
                 entries.Add(new CachedRootEntry(detectedBlockchain, txId, rawJson, blockDate));
