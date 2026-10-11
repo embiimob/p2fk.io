@@ -162,6 +162,10 @@ Live mempool CID processing starts immediately when a root is discovered and sca
 
 Roots discovered through live mempool monitoring still trigger this CID scan/pin path even if the transaction is already confirmed by the time the root JSON is fetched.
 
+The same CID scan also runs for every root found by cache warm scans and text searches (pending or confirmed), for roots promoted from pending to confirmed, and for manual `GetRootByTransactionID` lookups. Only roots whose message is long enough to hold a CID (46+ characters) or that declare `PRO`/`OBJ` files are scanned. Full (non-incremental) scans and text searches only scan pending roots or roots whose files were written in the last 24 hours, so historic roots are not mass-pinned at startup. Scans are deduplicated by transaction ID plus the set of CIDs found, so a root is rescanned when new CIDs become visible, and a root whose pins failed can be retried by a later discovery.
+
+Every mempool poll cycle snapshots all configured networks (even after the CLI budget is spent) and rotates which network gets first use of the CLI budget, so one busy chain cannot starve the others.
+
 When a message URN includes a file path ending in `.json`, that CID is skipped unless the JSON filename contains `_session_`.
 
 - Extracts the **CID only**.
